@@ -2,7 +2,16 @@
 
 The aim of this project is to create a DSL for visualizaion operations that can then be used by LLMs to reason about creating correct visualizations.
 
+# Setup
 
+The python environment:
+```bash
+uv python install 3.11
+uv venv --python 3.11
+uv venv .venv
+source .venv/bin/activate
+uv sync
+```
 
 ## Copyright
 © 2025. Triad National Security, LLC. All rights reserved.

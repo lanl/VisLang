@@ -1,0 +1,16 @@
+[project]
+name = "VisLang"
+version = "0.1.0"
+description = "A DSL for 3D visualization"
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
