@@ -226,7 +226,6 @@ class VegaLiteGenerator(dspy.Module):
             # try to parse json
             try:
                 spec_dict = json.loads(raw)
-                # LLM sometimes wraps spec in an array
                 if isinstance(spec_dict, list):
                     spec_dict = spec_dict[0] if spec_dict else {}
                 if not isinstance(spec_dict, dict):
@@ -364,7 +363,6 @@ def run_prompt_dataset_matrix(
     print(f"  Datasets : {len(datasets_in_path)} from {data_dir}/")
     print(f"  Prompts  : {len(prompt_items)} from {prompts_file}")
     print(f"  Total    : {total_runs} runs  (max {max_retries} retries each)")
-
 
     #
     pipeline = VegaLiteGenerator(max_retries=max_retries)

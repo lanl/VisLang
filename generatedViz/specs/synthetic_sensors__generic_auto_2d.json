@@ -14,10 +14,41 @@
           "type": "temporal"
         },
         "y": {
+          "aggregate": "mean",
           "field": "value"
         },
         "color": {
           "field": "status"
+        },
+        "tooltip": [
+          {
+            "field": "sensor_id"
+          },
+          {
+            "field": "location"
+          },
+          {
+            "field": "unit"
+          }
+        ]
+      }
+    },
+    {
+      "mark": {
+        "type": "point",
+        "filled": true
+      },
+      "encoding": {
+        "x": {
+          "field": "timestamp",
+          "type": "temporal"
+        },
+        "y": {
+          "aggregate": "mean",
+          "field": "battery_percent"
+        },
+        "color": {
+          "value": "black"
         }
       }
     }

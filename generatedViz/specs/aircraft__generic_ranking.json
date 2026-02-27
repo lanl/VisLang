@@ -1,26 +1,19 @@
 {
   "width": 600,
   "height": 400,
-  "layer": [
-    {
-      "encoding": {
-        "x": {
-          "field": "Age",
-          "type": "ordinal"
-        },
-        "y": {
-          "aggregate": "sum",
-          "field": "Passenger capacity"
-        },
-        "color": {
-          "field": "Aircraft"
-        }
-      },
-      "mark": {
-        "type": "bar"
-      }
+  "mark": "point",
+  "encoding": {
+    "x": {
+      "field": "Age"
+    },
+    "y": {
+      "aggregate": "max",
+      "field": "Passenger capacity"
+    },
+    "color": {
+      "field": "Aircraft"
     }
-  ],
+  },
   "data": {
     "url": "data/aircraft.json"
   }

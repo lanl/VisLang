@@ -1,19 +1,20 @@
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "width": 600,
+  "height": 400,
   "mark": {
-    "type": "bar"
+    "type": "point",
+    "filled": true
   },
   "encoding": {
     "x": {
-      "field": "rank()",
-      "sort": null
+      "field": "genre"
     },
     "y": {
+      "aggregate": "mean",
       "field": "pages"
     },
     "color": {
-      "field": "title",
-      "type": "nominal"
+      "field": "genre"
     }
   },
   "data": {

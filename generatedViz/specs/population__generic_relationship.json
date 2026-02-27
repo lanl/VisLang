@@ -1,4 +1,7 @@
 {
+  "mark": {
+    "type": "point"
+  },
   "encoding": {
     "x": {
       "field": "year",
@@ -8,9 +11,6 @@
       "field": "age",
       "type": "quantitative"
     }
-  },
-  "mark": {
-    "type": "point"
   },
   "data": {
     "url": "data/population.json"

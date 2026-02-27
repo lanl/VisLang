@@ -1,41 +1,23 @@
 {
   "width": 600,
   "height": 400,
-  "encoding": {
-    "x": {
-      "field": "location",
-      "type": "nominal"
-    },
-    "y": {
-      "field": "metric",
-      "type": "nominal"
-    },
-    "color": {
-      "field": "sensor_id",
-      "type": "nominal"
-    },
-    "tooltip": [
-      {
-        "field": "location",
-        "type": "nominal"
+  "layer": [
+    {
+      "mark": {
+        "type": "point"
       },
-      {
-        "field": "metric",
-        "type": "nominal"
-      },
-      {
-        "field": "value",
-        "type": "quantitative"
-      },
-      {
-        "field": "unit",
-        "type": "nominal"
+      "encoding": {
+        "x": {
+          "field": "location",
+          "type": "nominal"
+        },
+        "y": {
+          "field": "value",
+          "type": "quantitative"
+        }
       }
-    ]
-  },
-  "mark": {
-    "type": "point"
-  },
+    }
+  ],
   "data": {
     "url": "data/synthetic_sensors.json"
   }

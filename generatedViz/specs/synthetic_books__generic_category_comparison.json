@@ -1,42 +1,34 @@
 {
-  "$schema": "https://vegalite.github.io/vegalite-editor-library/schema/vega-lite.json",
-  "mark": {
-    "type": "point",
-    "opacity": 0.8
-  },
-  "encoding": {
-    "x": {
-      "field": "published_year",
-      "type": "quantitative",
-      "sort": "ascending"
-    },
-    "y": {
-      "field": "rating",
-      "type": "quantitative"
-    },
-    "color": {
-      "field": "genre",
-      "type": "nominal"
-    },
-    "tooltip": [
-      {
-        "field": "title"
+  "$schema": "https://vega.github.io/schema/vegalite/v5.json",
+  "layer": [
+    {
+      "mark": {
+        "type": "text",
+        "align": "right"
       },
-      {
-        "field": "author"
-      },
-      {
-        "field": "published_year"
-      },
-      {
-        "field": "rating"
+      "encoding": {
+        "x": {
+          "field": "pages",
+          "type": "quantitative"
+        },
+        "y": {
+          "field": "title",
+          "type": "nominal"
+        },
+        "text": {
+          "field": "pages",
+          "type": "quantitative",
+          "format": ".0f"
+        },
+        "color": {
+          "value": "black"
+        }
       }
-    ]
-  },
+    }
+  ],
   "config": {
-    "axis": {
-      "labelFontSize": 12,
-      "titleFontSize": 14
+    "view": {
+      "strokeWidth": 0
     }
   },
   "data": {

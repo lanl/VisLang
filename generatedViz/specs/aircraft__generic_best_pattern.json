@@ -1,22 +1,23 @@
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
   "mark": {
-    "type": "bar"
+    "type": "point"
   },
   "encoding": {
     "x": {
-      "field": "rank()",
-      "sort": null
+      "field": "Aircraft",
+      "type": "nominal"
     },
     "y": {
-      "field": "pages"
+      "field": "Mileage",
+      "type": "quantitative"
     },
     "color": {
-      "field": "title",
+      "field": "Age",
       "type": "nominal"
     }
   },
   "data": {
-    "url": "data/synthetic_books.json"
+    "url": "data/aircraft.json"
   }
 }
