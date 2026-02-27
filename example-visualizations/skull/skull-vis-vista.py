@@ -6,40 +6,48 @@ from matplotlib.colors import LinearSegmentedColormap
 volume = pv.read('skull.nhdr')
 print('Loaded volume with dimensions:', volume.dimensions)
 
-# Opacity transfer function (tuned for bone-like structures)
-# Maps scalar values to opacity
-opacity = np.zeros(256)
-# 0-50: fully transparent
-# 50-80: ramp up to 0.05
-for i in range(50, 80):
-    opacity[i] = 0.05 * (i - 50) / (80 - 50)
-# 80-120: ramp up to 0.3
-for i in range(80, 120):
-    opacity[i] = 0.05 + 0.25 * (i - 80) / (120 - 80)
-# 120-255: ramp up to 0.8
-for i in range(120, 256):
-    opacity[i] = 0.3 + 0.5 * (i - 120) / (255 - 120)
+# Transfer functions for bone-like structures, defined as
+# (scalar_value, ...) control points interpolated over 0-255.
+opacity_points = [
+    #  scalar  opacity
+    (    0,    0.0 ),
+    (   50,    0.0 ),
+    (   80,    0.05),
+    (  120,    0.3 ),
+    (  255,    0.8 ),
+]
 
-# PyVista's apply_opacity assigns directly to uint8 lookup table when
-# the list has exactly n_colors elements, so scale from 0.0-1.0 to 0-255.
-opacity_mapping = (opacity * 255).astype(np.uint8).tolist()
+color_points = [
+    #  scalar  R    G    B
+    (    0,    0.0, 0.0, 0.0),  # black
+    (   80,    0.9, 0.7, 0.6),  # warm bone
+    (  120,    1.0, 0.9, 0.8),  # light bone
+    (  255,    1.0, 1.0, 1.0),  # white
+]
+
+# Build opacity lookup: interpolate control points, then scale to uint8
+# (PyVista assigns 256-element lists directly to its uint8 lookup table).
+scalars = np.arange(256)
+op_x = [p[0] for p in opacity_points]
+op_y = [p[1] for p in opacity_points]
+opacity = np.interp(scalars, op_x, op_y)
+opacity_mapping = np.round(opacity * 255).astype(np.uint8).tolist()
+
+# Build colormap from control points
+cmap = LinearSegmentedColormap.from_list('bone', [
+    (p[0] / 255, (p[1], p[2], p[3])) for p in color_points
+])
 
 # Set up the plotter for off-screen rendering
 plotter = pv.Plotter(off_screen=True, window_size=(800, 800))
 plotter.background_color = (0.1, 0.1, 0.1)
 
 # Add volume with custom transfer functions
-# PyVista's add_volume wraps VTK volume rendering
 actor = plotter.add_volume(
     volume,
     scalars=volume.active_scalars_name,
     opacity=opacity_mapping,
-    cmap=LinearSegmentedColormap.from_list('bone', [
-        (0/255,   (0.0, 0.0, 0.0)),   # 0: black
-        (80/255,  (0.9, 0.7, 0.6)),   # 80: warm bone
-        (120/255, (1.0, 0.9, 0.8)),   # 120: light bone
-        (255/255, (1.0, 1.0, 1.0)),   # 255: white
-    ]),
+    cmap=cmap,
     clim=[0, 255],
     shade=True,
     ambient=0.2,
@@ -47,7 +55,9 @@ actor = plotter.add_volume(
     specular=0.2,
     show_scalar_bar=False,
     mapper='gpu',
+    opacity_unit_distance=1.0,
 )
+actor.prop.interpolation_type = 'linear'
 
 # Front-on view: look down the -X axis with Z up
 plotter.view_yz(negative=True)
