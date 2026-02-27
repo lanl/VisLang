@@ -1,0 +1,28 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "mark": {
+    "type": "bar"
+  },
+  "encoding": {
+    "x": {
+      "field": "rank(rating)",
+      "type": "ordinal",
+      "axis": {
+        "title": "Ranking"
+      }
+    },
+    "y": {
+      "field": "pages"
+    },
+    "color": {
+      "field": "genre",
+      "legend": {
+        "title": "Genre",
+        "orient": "left"
+      }
+    }
+  },
+  "data": {
+    "url": "data/synthetic_books.json"
+  }
+}

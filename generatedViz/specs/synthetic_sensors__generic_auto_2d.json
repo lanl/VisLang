@@ -1,0 +1,28 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "width": 800,
+  "height": 600,
+  "layer": [
+    {
+      "mark": {
+        "type": "circle",
+        "filled": true
+      },
+      "encoding": {
+        "x": {
+          "field": "timestamp",
+          "type": "temporal"
+        },
+        "y": {
+          "field": "value"
+        },
+        "color": {
+          "field": "status"
+        }
+      }
+    }
+  ],
+  "data": {
+    "url": "data/synthetic_sensors.json"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "encoding": {
+    "x": {
+      "field": "year",
+      "type": "nominal"
+    },
+    "y": {
+      "field": "sex",
+      "type": "nominal",
+      "axis": {
+        "title": "Gender"
+      }
+    },
+    "color": {
+      "field": "people",
+      "aggregate": "sum",
+      "legend": {
+        "title": "Total Population"
+      }
+    },
+    "row": {
+      "field": "year"
+    }
+  },
+  "mark": {
+    "type": "bar",
+    "opacity": 0.8
+  },
+  "data": {
+    "url": "data/population.json"
+  }
+}

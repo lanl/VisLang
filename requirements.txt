@@ -1,0 +1,15 @@
+# PyTorch with CUDA 12.1 support (torchaudio not needed for LLMs)
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Transformers and model loading
+transformers>=4.36.0
+accelerate>=0.25.0
+sentencepiece>=0.1.99
+protobuf>=3.20.0
+
+# Quantization support
+bitsandbytes>=0.41.0
+
+# DSPy
+dspy-ai>=2.4.0

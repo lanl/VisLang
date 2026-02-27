@@ -1,0 +1,18 @@
+{
+  "encoding": {
+    "x": {
+      "field": "year",
+      "type": "nominal"
+    },
+    "y": {
+      "field": "age",
+      "type": "quantitative"
+    }
+  },
+  "mark": {
+    "type": "point"
+  },
+  "data": {
+    "url": "data/population.json"
+  }
+}

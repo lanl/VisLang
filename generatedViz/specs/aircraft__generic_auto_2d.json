@@ -1,0 +1,17 @@
+{
+  "$schema": "https://vega.github.io/schema/vegalite/v5.json",
+  "mark": {
+    "type": "boxplot"
+  },
+  "encoding": {
+    "x": {
+      "field": "Aircraft"
+    },
+    "y": {
+      "field": "Age"
+    }
+  },
+  "data": {
+    "url": "data/aircraft.json"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "prompts": [
+    {
+      "id": "generic_auto_2d",
+      "text": "Given this dataset, generate the most appropriate 2D Vega-Lite JSON spec for my data. Return only valid JSON.",
+      "enabled": true
+    },
+    {
+      "id": "generic_best_pattern",
+      "text": "Create a 2D visualization that best communicates the main pattern in this data. Choose mark and encodings automatically. Return only Vega-Lite JSON.",
+      "enabled": true
+    },
+    {
+      "id": "generic_relationship",
+      "text": "Create a 2D relationship chart between two relevant fields in this data. Use proper axis types and readable defaults.",
+      "enabled": true
+    },
+    {
+      "id": "generic_category_comparison",
+      "text": "Produce a 2D comparison chart across categories with clear x/y encodings, sorting, and labels where appropriate.",
+      "enabled": true
+    },
+    {
+      "id": "generic_ranking",
+      "text": "Generate a 2D ranking visualization from this dataset, selecting the most meaningful metric and category fields automatically.",
+      "enabled": true
+    }
+  ]
+}

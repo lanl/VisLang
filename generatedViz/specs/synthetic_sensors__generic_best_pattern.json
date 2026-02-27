@@ -1,0 +1,31 @@
+{
+  "$schema": "https://vegalite.org/schema/vl/v5.0.0/vehicle.json",
+  "mark": "point",
+  "encoding": {
+    "x": {
+      "field": "timestamp",
+      "type": "temporal"
+    },
+    "y": {
+      "field": "value",
+      "type": "quantitative"
+    },
+    "color": {
+      "field": "metric",
+      "type": "nominal"
+    },
+    "tooltip": [
+      {
+        "field": "sensor_id",
+        "type": "nominal"
+      },
+      {
+        "field": "location",
+        "type": "nominal"
+      }
+    ]
+  },
+  "data": {
+    "url": "data/synthetic_sensors.json"
+  }
+}

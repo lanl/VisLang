@@ -1,0 +1,16 @@
+{
+  "encoding": {
+    "x": {
+      "field": "age"
+    },
+    "y": {
+      "field": "people"
+    }
+  },
+  "mark": {
+    "type": "point"
+  },
+  "data": {
+    "url": "data/population.json"
+  }
+}

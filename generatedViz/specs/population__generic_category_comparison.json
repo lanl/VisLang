@@ -1,0 +1,31 @@
+{
+  "$schema": "https://vegalite.github.io/schema/vega-lite/v5.json",
+  "layer": [
+    {
+      "mark": {
+        "type": "boxplot"
+      },
+      "encoding": {
+        "x": {
+          "field": "year"
+        },
+        "y": {
+          "field": "people",
+          "aggregate": "sum"
+        },
+        "color": {
+          "field": "sex"
+        }
+      }
+    }
+  ],
+  "config": {
+    "axis": {
+      "labelFontSize": 12,
+      "titleFontSize": 14
+    }
+  },
+  "data": {
+    "url": "data/population.json"
+  }
+}

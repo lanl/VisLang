@@ -1,0 +1,45 @@
+{
+  "$schema": "https://vegalite.github.io/vegalite-editor-library/schema/vega-lite.json",
+  "mark": {
+    "type": "point",
+    "opacity": 0.8
+  },
+  "encoding": {
+    "x": {
+      "field": "published_year",
+      "type": "quantitative",
+      "sort": "ascending"
+    },
+    "y": {
+      "field": "rating",
+      "type": "quantitative"
+    },
+    "color": {
+      "field": "genre",
+      "type": "nominal"
+    },
+    "tooltip": [
+      {
+        "field": "title"
+      },
+      {
+        "field": "author"
+      },
+      {
+        "field": "published_year"
+      },
+      {
+        "field": "rating"
+      }
+    ]
+  },
+  "config": {
+    "axis": {
+      "labelFontSize": 12,
+      "titleFontSize": 14
+    }
+  },
+  "data": {
+    "url": "data/synthetic_books.json"
+  }
+}

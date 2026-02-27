@@ -1,0 +1,28 @@
+{
+  "$schema": "https://vega.github.io/schema/vegalite/v5.json",
+  "width": 600,
+  "height": 400,
+  "encoding": {
+    "x": {
+      "field": "Aircraft",
+      "type": "nominal"
+    },
+    "y": {
+      "field": "Passenger capacity",
+      "type": "nominal",
+      "axis": {
+        "title": "Passenger Capacity"
+      }
+    },
+    "color": {
+      "field": "Age",
+      "type": "nominal"
+    }
+  },
+  "mark": {
+    "type": "bar"
+  },
+  "data": {
+    "url": "data/aircraft.json"
+  }
+}

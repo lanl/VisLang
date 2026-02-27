@@ -1,0 +1,58 @@
+[
+  {
+    "Aircraft": "AeroLynx A220",
+    "Age": 3,
+    "Passenger capacity": 135,
+    "Mileage": 420000,
+    "Longest Flight time": 6.2
+  },
+  {
+    "Aircraft": "SkyBridge B737-900",
+    "Age": 9,
+    "Passenger capacity": 178,
+    "Mileage": 2850000,
+    "Longest Flight time": 7.1
+  },
+  {
+    "Aircraft": "Nimbus A321X",
+    "Age": 5,
+    "Passenger capacity": 210,
+    "Mileage": 1600000,
+    "Longest Flight time": 8.4
+  },
+  {
+    "Aircraft": "TitanAir B787-8",
+    "Age": 7,
+    "Passenger capacity": 242,
+    "Mileage": 3900000,
+    "Longest Flight time": 15.6
+  },
+  {
+    "Aircraft": "StratoCruise A350-900",
+    "Age": 4,
+    "Passenger capacity": 300,
+    "Mileage": 2100000,
+    "Longest Flight time": 17.3
+  },
+  {
+    "Aircraft": "HorizonJet E195",
+    "Age": 11,
+    "Passenger capacity": 120,
+    "Mileage": 3200000,
+    "Longest Flight time": 5.4
+  },
+  {
+    "Aircraft": "AtlasWing B777-300ER",
+    "Age": 13,
+    "Passenger capacity": 396,
+    "Mileage": 5400000,
+    "Longest Flight time": 18.1
+  },
+  {
+    "Aircraft": "Voyager A330-800",
+    "Age": 6,
+    "Passenger capacity": 257,
+    "Mileage": 2750000,
+    "Longest Flight time": 13.9
+  }
+]

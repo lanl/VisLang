@@ -1,0 +1,42 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "layer": [
+    {
+      "mark": {
+        "type": "point",
+        "filled": true
+      },
+      "encoding": {
+        "x": {
+          "field": "age"
+        },
+        "y": {
+          "field": "people"
+        },
+        "color": {
+          "field": "sex"
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "bar"
+      },
+      "encoding": {
+        "x": {
+          "field": "year"
+        },
+        "y": {
+          "field": "people",
+          "aggregate": "sum"
+        },
+        "opacity": {
+          "value": 0.5
+        }
+      }
+    }
+  ],
+  "data": {
+    "url": "data/population.json"
+  }
+}
