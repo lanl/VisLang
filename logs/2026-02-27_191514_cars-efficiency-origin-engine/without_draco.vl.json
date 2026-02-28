@@ -1,0 +1,103 @@
+{
+  "$schema": "https://vega-lite.github.io/schema/vega-lite/v5.json",
+  "title": {
+    "text": "Fuel Efficiency vs Engine Size by Origin",
+    "subtitle": "Miles per gallon vs displacement (cubic inches) for USA, Europe, and Japan",
+    "fontSize": 16,
+    "subtitleFontSize": 12
+  },
+  "width": 500,
+  "height": 350,
+  "data": {
+    "url": "vega-datasets/data/cars.json"
+  },
+  "params": [
+    {
+      "name": "origin_select",
+      "select": {
+        "type": "point",
+        "fields": [
+          "origin"
+        ]
+      },
+      "bind": "legend"
+    }
+  ],
+  "mark": {
+    "type": "circle",
+    "opacity": 0.7,
+    "size": 60
+  },
+  "encoding": {
+    "x": {
+      "field": "displacement",
+      "type": "quantitative",
+      "title": "Engine Displacement (cubic inches)",
+      "scale": {
+        "zero": false
+      }
+    },
+    "y": {
+      "field": "miles_per_Gallon",
+      "type": "quantitative",
+      "title": "Miles per Gallon"
+    },
+    "color": {
+      "field": "origin",
+      "type": "nominal",
+      "title": "Origin",
+      "scale": {
+        "domain": [
+          "USA",
+          "Europe",
+          "Japan"
+        ],
+        "range": [
+          "#e41a1c",
+          "#377eb8",
+          "#4daf4a"
+        ]
+      }
+    },
+    "opacity": {
+      "condition": {
+        "param": "origin_select",
+        "value": 0.8
+      },
+      "value": 0.1
+    },
+    "tooltip": [
+      {
+        "field": "name",
+        "type": "nominal",
+        "title": "Car"
+      },
+      {
+        "field": "origin",
+        "type": "nominal",
+        "title": "Origin"
+      },
+      {
+        "field": "miles_per_Gallon",
+        "type": "quantitative",
+        "title": "MPG",
+        "format": ".1f"
+      },
+      {
+        "field": "displacement",
+        "type": "quantitative",
+        "title": "Displacement"
+      },
+      {
+        "field": "horsepower",
+        "type": "quantitative",
+        "title": "Horsepower"
+      },
+      {
+        "field": "cylinders",
+        "type": "quantitative",
+        "title": "Cylinders"
+      }
+    ]
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": {
+    "text": "Fuel Efficiency by Origin: Does Engine Size Play a Role?",
+    "subtitle": "Point size encodes mean engine displacement (cu. in.) within each MPG bin",
+    "fontSize": 16,
+    "subtitleFontSize": 12,
+    "subtitleColor": "#666"
+  },
+  "data": {
+    "url": "vega-datasets/data/cars.json"
+  },
+  "width": 520,
+  "height": 200,
+  "mark": {
+    "type": "point",
+    "filled": true,
+    "opacity": 0.85,
+    "stroke": "#333",
+    "strokeWidth": 0.5
+  },
+  "encoding": {
+    "x": {
+      "field": "miles_per_Gallon",
+      "bin": {
+        "maxbins": 10
+      },
+      "type": "quantitative",
+      "scale": {
+        "zero": true
+      },
+      "axis": {
+        "title": "Miles per Gallon (binned)",
+        "grid": true,
+        "gridOpacity": 0.3
+      }
+    },
+    "y": {
+      "field": "origin",
+      "type": "ordinal",
+      "sort": [
+        "USA",
+        "Europe",
+        "Japan"
+      ],
+      "axis": {
+        "title": "Origin",
+        "labelFontSize": 12,
+        "titleFontSize": 13
+      }
+    },
+    "size": {
+      "field": "displacement",
+      "aggregate": "mean",
+      "type": "quantitative",
+      "scale": {
+        "zero": true,
+        "range": [
+          40,
+          900
+        ]
+      },
+      "legend": {
+        "title": "Mean Displacement (cu. in.)",
+        "titleFontSize": 11,
+        "orient": "bottom",
+        "direction": "horizontal"
+      }
+    },
+    "color": {
+      "field": "origin",
+      "type": "nominal",
+      "scale": {
+        "domain": [
+          "USA",
+          "Europe",
+          "Japan"
+        ],
+        "range": [
+          "#e45756",
+          "#4c78a8",
+          "#54a24b"
+        ]
+      },
+      "legend": {
+        "title": "Origin",
+        "titleFontSize": 11,
+        "orient": "bottom",
+        "direction": "horizontal"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "origin",
+        "type": "nominal",
+        "title": "Origin"
+      },
+      {
+        "field": "miles_per_Gallon",
+        "bin": {
+          "maxbins": 10
+        },
+        "type": "quantitative",
+        "title": "MPG Bin"
+      },
+      {
+        "field": "displacement",
+        "aggregate": "mean",
+        "type": "quantitative",
+        "title": "Mean Displacement (cu. in.)",
+        "format": ".1f"
+      },
+      {
+        "field": "miles_per_Gallon",
+        "aggregate": "count",
+        "type": "quantitative",
+        "title": "Number of Cars"
+      }
+    ]
+  },
+  "config": {
+    "view": {
+      "stroke": "transparent"
+    },
+    "axis": {
+      "domainColor": "#888",
+      "tickColor": "#888",
+      "labelFontSize": 11,
+      "titleFontSize": 13
+    },
+    "legend": {
+      "labelFontSize": 11
+    }
+  }
+}

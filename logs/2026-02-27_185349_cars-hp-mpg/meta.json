@@ -1,0 +1,5 @@
+{
+  "prompt": "Show the relationship between horsepower and miles per gallon",
+  "data_path": "cars.json",
+  "timestamp": "2026-02-27T23:53:48Z"
+}

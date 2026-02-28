@@ -1,0 +1,140 @@
+{
+  "spec_dict": {
+    "number_rows": 406,
+    "task": "summary",
+    "field": [
+      {
+        "name": "name",
+        "type": "string",
+        "unique": 311,
+        "entropy": 5617,
+        "freq": 6,
+        "min_length": 6,
+        "max_length": 36
+      },
+      {
+        "name": "miles_per_Gallon",
+        "type": "number",
+        "unique": 130,
+        "entropy": 4324,
+        "min": 9,
+        "max": 46,
+        "std": 7,
+        "skew": 0
+      },
+      {
+        "name": "cylinders",
+        "type": "number",
+        "unique": 5,
+        "entropy": 1103,
+        "min": 3,
+        "max": 8,
+        "std": 1,
+        "skew": 0
+      },
+      {
+        "name": "displacement",
+        "type": "number",
+        "unique": 83,
+        "entropy": 3982,
+        "min": 68,
+        "max": 455,
+        "std": 104,
+        "skew": 0
+      },
+      {
+        "name": "horsepower",
+        "type": "number",
+        "unique": 94,
+        "entropy": 4081,
+        "min": 46,
+        "max": 230,
+        "std": 38,
+        "skew": 1
+      },
+      {
+        "name": "weight_in_lbs",
+        "type": "number",
+        "unique": 356,
+        "entropy": 5821,
+        "min": 1613,
+        "max": 5140,
+        "std": 847,
+        "skew": 0
+      },
+      {
+        "name": "acceleration",
+        "type": "number",
+        "unique": 96,
+        "entropy": 4133,
+        "min": 8,
+        "max": 24,
+        "std": 2,
+        "skew": 0
+      },
+      {
+        "name": "year",
+        "type": "string",
+        "unique": 12,
+        "entropy": 2454,
+        "freq": 61,
+        "min_length": 10,
+        "max_length": 10
+      },
+      {
+        "name": "origin",
+        "type": "string",
+        "unique": 3,
+        "entropy": 920,
+        "freq": 254,
+        "min_length": 3,
+        "max_length": 6
+      }
+    ],
+    "view": [
+      {
+        "coordinates": "cartesian",
+        "mark": [
+          {
+            "type": "point",
+            "encoding": [
+              {
+                "field": "horsepower",
+                "channel": "x"
+              },
+              {
+                "field": "miles_per_Gallon",
+                "channel": "y"
+              }
+            ]
+          }
+        ],
+        "scale": [
+          {
+            "type": "linear",
+            "channel": "x",
+            "zero": "true"
+          },
+          {
+            "type": "linear",
+            "channel": "y",
+            "zero": "true"
+          }
+        ]
+      }
+    ]
+  },
+  "cost": [
+    12
+  ],
+  "violations": {
+    "encoding": 2,
+    "encoding_field": 2,
+    "linear_scale": 2,
+    "c_c_point": 1,
+    "linear_x": 1,
+    "linear_y": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "mark": {
+    "type": "point",
+    "filled": true,
+    "opacity": 0.7,
+    "size": 60
+  },
+  "encoding": {
+    "x": {
+      "field": "horsepower",
+      "type": "quantitative",
+      "title": "Horsepower",
+      "scale": {
+        "zero": false
+      }
+    },
+    "y": {
+      "field": "miles_per_Gallon",
+      "type": "quantitative",
+      "title": "Miles per Gallon",
+      "scale": {
+        "zero": false
+      }
+    },
+    "color": {
+      "field": "origin",
+      "type": "nominal",
+      "title": "Origin"
+    },
+    "tooltip": [
+      {
+        "field": "name",
+        "type": "nominal",
+        "title": "Car"
+      },
+      {
+        "field": "horsepower",
+        "type": "quantitative",
+        "title": "Horsepower"
+      },
+      {
+        "field": "miles_per_Gallon",
+        "type": "quantitative",
+        "title": "MPG"
+      },
+      {
+        "field": "origin",
+        "type": "nominal",
+        "title": "Origin"
+      }
+    ]
+  },
+  "width": 500,
+  "height": 350,
+  "title": "Horsepower vs. Miles per Gallon"
+}

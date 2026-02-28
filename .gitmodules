@@ -1,0 +1,3 @@
+[submodule "draco2"]
+	path = draco2
+	url = https://github.com/cmudig/draco2.git
