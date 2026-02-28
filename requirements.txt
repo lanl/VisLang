@@ -2,3 +2,6 @@ altair
 pandas
 vl-convert-python
 jupyter
+litellm
+nest_asyncio
+python-dotenv

@@ -1,0 +1,88 @@
+{
+  "vegalite_spec": {
+    "title": "Fertility Rate vs Life Expectancy Across World Regions",
+    "width": 900,
+    "height": 600,
+    "data": {
+      "url": "gapminder.json"
+    },
+    "mark": {
+      "type": "circle",
+      "opacity": 0.7
+    },
+    "encoding": {
+      "x": {
+        "field": "life_expect",
+        "type": "quantitative",
+        "title": "Life Expectancy (years)",
+        "scale": {
+          "zero": false
+        }
+      },
+      "y": {
+        "field": "fertility",
+        "type": "quantitative",
+        "title": "Fertility Rate (children per woman)",
+        "scale": {
+          "zero": false
+        }
+      },
+      "size": {
+        "field": "pop",
+        "type": "quantitative",
+        "title": "Population Size",
+        "scale": {
+          "type": "sqrt",
+          "range": [
+            50,
+            1000
+          ]
+        }
+      },
+      "color": {
+        "field": "cluster",
+        "type": "nominal",
+        "title": "Region",
+        "scale": {
+          "scheme": "category10"
+        }
+      },
+      "tooltip": [
+        {
+          "field": "country",
+          "type": "nominal",
+          "title": "Country"
+        },
+        {
+          "field": "year",
+          "type": "quantitative",
+          "title": "Year"
+        },
+        {
+          "field": "life_expect",
+          "type": "quantitative",
+          "title": "Life Expectancy",
+          "format": ".2f"
+        },
+        {
+          "field": "fertility",
+          "type": "quantitative",
+          "title": "Fertility Rate",
+          "format": ".2f"
+        },
+        {
+          "field": "pop",
+          "type": "quantitative",
+          "title": "Population",
+          "format": ","
+        },
+        {
+          "field": "cluster",
+          "type": "nominal",
+          "title": "Region"
+        }
+      ]
+    }
+  },
+  "reasoning": "This bubble chart is the most effective visualization for comparing three continuous variables across regions. Life expectancy and fertility rate are plotted on the x and y axes to show their inverse relationship clearly. Population size is encoded as bubble size using a square root scale to prevent large populations from dominating the visual space. Color represents world regions (clusters), allowing easy identification of regional patterns. The scatter plot reveals the strong negative correlation between life expectancy and fertility while simultaneously showing how population size varies across countries and regions. Tooltips enable detailed exploration of individual countries and their specific values."
+}

@@ -1,0 +1,6 @@
+{
+  "prompt": "Show how unemployment rates across industries changed during recessions vs expansions",
+  "data_path": "unemployment-across-industries.json",
+  "model": "anthropic/claude-haiku-4-5-20251001",
+  "timestamp": "2026-02-27T22:08:11.021997"
+}

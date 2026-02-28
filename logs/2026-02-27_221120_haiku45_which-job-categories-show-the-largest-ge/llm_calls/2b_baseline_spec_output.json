@@ -1,0 +1,124 @@
+{
+  "vegalite_spec": {
+    "title": "Gender Gap in Employment Share by Job Category",
+    "description": "Largest differences in employment percentage between men and women across job categories",
+    "width": 900,
+    "height": 600,
+    "data": {
+      "url": "jobs.json"
+    },
+    "transform": [
+      {
+        "filter": "datum.year == 2000"
+      },
+      {
+        "pivot": "sex",
+        "value": "perc",
+        "groupby": [
+          "job"
+        ]
+      },
+      {
+        "calculate": "abs(datum.men - datum.women)",
+        "as": "gender_gap"
+      },
+      {
+        "calculate": "datum.men > datum.women ? datum.men - datum.women : datum.women - datum.men",
+        "as": "gap_signed"
+      },
+      {
+        "calculate": "datum.men > datum.women ? 'Male-dominated' : 'Female-dominated'",
+        "as": "gap_direction"
+      },
+      {
+        "window": [
+          {
+            "op": "rank",
+            "as": "rank"
+          }
+        ],
+        "sort": [
+          {
+            "field": "gender_gap",
+            "order": "descending"
+          }
+        ]
+      },
+      {
+        "filter": "datum.rank <= 20"
+      }
+    ],
+    "mark": {
+      "type": "bar",
+      "tooltip": true
+    },
+    "encoding": {
+      "y": {
+        "field": "job",
+        "type": "nominal",
+        "sort": {
+          "field": "gender_gap",
+          "order": "descending"
+        },
+        "title": "Job Category",
+        "axis": {
+          "labelLimit": 200
+        }
+      },
+      "x": {
+        "field": "gender_gap",
+        "type": "quantitative",
+        "title": "Gender Gap (Absolute Difference in Employment Share)",
+        "axis": {
+          "format": ".1%"
+        }
+      },
+      "color": {
+        "field": "gap_direction",
+        "type": "nominal",
+        "title": "Gap Direction",
+        "scale": {
+          "domain": [
+            "Male-dominated",
+            "Female-dominated"
+          ],
+          "range": [
+            "#1f77b4",
+            "#ff7f0e"
+          ]
+        }
+      },
+      "tooltip": [
+        {
+          "field": "job",
+          "type": "nominal",
+          "title": "Job Category"
+        },
+        {
+          "field": "gender_gap",
+          "type": "quantitative",
+          "title": "Gender Gap",
+          "format": ".2%"
+        },
+        {
+          "field": "men",
+          "type": "quantitative",
+          "title": "Men's Share",
+          "format": ".2%"
+        },
+        {
+          "field": "women",
+          "type": "quantitative",
+          "title": "Women's Share",
+          "format": ".2%"
+        },
+        {
+          "field": "gap_direction",
+          "type": "nominal",
+          "title": "Direction"
+        }
+      ]
+    }
+  },
+  "reasoning": "This visualization effectively identifies the largest gender gaps in employment by: (1) Using the most recent year (2000) to show current state; (2) Pivoting the data to calculate the absolute difference between male and female employment shares; (3) Displaying the top 20 job categories with largest gaps as a horizontal bar chart for easy comparison; (4) Color-coding by gap direction (male vs female-dominated) to show which gender dominates each field; (5) Sorting bars by gap size for immediate visual ranking; (6) Including comprehensive tooltips showing both the gap and individual percentages for context. The horizontal bar layout accommodates long job titles and makes reading easier than vertical bars."
+}

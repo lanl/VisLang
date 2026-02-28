@@ -1,0 +1,77 @@
+{
+  "title": "US Population Age Distribution by Sex",
+  "width": 800,
+  "height": 500,
+  "data": {
+    "url": "population.json"
+  },
+  "transform": [
+    {
+      "filter": "datum.year == 2000"
+    },
+    {
+      "calculate": "datum.sex == 1 ? 'Male' : 'Female'",
+      "as": "sex_label"
+    },
+    {
+      "calculate": "datum.sex == 1 ? datum.people : -datum.people",
+      "as": "people_signed"
+    }
+  ],
+  "mark": "bar",
+  "encoding": {
+    "y": {
+      "field": "age",
+      "type": "ordinal",
+      "title": "Age",
+      "sort": "ascending"
+    },
+    "x": {
+      "field": "people_signed",
+      "type": "quantitative",
+      "title": "Population",
+      "axis": {
+        "format": "~s",
+        "labelExpr": "abs(datum.value) > 0 ? format(abs(datum.value), '~s') : '0'"
+      }
+    },
+    "color": {
+      "field": "sex_label",
+      "type": "nominal",
+      "title": "Sex",
+      "scale": {
+        "domain": [
+          "Male",
+          "Female"
+        ],
+        "range": [
+          "#1f77b4",
+          "#ff7f0e"
+        ]
+      }
+    },
+    "tooltip": [
+      {
+        "field": "age",
+        "type": "ordinal",
+        "title": "Age"
+      },
+      {
+        "field": "sex_label",
+        "type": "nominal",
+        "title": "Sex"
+      },
+      {
+        "field": "people",
+        "type": "quantitative",
+        "title": "Population",
+        "format": ","
+      }
+    ]
+  },
+  "config": {
+    "mark": {
+      "opacity": 0.8
+    }
+  }
+}

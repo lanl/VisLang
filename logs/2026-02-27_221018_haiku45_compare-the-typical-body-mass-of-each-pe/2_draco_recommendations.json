@@ -1,0 +1,55 @@
+{
+  "mark_type": "point",
+  "encodings": [
+    {
+      "channel": "y",
+      "field": "species"
+    },
+    {
+      "channel": "size",
+      "field": "body_Mass_g",
+      "aggregate": "mean"
+    },
+    {
+      "channel": "x",
+      "field": "flipper_Length_mm",
+      "binning": 10
+    }
+  ],
+  "scales": [
+    {
+      "channel": "y",
+      "type": "ordinal"
+    },
+    {
+      "channel": "size",
+      "type": "linear",
+      "zero": "true"
+    },
+    {
+      "channel": "x",
+      "type": "linear"
+    }
+  ],
+  "coordinates": "cartesian",
+  "facets": [],
+  "task": "summary",
+  "cost": [
+    25
+  ],
+  "violations": {
+    "aggregate": 1,
+    "bin": 1,
+    "encoding": 3,
+    "encoding_field": 3,
+    "linear_scale": 2,
+    "ordinal_scale": 1,
+    "d_d_point": 1,
+    "linear_x": 1,
+    "linear_size": 1,
+    "ordinal_y": 1,
+    "aggregate_mean": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

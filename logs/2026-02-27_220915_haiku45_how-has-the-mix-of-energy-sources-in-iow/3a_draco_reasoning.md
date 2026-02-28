@@ -1,0 +1,3 @@
+# Draco-Informed Design
+
+Following Draco's recommendations, I used point marks with size encoding to show net generation values across years and sources. The ordinal scales for both x (year) and y (source) create a clear grid layout where bubble size directly represents generation volume, making it easy to spot growth trends and compare sources. Color is added to reinforce source identity and improve visual distinction. The size scale is linear with zero baseline as recommended, allowing accurate visual comparison of generation amounts. Tooltips provide precise values for interactive exploration. This design effectively shows both the composition changes over time and which sources are growing fastest through the expanding bubble sizes.

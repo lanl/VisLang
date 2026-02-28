@@ -1,0 +1,10 @@
+{
+  "fields": [
+    "age",
+    "sex",
+    "people"
+  ],
+  "reasoning": "To show age distribution differences between males and females, we need age values, sex categories to differentiate the groups, and people counts to represent the population magnitude.",
+  "mark_hint": null,
+  "channel_hints": {}
+}

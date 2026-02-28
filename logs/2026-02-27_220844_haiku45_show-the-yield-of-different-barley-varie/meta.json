@@ -1,0 +1,6 @@
+{
+  "prompt": "Show the yield of different barley varieties across sites \u2014 which varieties perform best and does it depend on location?",
+  "data_path": "barley.json",
+  "model": "anthropic/claude-haiku-4-5-20251001",
+  "timestamp": "2026-02-27T22:08:44.192695"
+}

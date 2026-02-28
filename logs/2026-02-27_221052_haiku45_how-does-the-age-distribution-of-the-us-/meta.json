@@ -1,0 +1,6 @@
+{
+  "prompt": "How does the age distribution of the US population differ between males and females?",
+  "data_path": "population.json",
+  "model": "anthropic/claude-haiku-4-5-20251001",
+  "timestamp": "2026-02-27T22:10:52.320335"
+}

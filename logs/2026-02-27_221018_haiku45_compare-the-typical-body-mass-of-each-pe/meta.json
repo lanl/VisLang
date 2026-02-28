@@ -1,0 +1,6 @@
+{
+  "prompt": "Compare the typical body mass of each penguin species and whether flipper length varies with it",
+  "data_path": "penguins.json",
+  "model": "anthropic/claude-haiku-4-5-20251001",
+  "timestamp": "2026-02-27T22:10:18.413614"
+}

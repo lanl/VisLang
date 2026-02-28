@@ -1,0 +1,91 @@
+{
+  "spec_dict": {
+    "number_rows": 51,
+    "task": "summary",
+    "field": [
+      {
+        "name": "year",
+        "type": "string",
+        "unique": 17,
+        "entropy": 2833,
+        "freq": 3,
+        "min_length": 10,
+        "max_length": 10
+      },
+      {
+        "name": "source",
+        "type": "string",
+        "unique": 3,
+        "entropy": 1099,
+        "freq": 17,
+        "min_length": 10,
+        "max_length": 14
+      },
+      {
+        "name": "net_generation",
+        "type": "number",
+        "unique": 51,
+        "entropy": 3932,
+        "min": 1437,
+        "max": 42750,
+        "std": 14895,
+        "skew": 0
+      }
+    ],
+    "view": [
+      {
+        "coordinates": "cartesian",
+        "mark": [
+          {
+            "type": "point",
+            "encoding": [
+              {
+                "field": "year",
+                "channel": "x"
+              },
+              {
+                "field": "source",
+                "channel": "y"
+              },
+              {
+                "field": "net_generation",
+                "channel": "size"
+              }
+            ]
+          }
+        ],
+        "scale": [
+          {
+            "type": "ordinal",
+            "channel": "x"
+          },
+          {
+            "type": "ordinal",
+            "channel": "y"
+          },
+          {
+            "type": "linear",
+            "channel": "size",
+            "zero": "true"
+          }
+        ]
+      }
+    ]
+  },
+  "cost": [
+    25
+  ],
+  "violations": {
+    "encoding": 3,
+    "encoding_field": 3,
+    "x_y_raw": 1,
+    "linear_scale": 1,
+    "ordinal_scale": 2,
+    "d_d_point": 1,
+    "linear_size": 1,
+    "ordinal_x": 1,
+    "ordinal_y": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

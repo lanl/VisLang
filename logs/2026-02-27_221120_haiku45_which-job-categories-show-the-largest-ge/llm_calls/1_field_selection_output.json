@@ -1,0 +1,10 @@
+{
+  "fields": [
+    "job",
+    "sex",
+    "perc"
+  ],
+  "reasoning": "To identify job categories with the largest gender gap, we need to compare employment share (perc) between the two sex categories for each job, so job and sex are required for grouping/comparison, and perc quantifies the gap.",
+  "mark_hint": null,
+  "channel_hints": {}
+}

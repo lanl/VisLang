@@ -1,0 +1,52 @@
+{
+  "mark_type": "line",
+  "encodings": [
+    {
+      "channel": "x",
+      "field": "year"
+    },
+    {
+      "channel": "y",
+      "field": "deaths"
+    },
+    {
+      "channel": "color",
+      "field": "entity"
+    }
+  ],
+  "scales": [
+    {
+      "channel": "color",
+      "type": "ordinal"
+    },
+    {
+      "channel": "y",
+      "type": "linear",
+      "zero": "true"
+    },
+    {
+      "channel": "x",
+      "type": "linear"
+    }
+  ],
+  "coordinates": "cartesian",
+  "facets": [],
+  "task": "summary",
+  "cost": [
+    50
+  ],
+  "violations": {
+    "encoding": 3,
+    "encoding_field": 3,
+    "continuous_not_zero": 1,
+    "continuous_pos_not_zero": 1,
+    "linear_scale": 2,
+    "ordinal_scale": 1,
+    "c_c_line": 1,
+    "linear_x": 1,
+    "linear_y": 1,
+    "ordinal_color": 1,
+    "summary_line": 1,
+    "cartesian_coordinate": 1
+  }
+}

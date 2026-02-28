@@ -1,0 +1,11 @@
+{
+  "fields": [
+    "date",
+    "precipitation",
+    "temp_max",
+    "temp_min"
+  ],
+  "reasoning": "To compare seasonal patterns of temperature and precipitation, we need the date field to establish seasonality, precipitation to show wetness, and both temp_max and temp_min to characterize cold/warm months.",
+  "mark_hint": null,
+  "channel_hints": {}
+}

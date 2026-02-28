@@ -1,0 +1,100 @@
+{
+  "title": "Penguin Body Mass and Flipper Length by Species",
+  "width": 600,
+  "height": 400,
+  "layer": [
+    {
+      "mark": {
+        "type": "circle",
+        "opacity": 0.6,
+        "size": 100
+      },
+      "encoding": {
+        "x": {
+          "field": "body_Mass_g",
+          "type": "quantitative",
+          "title": "Body Mass (g)",
+          "scale": {
+            "zero": false
+          }
+        },
+        "y": {
+          "field": "flipper_Length_mm",
+          "type": "quantitative",
+          "title": "Flipper Length (mm)",
+          "scale": {
+            "zero": false
+          }
+        },
+        "color": {
+          "field": "species",
+          "type": "nominal",
+          "title": "Species",
+          "scale": {
+            "scheme": "set2"
+          }
+        },
+        "tooltip": [
+          {
+            "field": "species",
+            "type": "nominal",
+            "title": "Species"
+          },
+          {
+            "field": "body_Mass_g",
+            "type": "quantitative",
+            "title": "Body Mass (g)",
+            "format": ".0f"
+          },
+          {
+            "field": "flipper_Length_mm",
+            "type": "quantitative",
+            "title": "Flipper Length (mm)",
+            "format": ".1f"
+          },
+          {
+            "field": "island",
+            "type": "nominal",
+            "title": "Island"
+          },
+          {
+            "field": "sex",
+            "type": "nominal",
+            "title": "Sex"
+          }
+        ]
+      }
+    },
+    {
+      "mark": {
+        "type": "line",
+        "size": 2,
+        "opacity": 0.8
+      },
+      "transform": [
+        {
+          "regression": "flipper_Length_mm",
+          "on": "body_Mass_g",
+          "groupby": [
+            "species"
+          ]
+        }
+      ],
+      "encoding": {
+        "x": {
+          "field": "body_Mass_g",
+          "type": "quantitative"
+        },
+        "y": {
+          "field": "flipper_Length_mm",
+          "type": "quantitative"
+        },
+        "color": {
+          "field": "species",
+          "type": "nominal",
+          "legend": null
+        }
+      }
+    }
+  ]
+}

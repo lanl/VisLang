@@ -1,0 +1,11 @@
+{
+  "fields": [
+    "fertility",
+    "life_expectancy",
+    "pop",
+    "cluster"
+  ],
+  "reasoning": "Fertility and life expectancy are the primary variables to compare; population size and cluster (representing world regions) are needed to show their roles in the relationship.",
+  "mark_hint": null,
+  "channel_hints": {}
+}

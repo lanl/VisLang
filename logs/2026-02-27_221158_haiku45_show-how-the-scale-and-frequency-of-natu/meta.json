@@ -1,0 +1,6 @@
+{
+  "prompt": "Show how the scale and frequency of natural disasters has changed over time across different disaster types",
+  "data_path": "disasters.csv",
+  "model": "anthropic/claude-haiku-4-5-20251001",
+  "timestamp": "2026-02-27T22:11:58.036492"
+}

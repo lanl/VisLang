@@ -1,0 +1,6 @@
+{
+  "prompt": "Compare the seasonal patterns of temperature and precipitation in Seattle \u2014 are wet months also cold months?",
+  "data_path": "seattle-weather.csv",
+  "model": "anthropic/claude-haiku-4-5-20251001",
+  "timestamp": "2026-02-27T22:09:46.098391"
+}

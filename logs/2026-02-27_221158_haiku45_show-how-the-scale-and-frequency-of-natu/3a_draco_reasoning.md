@@ -1,0 +1,3 @@
+# Draco-Informed Design
+
+Following Draco's recommendations, I used a line mark with points to show temporal trends across disaster types. The x-axis represents years (linear scale) and y-axis represents deaths (linear scale with zero baseline). Each disaster type is distinguished by color using an ordinal scale with a categorical color scheme for clear differentiation. The line mark effectively reveals patterns and trends over the 117-year span, while the color encoding allows comparison across the 11 different disaster entities. Point marks are added for better interactivity and clarity at specific data points. Tooltips provide detailed information on hover, and axis labels are formatted for readability (deaths shown with thousand separators).

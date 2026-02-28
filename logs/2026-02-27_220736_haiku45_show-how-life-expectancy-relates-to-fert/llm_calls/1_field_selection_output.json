@@ -1,0 +1,10 @@
+{
+  "fields": [
+    "health",
+    "income",
+    "country"
+  ],
+  "reasoning": "Health (life expectancy) and income are the primary variables to show their relationship, with country identifying each data point; fertility rate is not available in the schema so income serves as the proxy for socioeconomic status to explain patterns.",
+  "mark_hint": null,
+  "channel_hints": {}
+}

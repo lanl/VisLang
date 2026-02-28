@@ -1,0 +1,3 @@
+# Draco-Informed Design
+
+This bubble chart is the most effective visualization for comparing three continuous variables across regions. Life expectancy and fertility rate are plotted on the x and y axes to show their inverse relationship clearly. Population size is encoded as bubble size using a square root scale to prevent large populations from dominating the visual space. Color represents world regions (clusters), allowing easy identification of regional patterns. The scatter plot reveals the strong negative correlation between life expectancy and fertility while simultaneously showing how population size varies across countries and regions. Tooltips enable detailed exploration of individual countries and their specific values.

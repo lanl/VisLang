@@ -1,0 +1,3 @@
+# Baseline Design
+
+I restructured the spec to use `layer` at the top level instead of nesting it within `mark` and `encoding`. The visualization uses two layers: (1) scatter plot circles colored by species to show individual penguins and their body mass/flipper length relationship, and (2) regression lines for each species to visualize the correlation trend. This design effectively addresses both user requests: comparing typical body mass across species (visible as horizontal clustering by species) and showing how flipper length varies with body mass (visible in the positive correlation and regression slopes). The color scheme distinguishes the three species, and tooltips provide detailed information for exploration.

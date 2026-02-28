@@ -1,0 +1,54 @@
+{
+  "mark_type": "point",
+  "encodings": [
+    {
+      "channel": "y",
+      "field": "job"
+    },
+    {
+      "channel": "x",
+      "field": "sex"
+    },
+    {
+      "channel": "size",
+      "field": "perc",
+      "aggregate": "mean"
+    }
+  ],
+  "scales": [
+    {
+      "channel": "y",
+      "type": "ordinal"
+    },
+    {
+      "channel": "x",
+      "type": "ordinal"
+    },
+    {
+      "channel": "size",
+      "type": "linear",
+      "zero": "true"
+    }
+  ],
+  "coordinates": "cartesian",
+  "facets": [],
+  "task": "summary",
+  "cost": [
+    36
+  ],
+  "violations": {
+    "aggregate": 1,
+    "encoding": 3,
+    "encoding_field": 3,
+    "high_cardinality_ordinal": 1,
+    "linear_scale": 1,
+    "ordinal_scale": 2,
+    "d_d_point": 1,
+    "linear_size": 1,
+    "ordinal_x": 1,
+    "ordinal_y": 1,
+    "aggregate_mean": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

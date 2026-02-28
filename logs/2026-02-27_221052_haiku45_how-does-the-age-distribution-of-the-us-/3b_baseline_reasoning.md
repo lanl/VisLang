@@ -1,0 +1,3 @@
+# Baseline Design
+
+A population pyramid is the most effective visualization for comparing age distributions between sexes. I used a diverging bar chart where males extend left (negative values) and females extend right (positive values) from a central axis, making it easy to compare populations at each age level. The 2000 data was selected as the most recent year to show current distribution. The ordinal y-axis displays ages in ascending order, and the quantitative x-axis uses signed values to create the pyramid effect. Color distinguishes between sexes, and tooltips provide exact population counts for interactive exploration. The axis labels use abbreviated format (e.g., '1M' for 1 million) for readability.

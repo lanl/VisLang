@@ -1,0 +1,63 @@
+{
+  "mark_type": "point",
+  "encodings": [
+    {
+      "channel": "color",
+      "field": "date"
+    },
+    {
+      "channel": "size",
+      "field": "precipitation"
+    },
+    {
+      "channel": "x",
+      "field": "temp_max"
+    },
+    {
+      "channel": "y",
+      "field": "temp_min"
+    }
+  ],
+  "scales": [
+    {
+      "channel": "color",
+      "type": "ordinal"
+    },
+    {
+      "channel": "size",
+      "type": "linear",
+      "zero": "true"
+    },
+    {
+      "channel": "x",
+      "type": "linear"
+    },
+    {
+      "channel": "y",
+      "type": "linear"
+    }
+  ],
+  "coordinates": "cartesian",
+  "facets": [],
+  "task": "summary",
+  "cost": [
+    52
+  ],
+  "violations": {
+    "encoding": 4,
+    "encoding_field": 4,
+    "multi_non_pos": 1,
+    "continuous_not_zero": 2,
+    "continuous_pos_not_zero": 2,
+    "high_cardinality_ordinal": 1,
+    "linear_scale": 3,
+    "ordinal_scale": 1,
+    "c_c_point": 1,
+    "linear_x": 1,
+    "linear_y": 1,
+    "linear_size": 1,
+    "ordinal_color": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

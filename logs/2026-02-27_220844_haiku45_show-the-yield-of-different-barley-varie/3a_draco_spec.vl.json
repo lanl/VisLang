@@ -1,0 +1,78 @@
+{
+  "title": "Barley Yield by Variety and Site",
+  "description": "Average yield of different barley varieties across growing sites",
+  "width": 500,
+  "height": 300,
+  "data": {
+    "url": "barley.json"
+  },
+  "mark": {
+    "type": "point",
+    "filled": true,
+    "opacity": 0.8
+  },
+  "encoding": {
+    "x": {
+      "field": "variety",
+      "type": "ordinal",
+      "title": "Barley Variety",
+      "axis": {
+        "labelAngle": 45,
+        "labelAlign": "left"
+      }
+    },
+    "y": {
+      "field": "site",
+      "type": "ordinal",
+      "title": "Growing Site"
+    },
+    "size": {
+      "field": "yield",
+      "type": "quantitative",
+      "aggregate": "mean",
+      "title": "Average Yield",
+      "scale": {
+        "type": "linear",
+        "zero": true,
+        "range": [
+          100,
+          400
+        ]
+      }
+    },
+    "color": {
+      "field": "yield",
+      "type": "quantitative",
+      "aggregate": "mean",
+      "scale": {
+        "scheme": "viridis"
+      },
+      "title": "Average Yield"
+    },
+    "tooltip": [
+      {
+        "field": "variety",
+        "type": "nominal",
+        "title": "Variety"
+      },
+      {
+        "field": "site",
+        "type": "nominal",
+        "title": "Site"
+      },
+      {
+        "field": "yield",
+        "type": "quantitative",
+        "aggregate": "mean",
+        "title": "Average Yield",
+        "format": ".2f"
+      },
+      {
+        "field": "yield",
+        "type": "quantitative",
+        "aggregate": "count",
+        "title": "Observations"
+      }
+    ]
+  }
+}

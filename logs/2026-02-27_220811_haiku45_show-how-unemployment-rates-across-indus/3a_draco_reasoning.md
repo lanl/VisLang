@@ -1,0 +1,3 @@
+# Draco-Informed Design
+
+Fixed the validation error by changing the x-axis type from 'linear' to 'quantitative', which is the correct Vega-Lite data type specification. The scale type remains 'linear' within the scale object. Following Draco's recommendations, point marks display industries on the y-axis (ordinal) and binned dates on the x-axis (quantitative). Mean unemployment rate is encoded as both size and color using a red sequential scheme to highlight severity during recessions. The binning aggregates data into 10-unit time periods to reduce overplotting while preserving temporal trends. Industries are sorted by maximum unemployment rate for readability, and tooltips enable detailed exploration of specific periods.

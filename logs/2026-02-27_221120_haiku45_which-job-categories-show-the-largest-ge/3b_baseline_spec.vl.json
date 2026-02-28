@@ -1,0 +1,121 @@
+{
+  "title": "Gender Gap in Employment Share by Job Category",
+  "description": "Largest differences in employment percentage between men and women across job categories",
+  "width": 900,
+  "height": 600,
+  "data": {
+    "url": "jobs.json"
+  },
+  "transform": [
+    {
+      "filter": "datum.year == 2000"
+    },
+    {
+      "pivot": "sex",
+      "value": "perc",
+      "groupby": [
+        "job"
+      ]
+    },
+    {
+      "calculate": "abs(datum.men - datum.women)",
+      "as": "gender_gap"
+    },
+    {
+      "calculate": "datum.men > datum.women ? datum.men - datum.women : datum.women - datum.men",
+      "as": "gap_signed"
+    },
+    {
+      "calculate": "datum.men > datum.women ? 'Male-dominated' : 'Female-dominated'",
+      "as": "gap_direction"
+    },
+    {
+      "window": [
+        {
+          "op": "rank",
+          "as": "rank"
+        }
+      ],
+      "sort": [
+        {
+          "field": "gender_gap",
+          "order": "descending"
+        }
+      ]
+    },
+    {
+      "filter": "datum.rank <= 20"
+    }
+  ],
+  "mark": {
+    "type": "bar",
+    "tooltip": true
+  },
+  "encoding": {
+    "y": {
+      "field": "job",
+      "type": "nominal",
+      "sort": {
+        "field": "gender_gap",
+        "order": "descending"
+      },
+      "title": "Job Category",
+      "axis": {
+        "labelLimit": 200
+      }
+    },
+    "x": {
+      "field": "gender_gap",
+      "type": "quantitative",
+      "title": "Gender Gap (Absolute Difference in Employment Share)",
+      "axis": {
+        "format": ".1%"
+      }
+    },
+    "color": {
+      "field": "gap_direction",
+      "type": "nominal",
+      "title": "Gap Direction",
+      "scale": {
+        "domain": [
+          "Male-dominated",
+          "Female-dominated"
+        ],
+        "range": [
+          "#1f77b4",
+          "#ff7f0e"
+        ]
+      }
+    },
+    "tooltip": [
+      {
+        "field": "job",
+        "type": "nominal",
+        "title": "Job Category"
+      },
+      {
+        "field": "gender_gap",
+        "type": "quantitative",
+        "title": "Gender Gap",
+        "format": ".2%"
+      },
+      {
+        "field": "men",
+        "type": "quantitative",
+        "title": "Men's Share",
+        "format": ".2%"
+      },
+      {
+        "field": "women",
+        "type": "quantitative",
+        "title": "Women's Share",
+        "format": ".2%"
+      },
+      {
+        "field": "gap_direction",
+        "type": "nominal",
+        "title": "Direction"
+      }
+    ]
+  }
+}

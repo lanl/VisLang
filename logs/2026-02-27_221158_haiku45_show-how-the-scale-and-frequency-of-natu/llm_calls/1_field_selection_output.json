@@ -1,0 +1,14 @@
+{
+  "fields": [
+    "year",
+    "deaths",
+    "entity"
+  ],
+  "reasoning": "Year captures the temporal dimension, deaths quantifies the scale and frequency of disasters, and entity distinguishes between different disaster types to enable comparison across categories.",
+  "mark_hint": "line",
+  "channel_hints": {
+    "year": "x",
+    "deaths": "y",
+    "entity": "color"
+  }
+}

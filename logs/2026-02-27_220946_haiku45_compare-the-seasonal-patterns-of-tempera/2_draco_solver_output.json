@@ -1,0 +1,133 @@
+{
+  "spec_dict": {
+    "number_rows": 1461,
+    "task": "summary",
+    "field": [
+      {
+        "name": "date",
+        "type": "string",
+        "unique": 1461,
+        "entropy": 7287,
+        "freq": 1,
+        "min_length": 10,
+        "max_length": 10
+      },
+      {
+        "name": "precipitation",
+        "type": "number",
+        "unique": 111,
+        "entropy": 2422,
+        "min": 0,
+        "max": 55,
+        "std": 6,
+        "skew": 3
+      },
+      {
+        "name": "temp_max",
+        "type": "number",
+        "unique": 67,
+        "entropy": 3934,
+        "min": -1,
+        "max": 35,
+        "std": 7,
+        "skew": 0
+      },
+      {
+        "name": "temp_min",
+        "type": "number",
+        "unique": 55,
+        "entropy": 3596,
+        "min": -7,
+        "max": 18,
+        "std": 5,
+        "skew": 0
+      },
+      {
+        "name": "wind",
+        "type": "number",
+        "unique": 79,
+        "entropy": 3950,
+        "min": 0,
+        "max": 9,
+        "std": 1,
+        "skew": 0
+      },
+      {
+        "name": "weather",
+        "type": "string",
+        "unique": 5,
+        "entropy": 1100,
+        "freq": 641,
+        "min_length": 3,
+        "max_length": 7
+      }
+    ],
+    "view": [
+      {
+        "coordinates": "cartesian",
+        "mark": [
+          {
+            "type": "point",
+            "encoding": [
+              {
+                "field": "date",
+                "channel": "color"
+              },
+              {
+                "field": "precipitation",
+                "channel": "size"
+              },
+              {
+                "field": "temp_max",
+                "channel": "x"
+              },
+              {
+                "field": "temp_min",
+                "channel": "y"
+              }
+            ]
+          }
+        ],
+        "scale": [
+          {
+            "type": "ordinal",
+            "channel": "color"
+          },
+          {
+            "type": "linear",
+            "channel": "size",
+            "zero": "true"
+          },
+          {
+            "type": "linear",
+            "channel": "x"
+          },
+          {
+            "type": "linear",
+            "channel": "y"
+          }
+        ]
+      }
+    ]
+  },
+  "cost": [
+    52
+  ],
+  "violations": {
+    "encoding": 4,
+    "encoding_field": 4,
+    "multi_non_pos": 1,
+    "continuous_not_zero": 2,
+    "continuous_pos_not_zero": 2,
+    "high_cardinality_ordinal": 1,
+    "linear_scale": 3,
+    "ordinal_scale": 1,
+    "c_c_point": 1,
+    "linear_x": 1,
+    "linear_y": 1,
+    "linear_size": 1,
+    "ordinal_color": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

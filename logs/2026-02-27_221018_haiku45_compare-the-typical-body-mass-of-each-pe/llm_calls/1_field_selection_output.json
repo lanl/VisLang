@@ -1,0 +1,10 @@
+{
+  "fields": [
+    "species",
+    "body_Mass_g",
+    "flipper_Length_mm"
+  ],
+  "reasoning": "Species is needed for grouping/comparison, body_Mass_g for typical mass by species, and flipper_Length_mm to show the relationship between flipper length and body mass.",
+  "mark_hint": null,
+  "channel_hints": {}
+}

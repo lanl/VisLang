@@ -1,0 +1,114 @@
+{
+  "spec_dict": {
+    "number_rows": 187,
+    "task": "summary",
+    "field": [
+      {
+        "name": "country",
+        "type": "string",
+        "unique": 187,
+        "entropy": 5231,
+        "freq": 1,
+        "min_length": 3,
+        "max_length": 30
+      },
+      {
+        "name": "income",
+        "type": "number",
+        "unique": 187,
+        "entropy": 5231,
+        "min": 599,
+        "max": 132877,
+        "std": 19310,
+        "skew": 2
+      },
+      {
+        "name": "health",
+        "type": "number",
+        "unique": 140,
+        "entropy": 4851,
+        "min": 48,
+        "max": 84,
+        "std": 7,
+        "skew": 0
+      },
+      {
+        "name": "population",
+        "type": "number",
+        "unique": 187,
+        "entropy": 5231,
+        "min": 52993,
+        "max": 1376048943,
+        "std": 143289835,
+        "skew": 8
+      },
+      {
+        "name": "region",
+        "type": "string",
+        "unique": 6,
+        "entropy": 1665,
+        "freq": 50,
+        "min_length": 7,
+        "max_length": 24
+      }
+    ],
+    "view": [
+      {
+        "coordinates": "cartesian",
+        "mark": [
+          {
+            "type": "point",
+            "encoding": [
+              {
+                "field": "health",
+                "channel": "x",
+                "binning": 10
+              },
+              {
+                "field": "income",
+                "channel": "size"
+              },
+              {
+                "field": "country",
+                "channel": "y"
+              }
+            ]
+          }
+        ],
+        "scale": [
+          {
+            "type": "linear",
+            "channel": "x"
+          },
+          {
+            "type": "linear",
+            "channel": "size",
+            "zero": "true"
+          },
+          {
+            "type": "ordinal",
+            "channel": "y"
+          }
+        ]
+      }
+    ]
+  },
+  "cost": [
+    34
+  ],
+  "violations": {
+    "bin": 1,
+    "encoding": 3,
+    "encoding_field": 3,
+    "x_y_raw": 1,
+    "high_cardinality_ordinal": 1,
+    "linear_scale": 2,
+    "ordinal_scale": 1,
+    "d_d_point": 1,
+    "linear_x": 1,
+    "linear_size": 1,
+    "ordinal_y": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

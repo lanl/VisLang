@@ -1,0 +1,70 @@
+{
+  "vegalite_spec": {
+    "title": "Iowa Electricity Generation Mix Over Time",
+    "width": 900,
+    "height": 500,
+    "data": {
+      "url": "iowa-electricity.csv"
+    },
+    "transform": [
+      {
+        "calculate": "year(datum.year)",
+        "as": "year_num"
+      }
+    ],
+    "mark": {
+      "type": "area",
+      "opacity": 0.7,
+      "interpolate": "monotone"
+    },
+    "encoding": {
+      "x": {
+        "field": "year_num",
+        "type": "temporal",
+        "axis": {
+          "title": "Year",
+          "format": "%Y"
+        }
+      },
+      "y": {
+        "aggregate": "sum",
+        "field": "net_generation",
+        "type": "quantitative",
+        "axis": {
+          "title": "Net Generation (GWh)"
+        },
+        "stack": "normalize"
+      },
+      "color": {
+        "field": "source",
+        "type": "nominal",
+        "scale": {
+          "scheme": "tableau10"
+        },
+        "legend": {
+          "title": "Energy Source"
+        }
+      },
+      "tooltip": [
+        {
+          "field": "year_num",
+          "type": "temporal",
+          "format": "%Y",
+          "title": "Year"
+        },
+        {
+          "field": "source",
+          "type": "nominal",
+          "title": "Source"
+        },
+        {
+          "field": "net_generation",
+          "type": "quantitative",
+          "title": "Net Generation (GWh)",
+          "format": ",.0f"
+        }
+      ]
+    }
+  },
+  "reasoning": "I chose a stacked area chart with normalized (100%) scale to effectively show both the composition changes and relative growth of energy sources over time. This visualization makes it easy to see: (1) how the overall mix has shifted between sources, (2) which sources are growing (expanding areas) vs. declining (shrinking areas), and (3) the proportional contribution of each source. The normalized scale emphasizes the compositional changes, while the tooltip provides absolute generation values for detailed exploration. The smooth interpolation and semi-transparent areas improve readability when sources overlap."
+}

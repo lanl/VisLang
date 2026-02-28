@@ -1,0 +1,114 @@
+{
+  "spec_dict": {
+    "number_rows": 7650,
+    "task": "summary",
+    "field": [
+      {
+        "name": "job",
+        "type": "string",
+        "unique": 255,
+        "entropy": 5541,
+        "freq": 30,
+        "min_length": 4,
+        "max_length": 31
+      },
+      {
+        "name": "sex",
+        "type": "string",
+        "unique": 2,
+        "entropy": 693,
+        "freq": 3825,
+        "min_length": 3,
+        "max_length": 5
+      },
+      {
+        "name": "year",
+        "type": "number",
+        "unique": 15,
+        "entropy": 2708,
+        "min": 1850,
+        "max": 2000,
+        "std": 46,
+        "skew": 0
+      },
+      {
+        "name": "count",
+        "type": "number",
+        "unique": 4415,
+        "entropy": 6442,
+        "min": 0,
+        "max": 11270779,
+        "std": 540079,
+        "skew": 8
+      },
+      {
+        "name": "perc",
+        "type": "number",
+        "unique": 4711,
+        "entropy": 6615,
+        "min": 0,
+        "max": 0,
+        "std": 0,
+        "skew": 18
+      }
+    ],
+    "view": [
+      {
+        "coordinates": "cartesian",
+        "mark": [
+          {
+            "type": "point",
+            "encoding": [
+              {
+                "field": "job",
+                "channel": "y"
+              },
+              {
+                "field": "sex",
+                "channel": "x"
+              },
+              {
+                "field": "perc",
+                "channel": "size",
+                "aggregate": "mean"
+              }
+            ]
+          }
+        ],
+        "scale": [
+          {
+            "type": "ordinal",
+            "channel": "y"
+          },
+          {
+            "type": "ordinal",
+            "channel": "x"
+          },
+          {
+            "type": "linear",
+            "channel": "size",
+            "zero": "true"
+          }
+        ]
+      }
+    ]
+  },
+  "cost": [
+    36
+  ],
+  "violations": {
+    "aggregate": 1,
+    "encoding": 3,
+    "encoding_field": 3,
+    "high_cardinality_ordinal": 1,
+    "linear_scale": 1,
+    "ordinal_scale": 2,
+    "d_d_point": 1,
+    "linear_size": 1,
+    "ordinal_x": 1,
+    "ordinal_y": 1,
+    "aggregate_mean": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

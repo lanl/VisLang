@@ -1,0 +1,134 @@
+{
+  "spec_dict": {
+    "number_rows": 344,
+    "task": "summary",
+    "field": [
+      {
+        "name": "species",
+        "type": "string",
+        "unique": 3,
+        "entropy": 1049,
+        "freq": 152,
+        "min_length": 6,
+        "max_length": 9
+      },
+      {
+        "name": "island",
+        "type": "string",
+        "unique": 3,
+        "entropy": 1003,
+        "freq": 168,
+        "min_length": 5,
+        "max_length": 9
+      },
+      {
+        "name": "beak_Length_mm",
+        "type": "number",
+        "unique": 165,
+        "entropy": 4953,
+        "min": 32,
+        "max": 59,
+        "std": 5,
+        "skew": 0
+      },
+      {
+        "name": "beak_Depth_mm",
+        "type": "number",
+        "unique": 81,
+        "entropy": 4195,
+        "min": 13,
+        "max": 21,
+        "std": 1,
+        "skew": 0
+      },
+      {
+        "name": "flipper_Length_mm",
+        "type": "number",
+        "unique": 56,
+        "entropy": 3787,
+        "min": 172,
+        "max": 231,
+        "std": 14,
+        "skew": 0
+      },
+      {
+        "name": "body_Mass_g",
+        "type": "number",
+        "unique": 95,
+        "entropy": 4320,
+        "min": 2700,
+        "max": 6300,
+        "std": 801,
+        "skew": 0
+      },
+      {
+        "name": "sex",
+        "type": "string",
+        "unique": 4,
+        "entropy": 822,
+        "freq": 168,
+        "min_length": 1,
+        "max_length": 6
+      }
+    ],
+    "view": [
+      {
+        "coordinates": "cartesian",
+        "mark": [
+          {
+            "type": "point",
+            "encoding": [
+              {
+                "field": "species",
+                "channel": "y"
+              },
+              {
+                "field": "body_Mass_g",
+                "channel": "size",
+                "aggregate": "mean"
+              },
+              {
+                "field": "flipper_Length_mm",
+                "channel": "x",
+                "binning": 10
+              }
+            ]
+          }
+        ],
+        "scale": [
+          {
+            "type": "ordinal",
+            "channel": "y"
+          },
+          {
+            "type": "linear",
+            "channel": "size",
+            "zero": "true"
+          },
+          {
+            "type": "linear",
+            "channel": "x"
+          }
+        ]
+      }
+    ]
+  },
+  "cost": [
+    25
+  ],
+  "violations": {
+    "aggregate": 1,
+    "bin": 1,
+    "encoding": 3,
+    "encoding_field": 3,
+    "linear_scale": 2,
+    "ordinal_scale": 1,
+    "d_d_point": 1,
+    "linear_x": 1,
+    "linear_size": 1,
+    "ordinal_y": 1,
+    "aggregate_mean": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

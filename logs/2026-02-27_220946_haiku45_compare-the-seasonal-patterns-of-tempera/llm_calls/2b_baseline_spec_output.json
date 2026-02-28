@@ -1,0 +1,194 @@
+{
+  "vegalite_spec": {
+    "title": "Seasonal Patterns: Temperature vs Precipitation in Seattle",
+    "width": 900,
+    "height": 500,
+    "data": {
+      "url": "seattle-weather.csv",
+      "format": {
+        "parse": {
+          "date": "date"
+        }
+      }
+    },
+    "transform": [
+      {
+        "calculate": "month(datum.date)",
+        "as": "month"
+      },
+      {
+        "calculate": "datum.month === 1 ? 'Jan' : datum.month === 2 ? 'Feb' : datum.month === 3 ? 'Mar' : datum.month === 4 ? 'Apr' : datum.month === 5 ? 'May' : datum.month === 6 ? 'Jun' : datum.month === 7 ? 'Jul' : datum.month === 8 ? 'Aug' : datum.month === 9 ? 'Sep' : datum.month === 10 ? 'Oct' : datum.month === 11 ? 'Nov' : 'Dec'",
+        "as": "month_name"
+      },
+      {
+        "aggregate": [
+          {
+            "op": "mean",
+            "field": "temp_max",
+            "as": "avg_temp_max"
+          },
+          {
+            "op": "mean",
+            "field": "temp_min",
+            "as": "avg_temp_min"
+          },
+          {
+            "op": "sum",
+            "field": "precipitation",
+            "as": "total_precipitation"
+          }
+        ],
+        "groupby": [
+          "month",
+          "month_name"
+        ]
+      },
+      {
+        "calculate": "(datum.avg_temp_max + datum.avg_temp_min) / 2",
+        "as": "avg_temp"
+      }
+    ],
+    "layer": [
+      {
+        "mark": {
+          "type": "bar",
+          "opacity": 0.6,
+          "color": "#4472C4"
+        },
+        "encoding": {
+          "x": {
+            "field": "month_name",
+            "type": "ordinal",
+            "sort": [
+              "Jan",
+              "Feb",
+              "Mar",
+              "Apr",
+              "May",
+              "Jun",
+              "Jul",
+              "Aug",
+              "Sep",
+              "Oct",
+              "Nov",
+              "Dec"
+            ],
+            "axis": {
+              "title": "Month",
+              "labelAngle": 0
+            }
+          },
+          "y": {
+            "field": "total_precipitation",
+            "type": "quantitative",
+            "axis": {
+              "title": "Total Precipitation (mm)",
+              "titleColor": "#4472C4"
+            },
+            "scale": {
+              "domain": [
+                0,
+                350
+              ]
+            }
+          },
+          "tooltip": [
+            {
+              "field": "month_name",
+              "type": "nominal",
+              "title": "Month"
+            },
+            {
+              "field": "total_precipitation",
+              "type": "quantitative",
+              "title": "Total Precipitation (mm)",
+              "format": ".1f"
+            },
+            {
+              "field": "avg_temp",
+              "type": "quantitative",
+              "title": "Avg Temperature (\u00b0C)",
+              "format": ".1f"
+            }
+          ]
+        }
+      },
+      {
+        "mark": {
+          "type": "line",
+          "color": "#ED7D31",
+          "size": 3,
+          "point": true
+        },
+        "encoding": {
+          "x": {
+            "field": "month_name",
+            "type": "ordinal",
+            "sort": [
+              "Jan",
+              "Feb",
+              "Mar",
+              "Apr",
+              "May",
+              "Jun",
+              "Jul",
+              "Aug",
+              "Sep",
+              "Oct",
+              "Nov",
+              "Dec"
+            ]
+          },
+          "y": {
+            "field": "avg_temp",
+            "type": "quantitative",
+            "axis": {
+              "title": "Average Temperature (\u00b0C)",
+              "titleColor": "#ED7D31"
+            },
+            "scale": {
+              "domain": [
+                5,
+                22
+              ]
+            }
+          },
+          "tooltip": [
+            {
+              "field": "month_name",
+              "type": "nominal",
+              "title": "Month"
+            },
+            {
+              "field": "total_precipitation",
+              "type": "quantitative",
+              "title": "Total Precipitation (mm)",
+              "format": ".1f"
+            },
+            {
+              "field": "avg_temp",
+              "type": "quantitative",
+              "title": "Avg Temperature (\u00b0C)",
+              "format": ".1f"
+            }
+          ]
+        }
+      }
+    ],
+    "resolve": {
+      "scale": {
+        "y": "independent"
+      }
+    },
+    "config": {
+      "axis": {
+        "labelFontSize": 11,
+        "titleFontSize": 12
+      },
+      "legend": {
+        "disable": true
+      }
+    }
+  },
+  "reasoning": "This dual-axis visualization effectively compares seasonal temperature and precipitation patterns. The bar chart (blue) shows monthly precipitation totals, while the line chart (orange) displays average temperature trends. This design allows viewers to directly observe the relationship between wet and cold months. The dual y-axes are necessary because the variables have different scales and units. The ordinal x-axis with month names provides clear temporal context. Tooltips enable detailed exploration of specific months. The color scheme uses contrasting colors to distinguish the two variables, and the bar opacity allows the line to remain visible. This layout directly answers whether wet months are also cold months\u2014revealing Seattle's characteristic winter rainfall and mild summers."
+}

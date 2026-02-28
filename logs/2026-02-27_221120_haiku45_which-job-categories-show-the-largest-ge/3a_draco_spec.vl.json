@@ -1,0 +1,140 @@
+{
+  "title": "Gender Gap in Employment Share by Job Category",
+  "description": "Comparing average employment share between men and women across job categories to identify largest gender gaps",
+  "width": 800,
+  "height": 600,
+  "data": {
+    "url": "jobs.json"
+  },
+  "transform": [
+    {
+      "aggregate": [
+        {
+          "op": "mean",
+          "field": "perc",
+          "as": "avg_perc"
+        }
+      ],
+      "groupby": [
+        "job",
+        "sex"
+      ]
+    },
+    {
+      "pivot": "sex",
+      "value": "avg_perc",
+      "groupby": [
+        "job"
+      ]
+    },
+    {
+      "calculate": "abs(datum.men - datum.women)",
+      "as": "gender_gap"
+    },
+    {
+      "window": [
+        {
+          "op": "rank",
+          "as": "rank"
+        }
+      ],
+      "sort": [
+        {
+          "field": "gender_gap",
+          "order": "descending"
+        }
+      ]
+    },
+    {
+      "filter": "datum.rank <= 30"
+    },
+    {
+      "fold": [
+        "men",
+        "women"
+      ],
+      "as": [
+        "sex",
+        "perc"
+      ]
+    }
+  ],
+  "mark": {
+    "type": "point",
+    "filled": true,
+    "opacity": 0.8
+  },
+  "encoding": {
+    "y": {
+      "field": "job",
+      "type": "ordinal",
+      "sort": {
+        "field": "gender_gap",
+        "order": "descending"
+      },
+      "title": "Job Category",
+      "axis": {
+        "labelFontSize": 11
+      }
+    },
+    "x": {
+      "field": "sex",
+      "type": "ordinal",
+      "title": "Gender",
+      "axis": {
+        "labelFontSize": 12
+      }
+    },
+    "size": {
+      "field": "perc",
+      "type": "quantitative",
+      "scale": {
+        "zero": true,
+        "range": [
+          100,
+          400
+        ]
+      },
+      "title": "Avg Employment Share"
+    },
+    "color": {
+      "field": "sex",
+      "type": "nominal",
+      "scale": {
+        "domain": [
+          "men",
+          "women"
+        ],
+        "range": [
+          "#1f77b4",
+          "#ff7f0e"
+        ]
+      },
+      "title": "Gender"
+    },
+    "tooltip": [
+      {
+        "field": "job",
+        "type": "nominal",
+        "title": "Job Category"
+      },
+      {
+        "field": "sex",
+        "type": "nominal",
+        "title": "Gender"
+      },
+      {
+        "field": "perc",
+        "type": "quantitative",
+        "title": "Avg Employment Share",
+        "format": ".2%"
+      },
+      {
+        "field": "gender_gap",
+        "type": "quantitative",
+        "title": "Gender Gap",
+        "format": ".2%"
+      }
+    ]
+  }
+}

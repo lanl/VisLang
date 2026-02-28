@@ -1,0 +1,3 @@
+# Draco-Informed Design
+
+Fixed the bin transform by adding the 'step' parameter set to 10 to properly specify the binning interval, which is required by Vega-Lite's bin transform syntax. The visualization follows Draco's recommendations: point marks encode flipper length (x-axis, binned into 10mm intervals) and mean body mass (point size) for each species (y-axis). This design effectively shows both the typical body mass per species through point size variation and how flipper length relates to body mass through the horizontal distribution of points across flipper length bins.

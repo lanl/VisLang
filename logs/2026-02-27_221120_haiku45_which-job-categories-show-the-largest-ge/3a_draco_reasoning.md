@@ -1,0 +1,3 @@
+# Draco-Informed Design
+
+Fixed the scale type error by changing 'linear' to 'quantitative' in the size encoding's type field. The 'type' property in Vega-Lite encodings must use valid data types (quantitative, ordinal, temporal, nominal, geojson), not scale types. The scale object itself correctly specifies the scale type through its properties. The visualization maintains Draco's structural recommendations: point marks with job on y-axis, gender on x-axis, and size encoding average employment share. The transform pipeline calculates gender gaps and filters to the top 30 categories with largest disparities, sorted for easy comparison.

@@ -1,0 +1,68 @@
+{
+  "vegalite_spec": {
+    "title": "Natural Disasters: Deaths Over Time by Disaster Type",
+    "width": 1000,
+    "height": 600,
+    "mark": {
+      "type": "line",
+      "point": true,
+      "tooltip": true
+    },
+    "encoding": {
+      "x": {
+        "field": "year",
+        "type": "quantitative",
+        "scale": {
+          "type": "linear"
+        },
+        "axis": {
+          "title": "Year",
+          "labelAngle": 0
+        }
+      },
+      "y": {
+        "field": "deaths",
+        "type": "quantitative",
+        "scale": {
+          "type": "linear",
+          "zero": true
+        },
+        "axis": {
+          "title": "Number of Deaths",
+          "format": ",.0f"
+        }
+      },
+      "color": {
+        "field": "entity",
+        "type": "nominal",
+        "scale": {
+          "type": "ordinal",
+          "scheme": "category10"
+        },
+        "legend": {
+          "title": "Disaster Type",
+          "orient": "right"
+        }
+      },
+      "tooltip": [
+        {
+          "field": "year",
+          "type": "quantitative",
+          "title": "Year"
+        },
+        {
+          "field": "entity",
+          "type": "nominal",
+          "title": "Disaster Type"
+        },
+        {
+          "field": "deaths",
+          "type": "quantitative",
+          "title": "Deaths",
+          "format": ",.0f"
+        }
+      ]
+    }
+  },
+  "reasoning": "Following Draco's recommendations, I used a line mark with points to show temporal trends across disaster types. The x-axis represents years (linear scale) and y-axis represents deaths (linear scale with zero baseline). Each disaster type is distinguished by color using an ordinal scale with a categorical color scheme for clear differentiation. The line mark effectively reveals patterns and trends over the 117-year span, while the color encoding allows comparison across the 11 different disaster entities. Point marks are added for better interactivity and clarity at specific data points. Tooltips provide detailed information on hover, and axis labels are formatted for readability (deaths shown with thousand separators)."
+}

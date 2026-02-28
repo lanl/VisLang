@@ -1,0 +1,103 @@
+{
+  "vegalite_spec": {
+    "title": "Penguin Body Mass and Flipper Length by Species",
+    "width": 600,
+    "height": 400,
+    "layer": [
+      {
+        "mark": {
+          "type": "circle",
+          "opacity": 0.6,
+          "size": 100
+        },
+        "encoding": {
+          "x": {
+            "field": "body_Mass_g",
+            "type": "quantitative",
+            "title": "Body Mass (g)",
+            "scale": {
+              "zero": false
+            }
+          },
+          "y": {
+            "field": "flipper_Length_mm",
+            "type": "quantitative",
+            "title": "Flipper Length (mm)",
+            "scale": {
+              "zero": false
+            }
+          },
+          "color": {
+            "field": "species",
+            "type": "nominal",
+            "title": "Species",
+            "scale": {
+              "scheme": "set2"
+            }
+          },
+          "tooltip": [
+            {
+              "field": "species",
+              "type": "nominal",
+              "title": "Species"
+            },
+            {
+              "field": "body_Mass_g",
+              "type": "quantitative",
+              "title": "Body Mass (g)",
+              "format": ".0f"
+            },
+            {
+              "field": "flipper_Length_mm",
+              "type": "quantitative",
+              "title": "Flipper Length (mm)",
+              "format": ".1f"
+            },
+            {
+              "field": "island",
+              "type": "nominal",
+              "title": "Island"
+            },
+            {
+              "field": "sex",
+              "type": "nominal",
+              "title": "Sex"
+            }
+          ]
+        }
+      },
+      {
+        "mark": {
+          "type": "line",
+          "size": 2,
+          "opacity": 0.8
+        },
+        "transform": [
+          {
+            "regression": "flipper_Length_mm",
+            "on": "body_Mass_g",
+            "groupby": [
+              "species"
+            ]
+          }
+        ],
+        "encoding": {
+          "x": {
+            "field": "body_Mass_g",
+            "type": "quantitative"
+          },
+          "y": {
+            "field": "flipper_Length_mm",
+            "type": "quantitative"
+          },
+          "color": {
+            "field": "species",
+            "type": "nominal",
+            "legend": null
+          }
+        }
+      }
+    ]
+  },
+  "reasoning": "I restructured the spec to use `layer` at the top level instead of nesting it within `mark` and `encoding`. The visualization uses two layers: (1) scatter plot circles colored by species to show individual penguins and their body mass/flipper length relationship, and (2) regression lines for each species to visualize the correlation trend. This design effectively addresses both user requests: comparing typical body mass across species (visible as horizontal clustering by species) and showing how flipper length varies with body mass (visible in the positive correlation and regression slopes). The color scheme distinguishes the three species, and tooltips provide detailed information for exploration."
+}

@@ -1,0 +1,3 @@
+# Baseline Design
+
+This scatter plot design effectively shows the relationship between barley varieties and yield while revealing site-specific patterns. Key design choices: (1) Varieties on x-axis for easy comparison across varieties; (2) Yield on y-axis to directly show performance; (3) Color encoding by site to reveal location-dependent patterns—allowing viewers to see if certain varieties perform better at specific sites; (4) Point marks with opacity to handle overplotting from multiple years; (5) Tooltips for detailed inspection of individual data points. This layout makes it easy to identify top-performing varieties overall (those with higher y-values) and whether performance is location-dependent (by observing color clustering patterns).

@@ -1,0 +1,3 @@
+# Baseline Design
+
+This visualization uses line charts with dashed lines for recession periods to effectively show unemployment trends across industries over time. Key design choices: (1) Temporal x-axis shows the full 2000-2010 period; (2) Color encoding distinguishes industries for easy comparison; (3) Stroke dash pattern differentiates recession vs expansion periods without cluttering the view; (4) Points on lines aid readability; (5) Tooltips provide precise values for exploration; (6) The 2001 recession, 2008-2009 financial crisis, and expansion periods are marked using domain knowledge of US economic cycles. This allows viewers to see how different industries were affected differently during economic downturns vs growth periods.

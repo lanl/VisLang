@@ -1,0 +1,6 @@
+{
+  "prompt": "Which job categories show the largest gender gap in employment share?",
+  "data_path": "jobs.json",
+  "model": "anthropic/claude-haiku-4-5-20251001",
+  "timestamp": "2026-02-27T22:11:20.271346"
+}

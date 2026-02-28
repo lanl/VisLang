@@ -1,5 +1,0 @@
-{
-  "prompt": "How does fuel efficiency vary across different origins, and does engine size play a role?",
-  "data_path": "vega-datasets/data/cars.json",
-  "timestamp": "2026-02-27"
-}

@@ -1,0 +1,35 @@
+[
+  {
+    "attempt": 1,
+    "fields": [
+      "fertility",
+      "life_expectancy",
+      "pop",
+      "cluster"
+    ],
+    "status": "no_results",
+    "error": "Draco solver returned empty results"
+  },
+  {
+    "attempt": 2,
+    "fields": [
+      "fertility",
+      "life_expectancy",
+      "pop",
+      "cluster"
+    ],
+    "status": "no_results",
+    "error": "Draco solver returned empty results"
+  },
+  {
+    "attempt": 3,
+    "fields": [
+      "fertility",
+      "life_expectancy",
+      "pop",
+      "cluster"
+    ],
+    "status": "no_results",
+    "error": "Draco solver returned empty results"
+  }
+]

@@ -1,0 +1,61 @@
+{
+  "title": "Barley Yield by Variety and Site",
+  "width": 900,
+  "height": 500,
+  "data": {
+    "url": "barley.json"
+  },
+  "mark": {
+    "type": "point",
+    "filled": true,
+    "opacity": 0.7,
+    "size": 100
+  },
+  "encoding": {
+    "x": {
+      "field": "variety",
+      "type": "nominal",
+      "title": "Barley Variety",
+      "axis": {
+        "labelAngle": 45,
+        "labelAlign": "left"
+      }
+    },
+    "y": {
+      "field": "yield",
+      "type": "quantitative",
+      "title": "Yield"
+    },
+    "color": {
+      "field": "site",
+      "type": "nominal",
+      "title": "Site",
+      "scale": {
+        "scheme": "category10"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "variety",
+        "type": "nominal",
+        "title": "Variety"
+      },
+      {
+        "field": "yield",
+        "type": "quantitative",
+        "title": "Yield",
+        "format": ".2f"
+      },
+      {
+        "field": "site",
+        "type": "nominal",
+        "title": "Site"
+      },
+      {
+        "field": "year",
+        "type": "ordinal",
+        "title": "Year"
+      }
+    ]
+  }
+}

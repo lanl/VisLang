@@ -1,0 +1,103 @@
+{
+  "spec_dict": {
+    "number_rows": 570,
+    "task": "summary",
+    "field": [
+      {
+        "name": "year",
+        "type": "number",
+        "unique": 15,
+        "entropy": 2708,
+        "min": 1850,
+        "max": 2000,
+        "std": 46,
+        "skew": 0
+      },
+      {
+        "name": "age",
+        "type": "number",
+        "unique": 19,
+        "entropy": 2944,
+        "min": 0,
+        "max": 90,
+        "std": 27,
+        "skew": 0
+      },
+      {
+        "name": "sex",
+        "type": "number",
+        "unique": 2,
+        "entropy": 693,
+        "min": 1,
+        "max": 2,
+        "std": 0,
+        "skew": 0
+      },
+      {
+        "name": "people",
+        "type": "number",
+        "unique": 570,
+        "entropy": 6346,
+        "min": 5259,
+        "max": 11635647,
+        "std": 3101098,
+        "skew": 0
+      }
+    ],
+    "view": [
+      {
+        "coordinates": "cartesian",
+        "mark": [
+          {
+            "type": "point",
+            "encoding": [
+              {
+                "field": "age",
+                "channel": "x"
+              },
+              {
+                "field": "sex",
+                "channel": "y"
+              },
+              {
+                "field": "people",
+                "channel": "size"
+              }
+            ]
+          }
+        ],
+        "scale": [
+          {
+            "type": "linear",
+            "channel": "x",
+            "zero": "true"
+          },
+          {
+            "type": "linear",
+            "channel": "y",
+            "zero": "true"
+          },
+          {
+            "type": "linear",
+            "channel": "size",
+            "zero": "true"
+          }
+        ]
+      }
+    ]
+  },
+  "cost": [
+    19
+  ],
+  "violations": {
+    "encoding": 3,
+    "encoding_field": 3,
+    "linear_scale": 3,
+    "c_c_point": 1,
+    "linear_x": 1,
+    "linear_y": 1,
+    "linear_size": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

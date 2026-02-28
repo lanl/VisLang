@@ -1,0 +1,80 @@
+{
+  "vegalite_spec": {
+    "title": "Natural Disasters: Scale and Frequency Over Time (1900-2017)",
+    "width": 1000,
+    "height": 600,
+    "data": {
+      "url": "disasters.csv"
+    },
+    "transform": [
+      {
+        "filter": "datum.entity !== 'All natural disasters'"
+      },
+      {
+        "calculate": "datum.deaths > 0 ? 1 : 0",
+        "as": "event_count"
+      }
+    ],
+    "mark": {
+      "type": "circle",
+      "opacity": 0.6,
+      "tooltip": true
+    },
+    "encoding": {
+      "x": {
+        "field": "year",
+        "type": "temporal",
+        "axis": {
+          "title": "Year",
+          "format": "d"
+        }
+      },
+      "y": {
+        "field": "entity",
+        "type": "nominal",
+        "axis": {
+          "title": "Disaster Type",
+          "labelLimit": 150
+        }
+      },
+      "size": {
+        "field": "deaths",
+        "type": "quantitative",
+        "scale": {
+          "type": "sqrt",
+          "zero": false
+        },
+        "title": "Deaths (area represents magnitude)"
+      },
+      "color": {
+        "field": "deaths",
+        "type": "quantitative",
+        "scale": {
+          "scheme": "reds",
+          "type": "log"
+        },
+        "title": "Deaths (log scale)"
+      },
+      "tooltip": [
+        {
+          "field": "year",
+          "type": "temporal",
+          "format": "d",
+          "title": "Year"
+        },
+        {
+          "field": "entity",
+          "type": "nominal",
+          "title": "Disaster Type"
+        },
+        {
+          "field": "deaths",
+          "type": "quantitative",
+          "format": ",",
+          "title": "Deaths"
+        }
+      ]
+    }
+  },
+  "reasoning": "This bubble chart design effectively shows three dimensions of disaster data: (1) Time progression on the x-axis, (2) Disaster types on the y-axis, and (3) Scale/severity through bubble size (area) and color intensity. The sqrt scale for size prevents large values from dominating the visualization, while the log color scale highlights both extreme and moderate disasters. The 'All natural disasters' aggregate is filtered out to focus on specific disaster types. Bubble charts are ideal for showing frequency (each point = one year-disaster combination) and magnitude simultaneously. The red color scheme intuitively represents danger/severity. Tooltips enable detailed exploration of specific events."
+}

@@ -12,15 +12,24 @@ from draco.renderer import AltairRenderer
 
 
 def _draco_normalize_name(name: str) -> str:
-    """Normalize a column name to match Draco's fact encoding.
+    """Normalize a column name to be safe for Draco's ASP solver.
 
     Draco's dict_to_facts lowercases the first character of all values.
-    We apply the same transformation to DataFrame columns so field names
-    are consistent between the schema facts and the actual data.
+    We also replace spaces and special characters with underscores to
+    avoid ASP parsing errors (e.g. 'Body Mass (g)' -> 'body_mass_g').
     """
+    import re
+
     if not name:
         return name
-    return name[0].lower() + name[1:]
+    name = name[0].lower() + name[1:]
+    # Replace spaces and special chars with underscores
+    name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    # Collapse multiple underscores
+    name = re.sub(r"_+", "_", name)
+    # Strip trailing underscores
+    name = name.strip("_")
+    return name
 
 
 def load_data(path: str) -> pd.DataFrame:

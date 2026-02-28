@@ -1,0 +1,10 @@
+{
+  "fields": [
+    "year",
+    "source",
+    "net_generation"
+  ],
+  "reasoning": "All three fields are essential: year shows temporal change, source identifies the energy mix, and net_generation quantifies the contribution of each source over time to reveal growth trends.",
+  "mark_hint": null,
+  "channel_hints": {}
+}

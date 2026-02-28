@@ -1,0 +1,93 @@
+{
+  "vegalite_spec": {
+    "title": "Fertility Rate vs Life Expectancy by World Region (Population Size Shown)",
+    "width": 900,
+    "height": 600,
+    "data": {
+      "url": "gapminder.json"
+    },
+    "transform": [
+      {
+        "filter": "datum.year == 2005"
+      }
+    ],
+    "mark": {
+      "type": "circle",
+      "opacity": 0.7,
+      "stroke": "white",
+      "strokeWidth": 1.5
+    },
+    "encoding": {
+      "x": {
+        "field": "fertility",
+        "type": "quantitative",
+        "title": "Fertility Rate (children per woman)",
+        "scale": {
+          "zero": false
+        }
+      },
+      "y": {
+        "field": "life_expect",
+        "type": "quantitative",
+        "title": "Life Expectancy (years)",
+        "scale": {
+          "zero": false
+        }
+      },
+      "size": {
+        "field": "pop",
+        "type": "quantitative",
+        "title": "Population Size",
+        "scale": {
+          "type": "sqrt",
+          "range": [
+            100,
+            3000
+          ]
+        }
+      },
+      "color": {
+        "field": "cluster",
+        "type": "nominal",
+        "title": "World Region",
+        "scale": {
+          "scheme": "category10"
+        },
+        "legend": {
+          "title": "Region Cluster"
+        }
+      },
+      "tooltip": [
+        {
+          "field": "country",
+          "type": "nominal",
+          "title": "Country"
+        },
+        {
+          "field": "fertility",
+          "type": "quantitative",
+          "title": "Fertility Rate",
+          "format": ".2f"
+        },
+        {
+          "field": "life_expect",
+          "type": "quantitative",
+          "title": "Life Expectancy",
+          "format": ".1f"
+        },
+        {
+          "field": "pop",
+          "type": "quantitative",
+          "title": "Population",
+          "format": ","
+        },
+        {
+          "field": "cluster",
+          "type": "nominal",
+          "title": "Region"
+        }
+      ]
+    }
+  },
+  "reasoning": "This bubble chart is ideal for comparing three variables simultaneously: fertility (x-axis), life expectancy (y-axis), and population size (bubble size). The design choices are: 1) Scatter plot with circles to show the relationship between fertility and life expectancy; 2) Bubble size encodes population, allowing viewers to see if larger populations cluster in certain regions; 3) Color represents world regions (clusters), making geographic patterns visible; 4) Filtered to 2005 (most recent year) for clarity; 5) Square root scale for bubble size prevents large populations from dominating; 6) White stroke on circles improves readability with overlapping marks; 7) Comprehensive tooltips enable detailed exploration. The inverse relationship between fertility and life expectancy should be clearly visible, and regional clustering will show whether geography plays a role."
+}

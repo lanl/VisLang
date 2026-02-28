@@ -1,0 +1,3 @@
+# Baseline Design
+
+I chose a stacked area chart with normalized (100%) scale to effectively show both the composition changes and relative growth of energy sources over time. This visualization makes it easy to see: (1) how the overall mix has shifted between sources, (2) which sources are growing (expanding areas) vs. declining (shrinking areas), and (3) the proportional contribution of each source. The normalized scale emphasizes the compositional changes, while the tooltip provides absolute generation values for detailed exploration. The smooth interpolation and semi-transparent areas improve readability when sources overlap.

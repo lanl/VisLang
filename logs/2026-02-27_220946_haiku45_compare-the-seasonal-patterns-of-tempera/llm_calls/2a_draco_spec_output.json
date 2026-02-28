@@ -1,0 +1,108 @@
+{
+  "vegalite_spec": {
+    "title": "Seattle Seasonal Weather Patterns: Temperature vs Precipitation",
+    "description": "Exploring the relationship between temperature and precipitation across seasons",
+    "width": 700,
+    "height": 500,
+    "data": {
+      "url": "seattle-weather.csv"
+    },
+    "transform": [
+      {
+        "calculate": "month(datum.date)",
+        "as": "month"
+      },
+      {
+        "calculate": "if(datum.month >= 3 && datum.month <= 5, 'Spring', if(datum.month >= 6 && datum.month <= 8, 'Summer', if(datum.month >= 9 && datum.month <= 11, 'Fall', 'Winter')))",
+        "as": "season"
+      }
+    ],
+    "mark": {
+      "type": "point",
+      "opacity": 0.6,
+      "tooltip": true
+    },
+    "encoding": {
+      "x": {
+        "field": "temp_max",
+        "type": "quantitative",
+        "title": "Maximum Temperature (\u00b0C)",
+        "scale": {
+          "type": "linear"
+        }
+      },
+      "y": {
+        "field": "temp_min",
+        "type": "quantitative",
+        "title": "Minimum Temperature (\u00b0C)",
+        "scale": {
+          "type": "linear"
+        }
+      },
+      "size": {
+        "field": "precipitation",
+        "type": "quantitative",
+        "title": "Precipitation (mm)",
+        "scale": {
+          "type": "linear",
+          "zero": true,
+          "range": [
+            20,
+            300
+          ]
+        }
+      },
+      "color": {
+        "field": "season",
+        "type": "ordinal",
+        "title": "Season",
+        "scale": {
+          "type": "ordinal",
+          "domain": [
+            "Winter",
+            "Spring",
+            "Summer",
+            "Fall"
+          ],
+          "range": [
+            "#4575b4",
+            "#91bfdb",
+            "#fee090",
+            "#fc8d59"
+          ]
+        }
+      },
+      "tooltip": [
+        {
+          "field": "date",
+          "type": "temporal",
+          "title": "Date"
+        },
+        {
+          "field": "temp_max",
+          "type": "quantitative",
+          "title": "Max Temp (\u00b0C)",
+          "format": ".1f"
+        },
+        {
+          "field": "temp_min",
+          "type": "quantitative",
+          "title": "Min Temp (\u00b0C)",
+          "format": ".1f"
+        },
+        {
+          "field": "precipitation",
+          "type": "quantitative",
+          "title": "Precipitation (mm)",
+          "format": ".1f"
+        },
+        {
+          "field": "season",
+          "type": "nominal",
+          "title": "Season"
+        }
+      ]
+    }
+  },
+  "reasoning": "This visualization directly addresses the user's question about seasonal patterns and the relationship between temperature and precipitation. Following Draco's recommendations, I use a scatterplot with temperature on both axes (max vs min) to show the temperature range, precipitation encoded as point size to reveal wet vs dry patterns, and season encoded as color to identify seasonal clustering. The design reveals that winter months (blue) cluster in the lower-left (cold, wet), summer months (yellow) in the upper-right (warm, dry), and spring/fall (green/orange) in between. The size variation immediately shows whether cold months are also wet months. The ordinal color scale for season is more interpretable than a continuous date scale, and the point opacity helps with overplotting. Tooltips enable detailed exploration of individual days."
+}

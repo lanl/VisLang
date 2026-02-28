@@ -1,0 +1,74 @@
+{
+  "vegalite_spec": {
+    "title": "Iowa Electricity Generation Mix Over Time",
+    "description": "Net generation by source showing growth trends and composition changes",
+    "width": 900,
+    "height": 300,
+    "data": {
+      "url": "iowa-electricity.csv"
+    },
+    "mark": {
+      "type": "point",
+      "filled": true,
+      "opacity": 0.8
+    },
+    "encoding": {
+      "x": {
+        "field": "year",
+        "type": "ordinal",
+        "title": "Year",
+        "axis": {
+          "labelAngle": -45,
+          "labelOverlap": false
+        }
+      },
+      "y": {
+        "field": "source",
+        "type": "ordinal",
+        "title": "Energy Source"
+      },
+      "size": {
+        "field": "net_generation",
+        "type": "quantitative",
+        "title": "Net Generation (GWh)",
+        "scale": {
+          "type": "linear",
+          "zero": true,
+          "range": [
+            100,
+            1000
+          ]
+        }
+      },
+      "color": {
+        "field": "source",
+        "type": "nominal",
+        "scale": {
+          "scheme": "tableau10"
+        },
+        "legend": {
+          "title": "Energy Source"
+        }
+      },
+      "tooltip": [
+        {
+          "field": "year",
+          "type": "ordinal",
+          "title": "Year"
+        },
+        {
+          "field": "source",
+          "type": "nominal",
+          "title": "Source"
+        },
+        {
+          "field": "net_generation",
+          "type": "quantitative",
+          "title": "Net Generation (GWh)",
+          "format": ",.0f"
+        }
+      ]
+    }
+  },
+  "reasoning": "Following Draco's recommendations, I used point marks with size encoding to show net generation values across years and sources. The ordinal scales for both x (year) and y (source) create a clear grid layout where bubble size directly represents generation volume, making it easy to spot growth trends and compare sources. Color is added to reinforce source identity and improve visual distinction. The size scale is linear with zero baseline as recommended, allowing accurate visual comparison of generation amounts. Tooltips provide precise values for interactive exploration. This design effectively shows both the composition changes over time and which sources are growing fastest through the expanding bubble sizes."
+}

@@ -1,0 +1,3 @@
+# Baseline Design
+
+This bubble chart design effectively shows three dimensions of disaster data: (1) Time progression on the x-axis, (2) Disaster types on the y-axis, and (3) Scale/severity through bubble size (area) and color intensity. The sqrt scale for size prevents large values from dominating the visualization, while the log color scale highlights both extreme and moderate disasters. The 'All natural disasters' aggregate is filtered out to focus on specific disaster types. Bubble charts are ideal for showing frequency (each point = one year-disaster combination) and magnitude simultaneously. The red color scheme intuitively represents danger/severity. Tooltips enable detailed exploration of specific events.

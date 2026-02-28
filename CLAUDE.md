@@ -1,253 +1,145 @@
-# VisLang — Draco-Guided Visualization Workflow
+# VisLang — Draco-Guided Visualization Pipeline
 
-When the user provides a natural language visualization task + data reference, follow this workflow to generate, validate, and present two interactive Vega-Lite visualizations: one guided by Draco 2's constraint-based recommendations, one from your own design knowledge. Log all artifacts for review.
+A Python pipeline that generates two Vega-Lite visualizations for any data + prompt: one guided by Draco 2's constraint-based recommendations, one from the LLM's own design knowledge. Uses LiteLLM for provider-agnostic LLM calls.
 
 ## Project Layout
 
 ```
-tools/vislang.py          # Helper functions (load_data, run_draco, render, etc.)
-draco2/                   # Draco 2 git submodule (constraint-based vis recommender)
-vega-datasets/data/       # Dataset collection (cars.json, stocks.csv, etc.)
-output/                   # Generated notebooks for interactive viewing
-logs/                     # Timestamped log directories per task
-docs/DESIGN.md            # Full design document
+pipeline.py               # CLI entry point
+tools/
+├── __init__.py            # Exports: run_vislang, VislangResult
+├── pipeline.py            # Core pipeline (LLM calls, Draco, orchestration)
+├── prompts.py             # Prompt templates for all LLM calls
+└── vislang.py             # Helper functions (load_data, run_draco, render, etc.)
+draco2/                    # Draco 2 git submodule
+vega-datasets/data/        # Dataset collection
+output/                    # Generated notebooks
+logs/                      # Timestamped log directories per task
+docs/DESIGN.md             # Design document
 ```
 
-## Helper Module: `tools/vislang.py`
+## Quick Start
 
-Import in notebooks or via `python -c`:
+### Setup
 
-```python
-from tools.vislang import (
-    load_data,               # Load CSV/JSON/TSV → DataFrame
-    get_schema_facts,        # DataFrame → (schema_dict, ASP fact strings)
-    run_draco,               # partial spec facts → [{spec_dict, cost, violations, ...}]
-    extract_recommendations, # Draco result → clean recommendation summary for Claude
-    render_altair,           # Draco spec dict + DataFrame → Altair Chart
-    vl_to_altair,            # Vega-Lite spec dict + DataFrame → Altair Chart
-    save_png,                # Chart → PNG file
-    validate_vegalite,       # Vega-Lite spec → (valid, error_message)
-    log_task,                # Write artifacts to log directory
-    create_log_dir,          # Create timestamped log dir
-    spec_dict_to_vegalite,   # Draco spec dict → Vega-Lite JSON
-)
-```
-
-## Workflow
-
-### Architecture: Draco as Advisor, Claude as Spec Author
-
-Draco acts as a **structural advisor** — recommending mark type, channel assignments, scales, and aggregation — while **Claude generates the final Vega-Lite spec** informed by those recommendations, adding interactivity, styling, titles, and more. A separate baseline (without Draco) is still generated for comparison.
-
-```
-Main agent
-├─ Step 1: Parse request, create log dir
-├─ Step 2: Run Draco directly → extract_recommendations() → structured recommendations JSON
-├─ Step 3: Launch two subagents IN PARALLEL:
-│   ├─ Draco-informed subagent: receives recommendations + data → produces final VL spec
-│   └─ Baseline subagent: receives only user prompt + data → produces final VL spec
-├─ Step 4: Render PNGs, create notebook, execute
-├─ Step 5: Write comparison.md
-└─ Step 6: Present to user
-```
-
-| Agent | Role | Draco? |
-|-------|------|--------|
-| **Main agent** | Parse request, run Draco, launch subagents, assemble notebook, compare, log | Runs Draco directly |
-| **Draco-informed subagent** (Task tool, general-purpose) | Receives Draco recommendations + data, produces polished Vega-Lite | Informed by recommendations |
-| **Baseline subagent** (Task tool, general-purpose) | Produces best Vega-Lite from own knowledge, no Draco context | No |
-
-### Step 1: Parse the request (Main agent)
-
-1. Identify the data file — resolve relative to `vega-datasets/data/` or accept absolute path
-2. Understand the visualization intent (relationship, distribution, comparison, trend, etc.)
-3. Create log directory: call `create_log_dir(task_slug)` or manually create `logs/<YYYY-MM-DD>_<HHMMSS>_<task-slug>/`
-4. Write `meta.json` with: `{ "prompt": ..., "data_path": ..., "timestamp": ... }`
-
-### Step 2: Run Draco and extract recommendations (Main agent)
-
-This is a deterministic computation — no subagent needed. The main agent formulates the partial spec, runs Draco, and extracts recommendations:
-
-```python
-from tools.vislang import load_data, get_schema_facts, run_draco, extract_recommendations
-import json
-
-df = load_data(data_path)
-schema, schema_facts = get_schema_facts(df)
-
-# Formulate partial spec: schema facts + encoding entities for relevant fields
-partial_spec = schema_facts + [
-    'entity(view,root,v0).',
-    'entity(mark,v0,m0).',
-    # For each relevant field:
-    # 'entity(encoding,m0,eN).',
-    # 'attribute((encoding,field),eN,fieldname).',
-    # Pin mark type ONLY if user explicitly requested one
-    # Pin channels ONLY if user explicitly specified axis placement
-    # Let Draco decide everything else
-]
-
-results = run_draco(partial_spec)
-recommendations = extract_recommendations(results[0])
-
-# Save artifacts to log dir
-with open(f"{log_dir}/draco_input.json", "w") as f:
-    json.dump(partial_spec, f, indent=2)
-with open(f"{log_dir}/draco_output.json", "w") as f:
-    json.dump({"spec_dict": results[0]["spec_dict"], "cost": results[0]["cost"], "violations": results[0]["violations"]}, f, indent=2, default=str)
-with open(f"{log_dir}/recommendations.json", "w") as f:
-    json.dump(recommendations, f, indent=2, default=str)
-```
-
-### Step 3: Launch two subagents in parallel (Task tool)
-
-Launch both subagents simultaneously using two Task tool calls in a single message.
-
-#### Draco-Informed Subagent Prompt Template
-
-```
-You are generating a polished Vega-Lite visualization informed by Draco's perceptual recommendations. Working directory: /Users/michaelballantyne/code/VisLang
-
-USER REQUEST: {prompt}
-DATA FILE: {data_path}
-LOG DIR: {log_dir}
-
-DRACO RECOMMENDATIONS:
-{recommendations_json}
-
-These recommendations come from Draco 2's constraint-based visualization recommender, which optimizes
-for perceptual effectiveness. You MUST honor these structural decisions:
-- Mark type: use the recommended mark type
-- Channel assignments: use the recommended field→channel mappings
-- Scale types: use the recommended scale types
-- Aggregation/binning: apply if recommended
-
-You SHOULD enhance the visualization with:
-- Descriptive title and axis labels
-- Tooltips for interactive exploration
-- Additional encodings (color, opacity, size) if they add insight beyond what Draco specified
-- Appropriate mark styling (filled marks, opacity for overplotting, stroke width, etc.)
-- Non-zero scales if it improves readability (note if Draco recommended zero)
-- Interactive selections if appropriate for the data
-- Proper width/height sizing
-- Thoughtful color schemes
-
-Steps:
-1. Load data: `from tools.vislang import load_data, validate_vegalite; import pandas as pd`
-2. Run `df = load_data("{data_path}")` — examine columns, types, sample rows
-3. Design a Vega-Lite spec that honors Draco's structural recommendations while adding polish
-4. Validate: `valid, err = validate_vegalite(spec)`
-5. Retry up to 3 times on validation errors
-6. Save artifacts to log dir:
-   - with_draco.vl.json: the Vega-Lite spec
-   - draco_enhanced_log.md: your reasoning, how you used the recommendations, enhancements added
-```
-
-#### Baseline Subagent Prompt Template
-
-```
-You are generating a visualization using your own design knowledge (NO Draco). Working directory: /Users/michaelballantyne/code/VisLang
-
-USER REQUEST: {prompt}
-DATA FILE: {data_path}
-LOG DIR: {log_dir}
-
-Steps:
-1. Load data: `from tools.vislang import load_data, validate_vegalite; import pandas as pd`
-2. Run `df = load_data("{data_path}")` — examine columns, types, sample rows
-3. Design the best Vega-Lite spec for the user's request using your visualization expertise
-4. Validate: `valid, err = validate_vegalite(spec)`
-5. Retry up to 3 times on validation errors
-6. Save artifacts to log dir:
-   - without_draco.vl.json: the Vega-Lite spec
-   - baseline_log.md: your reasoning and design choices
-
-Do NOT use Draco, ASP, or constraint-based tools. Rely on your own knowledge of visualization best practices.
-```
-
-### Step 4: Collect results, render, create notebook (Main agent)
-
-1. Read `with_draco.vl.json` and `without_draco.vl.json` from the log dir
-2. Render static PNGs:
-   ```python
-   from tools.vislang import load_data, vl_to_altair, save_png
-   df = load_data(data_path)
-   save_png(vl_to_altair(draco_spec, df), f"{log_dir}/with_draco.png")
-   save_png(vl_to_altair(baseline_spec, df), f"{log_dir}/without_draco.png")
-   ```
-
-3. Create `output/<task-slug>.ipynb` using NotebookEdit with these cells:
-
-| # | Type | Content |
-|---|------|---------|
-| 1 | markdown | Title: task prompt, data source |
-| 2 | code | Setup: imports, data loading, schema summary (collapse via metadata) |
-| 3 | code | Draco recommendations summary display (collapse) |
-| 4 | markdown | **With Draco Guidance** |
-| 5 | code | `chart_draco` display |
-| 6 | markdown | **Without Draco** |
-| 7 | code | `chart_no_draco` display |
-| 8 | markdown | **Comparison** |
-| 9 | code | Side-by-side analysis |
-
-4. Execute and open:
 ```bash
-jupyter nbconvert --to notebook --execute --inplace output/<task-slug>.ipynb
-code output/<task-slug>.ipynb
+pip install -r requirements.txt
+pip install -e ./draco2
 ```
 
-### Step 5: Compare (Main agent)
+### API Keys
 
-Write `comparison.md` to the log dir covering:
-- Mark type choices and rationale
-- Channel/encoding decisions
-- Scale choices
-- Draco soft constraint violations and costs
-- Enhancements added by Claude on top of Draco's recommendations
-- Assessment of which better serves the user's intent
+Create a `.env` file at the project root (gitignored):
 
-### Step 6: Present to user (Main agent)
+```
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+# Default model (override with --model or model= parameter):
+# VISLANG_MODEL=openai/gpt-4o
+```
 
-- Brief summary of what each approach chose
-- Highlight what Draco recommended vs. what Claude enhanced
-- Note the notebook is open for interactive viewing
-- Don't dump specs/constraints unless asked
+### CLI Usage
 
-### Iteration (on user feedback)
+```bash
+python pipeline.py "Show horsepower vs MPG" cars.json
+python pipeline.py --model openai/gpt-4o "Compare stock trends" stocks.csv
+python pipeline.py --notebook --open "Weather distribution" seattle-weather.csv
+```
 
-1. Re-run Step 2 (Draco) with adjusted partial spec if structural changes needed
-2. Re-launch both subagents with updated prompt (original + feedback), including previous spec as starting point
-3. Log new artifacts to `{log_dir}/iterations/NN/`
-4. Append new cells to the existing notebook, re-execute
+Options:
+- `--model MODEL` — LiteLLM model string (default: `VISLANG_MODEL` env or `anthropic/claude-sonnet-4-5-20250929`)
+- `--no-log` — skip writing artifacts to `logs/`
+- `--notebook` — create and execute a Jupyter notebook in `output/`
+- `--open` — open the notebook in VS Code (implies `--notebook`)
+
+### Python / Notebook Usage
+
+```python
+from tools import run_vislang
+
+result = run_vislang("Show horsepower vs MPG", "cars.json")
+result  # displays side-by-side interactive charts in Jupyter
+
+# Access individual parts
+result.draco_spec          # Vega-Lite spec (Draco-guided)
+result.baseline_spec       # Vega-Lite spec (baseline)
+result.side_by_side        # Altair HConcatChart
+result.comparison_markdown # Detailed comparison analysis
+result.recommendations     # Draco's structural recommendations
+```
+
+## Pipeline Architecture
+
+```
+User prompt + data_path
+        │
+        ▼
+  [Load data, get schema]
+        │
+        ▼
+  [LLM Call 1: Field Selection]  ← LLM picks relevant fields
+        │
+        ▼
+  [Build partial spec facts]     ← deterministic
+        │
+        ▼
+  [Draco solver → recommendations]  ← deterministic
+        │
+        ▼
+  ┌─────┴──────┐
+  │ asyncio.gather()
+  │            │
+  [LLM 2a]  [LLM 2b]   ← parallel: Draco-informed + baseline
+  │            │           each with validation retry loop
+  └─────┬──────┘
+        │
+        ▼
+  [LLM Call 3: Comparison]
+        │
+        ▼
+  VislangResult
+```
 
 ## Log Directory Structure
 
+Each run creates `logs/<timestamp>_<model>_<slug>/` containing:
+
 ```
-logs/<timestamp>_<slug>/
-├── meta.json               # prompt, data path, timestamp
-├── draco_input.json        # partial spec facts
-├── draco_output.json       # full Draco result (spec_dict, cost, violations)
-├── recommendations.json    # extracted recommendations for Claude
-├── with_draco.vl.json      # Claude-authored spec guided by Draco
-├── with_draco.png          # static render
-├── without_draco.vl.json   # Claude-authored spec without Draco
-├── without_draco.png       # static render
-├── comparison.md           # analysis of differences
-├── draco_enhanced_log.md   # Draco-informed subagent reasoning
-└── baseline_log.md         # baseline subagent reasoning
+meta.json                          # prompt, data, model, timestamp
+2_draco_solver_input.json          # partial spec ASP facts
+2_draco_solver_output.json         # raw solver result (spec_dict, cost, violations)
+2_draco_recommendations.json       # extracted recommendations
+2_draco_solver_attempts.json       # (if solver failed or retried)
+3a_draco_spec.vl.json              # Draco-informed Vega-Lite spec
+3a_draco_reasoning.md              # Draco-informed LLM reasoning
+3a_draco_spec.png                  # rendered chart
+3b_baseline_spec.vl.json           # baseline Vega-Lite spec
+3b_baseline_reasoning.md           # baseline LLM reasoning
+3b_baseline_spec.png               # rendered chart
+4_comparison.md                    # comparison analysis
+llm_calls/                         # full LLM call inputs and outputs
+  1_field_selection_input.md
+  1_field_selection_output.json
+  2a_draco_spec_input.md
+  2a_draco_spec_output.json
+  2b_baseline_spec_input.md
+  2b_baseline_spec_output.json
+  3_comparison_input.md
+  3_comparison_output.json
 ```
 
-## Retry Mechanism
+## Switching Providers
 
-Both subagents retry up to 3 times on errors:
-- **Draco-informed path**: fix the Vega-Lite spec directly based on the error (Draco recommendations are already extracted)
-- **Baseline path**: fix the Vega-Lite spec directly based on the error
+Edit `.env` to change the default model:
+- Anthropic: `VISLANG_MODEL=anthropic/claude-sonnet-4-5-20250929`
+- OpenAI: `VISLANG_MODEL=openai/gpt-4o`
+- Ollama (local): `VISLANG_MODEL=ollama_chat/llama3.1`
 
-If Draco itself fails in Step 2, the main agent adjusts the partial spec and re-runs (up to 3 attempts).
+Or pass `--model` at CLI / `model=` in Python for one-off overrides.
 
-## Data Resolution
+## Presenting Results
 
-Data paths are resolved in order:
-1. Absolute path (if provided)
-2. Relative to `vega-datasets/data/`
-3. Relative to project root
+When summarizing benchmark or pipeline results to the user:
+- Always note whether Draco's solver actually ran successfully (check for empty recommendations)
+- Report the comparison LLM's assessment of **attribution**: was the quality difference due to Draco's structural guidance, or did the LLM make independent choices that happened to be better/worse?
+- Don't just report "draco won" / "baseline won" — surface the comparison's reasoning about what drove the difference

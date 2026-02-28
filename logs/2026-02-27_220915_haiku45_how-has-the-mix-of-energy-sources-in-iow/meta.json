@@ -1,0 +1,6 @@
+{
+  "prompt": "How has the mix of energy sources in Iowa changed over time, and which sources are growing fastest?",
+  "data_path": "iowa-electricity.csv",
+  "model": "anthropic/claude-haiku-4-5-20251001",
+  "timestamp": "2026-02-27T22:09:15.994353"
+}

@@ -1,0 +1,94 @@
+{
+  "title": "Unemployment Rates Across Industries: Recessions vs Expansions (2000-2010)",
+  "width": 1000,
+  "height": 500,
+  "data": {
+    "url": "unemployment-across-industries.json"
+  },
+  "transform": [
+    {
+      "calculate": "datum.date",
+      "as": "date_parsed"
+    },
+    {
+      "bin": {
+        "step": 10
+      },
+      "field": "date_parsed",
+      "as": "date_binned"
+    },
+    {
+      "aggregate": [
+        {
+          "op": "mean",
+          "field": "rate",
+          "as": "mean_rate"
+        }
+      ],
+      "groupby": [
+        "series",
+        "date_binned"
+      ]
+    }
+  ],
+  "mark": {
+    "type": "point",
+    "opacity": 0.7,
+    "tooltip": true
+  },
+  "encoding": {
+    "y": {
+      "field": "series",
+      "type": "ordinal",
+      "title": "Industry",
+      "sort": "-x"
+    },
+    "x": {
+      "field": "date_binned",
+      "type": "quantitative",
+      "title": "Time Period (2000-2010)",
+      "axis": {
+        "format": "d"
+      }
+    },
+    "size": {
+      "field": "mean_rate",
+      "type": "quantitative",
+      "title": "Mean Unemployment Rate (%)",
+      "scale": {
+        "type": "linear",
+        "zero": true,
+        "range": [
+          50,
+          400
+        ]
+      }
+    },
+    "color": {
+      "field": "mean_rate",
+      "type": "quantitative",
+      "title": "Mean Unemployment Rate (%)",
+      "scale": {
+        "scheme": "reds"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "series",
+        "type": "nominal",
+        "title": "Industry"
+      },
+      {
+        "field": "mean_rate",
+        "type": "quantitative",
+        "title": "Mean Unemployment Rate",
+        "format": ".2f"
+      },
+      {
+        "field": "date_binned",
+        "type": "quantitative",
+        "title": "Time Period"
+      }
+    ]
+  }
+}

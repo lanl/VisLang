@@ -1,0 +1,77 @@
+{
+  "title": "Natural Disasters: Scale and Frequency Over Time (1900-2017)",
+  "width": 1000,
+  "height": 600,
+  "data": {
+    "url": "disasters.csv"
+  },
+  "transform": [
+    {
+      "filter": "datum.entity !== 'All natural disasters'"
+    },
+    {
+      "calculate": "datum.deaths > 0 ? 1 : 0",
+      "as": "event_count"
+    }
+  ],
+  "mark": {
+    "type": "circle",
+    "opacity": 0.6,
+    "tooltip": true
+  },
+  "encoding": {
+    "x": {
+      "field": "year",
+      "type": "temporal",
+      "axis": {
+        "title": "Year",
+        "format": "d"
+      }
+    },
+    "y": {
+      "field": "entity",
+      "type": "nominal",
+      "axis": {
+        "title": "Disaster Type",
+        "labelLimit": 150
+      }
+    },
+    "size": {
+      "field": "deaths",
+      "type": "quantitative",
+      "scale": {
+        "type": "sqrt",
+        "zero": false
+      },
+      "title": "Deaths (area represents magnitude)"
+    },
+    "color": {
+      "field": "deaths",
+      "type": "quantitative",
+      "scale": {
+        "scheme": "reds",
+        "type": "log"
+      },
+      "title": "Deaths (log scale)"
+    },
+    "tooltip": [
+      {
+        "field": "year",
+        "type": "temporal",
+        "format": "d",
+        "title": "Year"
+      },
+      {
+        "field": "entity",
+        "type": "nominal",
+        "title": "Disaster Type"
+      },
+      {
+        "field": "deaths",
+        "type": "quantitative",
+        "format": ",",
+        "title": "Deaths"
+      }
+    ]
+  }
+}

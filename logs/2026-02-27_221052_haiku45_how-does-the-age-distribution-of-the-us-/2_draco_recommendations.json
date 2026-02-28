@@ -1,0 +1,51 @@
+{
+  "mark_type": "point",
+  "encodings": [
+    {
+      "channel": "x",
+      "field": "age"
+    },
+    {
+      "channel": "y",
+      "field": "sex"
+    },
+    {
+      "channel": "size",
+      "field": "people"
+    }
+  ],
+  "scales": [
+    {
+      "channel": "x",
+      "type": "linear",
+      "zero": "true"
+    },
+    {
+      "channel": "y",
+      "type": "linear",
+      "zero": "true"
+    },
+    {
+      "channel": "size",
+      "type": "linear",
+      "zero": "true"
+    }
+  ],
+  "coordinates": "cartesian",
+  "facets": [],
+  "task": "summary",
+  "cost": [
+    19
+  ],
+  "violations": {
+    "encoding": 3,
+    "encoding_field": 3,
+    "linear_scale": 3,
+    "c_c_point": 1,
+    "linear_x": 1,
+    "linear_y": 1,
+    "linear_size": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

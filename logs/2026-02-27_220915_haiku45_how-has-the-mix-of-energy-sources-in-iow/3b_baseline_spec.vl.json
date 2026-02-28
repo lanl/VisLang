@@ -1,0 +1,67 @@
+{
+  "title": "Iowa Electricity Generation Mix Over Time",
+  "width": 900,
+  "height": 500,
+  "data": {
+    "url": "iowa-electricity.csv"
+  },
+  "transform": [
+    {
+      "calculate": "year(datum.year)",
+      "as": "year_num"
+    }
+  ],
+  "mark": {
+    "type": "area",
+    "opacity": 0.7,
+    "interpolate": "monotone"
+  },
+  "encoding": {
+    "x": {
+      "field": "year_num",
+      "type": "temporal",
+      "axis": {
+        "title": "Year",
+        "format": "%Y"
+      }
+    },
+    "y": {
+      "aggregate": "sum",
+      "field": "net_generation",
+      "type": "quantitative",
+      "axis": {
+        "title": "Net Generation (GWh)"
+      },
+      "stack": "normalize"
+    },
+    "color": {
+      "field": "source",
+      "type": "nominal",
+      "scale": {
+        "scheme": "tableau10"
+      },
+      "legend": {
+        "title": "Energy Source"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "year_num",
+        "type": "temporal",
+        "format": "%Y",
+        "title": "Year"
+      },
+      {
+        "field": "source",
+        "type": "nominal",
+        "title": "Source"
+      },
+      {
+        "field": "net_generation",
+        "type": "quantitative",
+        "title": "Net Generation (GWh)",
+        "format": ",.0f"
+      }
+    ]
+  }
+}

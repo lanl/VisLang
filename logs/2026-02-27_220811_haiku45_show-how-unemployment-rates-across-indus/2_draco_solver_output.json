@@ -1,0 +1,123 @@
+{
+  "spec_dict": {
+    "number_rows": 1708,
+    "task": "summary",
+    "field": [
+      {
+        "name": "series",
+        "type": "string",
+        "unique": 14,
+        "entropy": 2639,
+        "freq": 122,
+        "min_length": 5,
+        "max_length": 28
+      },
+      {
+        "name": "year",
+        "type": "number",
+        "unique": 11,
+        "entropy": 2348,
+        "min": 2000,
+        "max": 2010,
+        "std": 2,
+        "skew": 0
+      },
+      {
+        "name": "month",
+        "type": "number",
+        "unique": 12,
+        "entropy": 2484,
+        "min": 1,
+        "max": 12,
+        "std": 3,
+        "skew": 0
+      },
+      {
+        "name": "count",
+        "type": "number",
+        "unique": 915,
+        "entropy": 6645,
+        "min": 2,
+        "max": 2440,
+        "std": 423,
+        "skew": 1
+      },
+      {
+        "name": "rate",
+        "type": "number",
+        "unique": 147,
+        "entropy": 4558,
+        "min": 0,
+        "max": 27,
+        "std": 3,
+        "skew": 1
+      },
+      {
+        "name": "date",
+        "type": "datetime",
+        "unique": 122,
+        "entropy": 4804,
+        "span_seconds": 318297600
+      }
+    ],
+    "view": [
+      {
+        "coordinates": "cartesian",
+        "mark": [
+          {
+            "type": "point",
+            "encoding": [
+              {
+                "field": "series",
+                "channel": "y"
+              },
+              {
+                "field": "date",
+                "channel": "x",
+                "binning": 10
+              },
+              {
+                "field": "rate",
+                "channel": "size",
+                "aggregate": "mean"
+              }
+            ]
+          }
+        ],
+        "scale": [
+          {
+            "type": "ordinal",
+            "channel": "y"
+          },
+          {
+            "type": "linear",
+            "channel": "x"
+          },
+          {
+            "type": "linear",
+            "channel": "size",
+            "zero": "true"
+          }
+        ]
+      }
+    ]
+  },
+  "cost": [
+    25
+  ],
+  "violations": {
+    "aggregate": 1,
+    "bin": 1,
+    "encoding": 3,
+    "encoding_field": 3,
+    "linear_scale": 2,
+    "ordinal_scale": 1,
+    "d_d_point": 1,
+    "linear_x": 1,
+    "linear_size": 1,
+    "ordinal_y": 1,
+    "aggregate_mean": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

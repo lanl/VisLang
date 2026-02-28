@@ -1,0 +1,87 @@
+{
+  "vegalite_spec": {
+    "title": "Life Expectancy vs Income Level Across Countries",
+    "width": 900,
+    "height": 800,
+    "data": {
+      "url": "gapminder-health-income.csv"
+    },
+    "mark": {
+      "type": "point",
+      "opacity": 0.7
+    },
+    "encoding": {
+      "x": {
+        "field": "health",
+        "type": "quantitative",
+        "bin": {
+          "maxbins": 10
+        },
+        "axis": {
+          "title": "Life Expectancy (years)",
+          "labelAngle": 0
+        },
+        "scale": {
+          "type": "linear"
+        }
+      },
+      "y": {
+        "field": "country",
+        "type": "ordinal",
+        "axis": {
+          "title": "Country",
+          "labelFontSize": 8
+        },
+        "sort": "-x"
+      },
+      "size": {
+        "field": "income",
+        "type": "quantitative",
+        "scale": {
+          "type": "linear",
+          "zero": true
+        },
+        "title": "Income (USD)"
+      },
+      "color": {
+        "field": "region",
+        "type": "nominal",
+        "scale": {
+          "scheme": "category10"
+        },
+        "title": "Region"
+      },
+      "tooltip": [
+        {
+          "field": "country",
+          "type": "nominal",
+          "title": "Country"
+        },
+        {
+          "field": "health",
+          "type": "quantitative",
+          "title": "Life Expectancy (years)",
+          "format": ".1f"
+        },
+        {
+          "field": "income",
+          "type": "quantitative",
+          "title": "Income (USD)",
+          "format": ",.0f"
+        },
+        {
+          "field": "region",
+          "type": "nominal",
+          "title": "Region"
+        },
+        {
+          "field": "population",
+          "type": "quantitative",
+          "title": "Population",
+          "format": ",.0f"
+        }
+      ]
+    }
+  },
+  "reasoning": "Following Draco's recommendations, I used point marks to show the relationship between life expectancy (health) and income across countries. The x-axis displays binned life expectancy values (10 bins) to reduce overplotting while maintaining the distribution pattern. The size channel encodes income level with a linear scale, allowing viewers to see how wealthier countries (larger points) correlate with higher life expectancy. Countries are listed on the y-axis sorted by life expectancy for easy comparison. Color is added by region to reveal geographic patterns in the income-health relationship. Tooltips are defined in the encoding channel (not as a mark property) to provide interactive exploration of country details. The design reveals whether income explains the life expectancy pattern: larger points (higher income) cluster toward higher life expectancy values, demonstrating the strong relationship between economic development and health outcomes."
+}

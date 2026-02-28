@@ -1,0 +1,91 @@
+{
+  "title": "US Population Age Distribution by Sex",
+  "width": 800,
+  "height": 300,
+  "data": {
+    "url": "population.json"
+  },
+  "transform": [
+    {
+      "filter": "datum.year == 2000"
+    },
+    {
+      "calculate": "datum.sex == 1 ? 'Male' : 'Female'",
+      "as": "sex_label"
+    }
+  ],
+  "mark": {
+    "type": "point",
+    "filled": true,
+    "opacity": 0.7
+  },
+  "encoding": {
+    "x": {
+      "field": "age",
+      "type": "quantitative",
+      "scale": {
+        "type": "linear",
+        "zero": true
+      },
+      "axis": {
+        "title": "Age (years)",
+        "labelAngle": 0
+      }
+    },
+    "y": {
+      "field": "sex_label",
+      "type": "nominal",
+      "scale": {
+        "type": "point",
+        "zero": false
+      },
+      "axis": {
+        "title": "Sex"
+      }
+    },
+    "size": {
+      "field": "people",
+      "type": "quantitative",
+      "scale": {
+        "type": "linear",
+        "zero": true
+      },
+      "title": "Population"
+    },
+    "color": {
+      "field": "sex_label",
+      "type": "nominal",
+      "scale": {
+        "domain": [
+          "Male",
+          "Female"
+        ],
+        "range": [
+          "#1f77b4",
+          "#ff7f0e"
+        ]
+      },
+      "legend": {
+        "title": "Sex"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "age",
+        "type": "quantitative",
+        "title": "Age"
+      },
+      {
+        "field": "sex_label",
+        "type": "nominal",
+        "title": "Sex"
+      },
+      {
+        "field": "people",
+        "type": "quantitative",
+        "title": "Population",
+        "format": ","
+      }
+    ]
+  }
+}

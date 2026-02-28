@@ -1,0 +1,10 @@
+{
+  "fields": [
+    "series",
+    "date",
+    "rate"
+  ],
+  "reasoning": "Series identifies industries, date provides temporal context for recession/expansion periods, and rate shows unemployment values to compare across economic conditions.",
+  "mark_hint": null,
+  "channel_hints": {}
+}

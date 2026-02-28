@@ -1,0 +1,55 @@
+{
+  "mark_type": "point",
+  "encodings": [
+    {
+      "channel": "y",
+      "field": "series"
+    },
+    {
+      "channel": "x",
+      "field": "date",
+      "binning": 10
+    },
+    {
+      "channel": "size",
+      "field": "rate",
+      "aggregate": "mean"
+    }
+  ],
+  "scales": [
+    {
+      "channel": "y",
+      "type": "ordinal"
+    },
+    {
+      "channel": "x",
+      "type": "linear"
+    },
+    {
+      "channel": "size",
+      "type": "linear",
+      "zero": "true"
+    }
+  ],
+  "coordinates": "cartesian",
+  "facets": [],
+  "task": "summary",
+  "cost": [
+    25
+  ],
+  "violations": {
+    "aggregate": 1,
+    "bin": 1,
+    "encoding": 3,
+    "encoding_field": 3,
+    "linear_scale": 2,
+    "ordinal_scale": 1,
+    "d_d_point": 1,
+    "linear_x": 1,
+    "linear_size": 1,
+    "ordinal_y": 1,
+    "aggregate_mean": 1,
+    "summary_point": 1,
+    "cartesian_coordinate": 1
+  }
+}

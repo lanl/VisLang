@@ -1,0 +1,65 @@
+{
+  "title": "Natural Disasters: Deaths Over Time by Disaster Type",
+  "width": 1000,
+  "height": 600,
+  "mark": {
+    "type": "line",
+    "point": true,
+    "tooltip": true
+  },
+  "encoding": {
+    "x": {
+      "field": "year",
+      "type": "quantitative",
+      "scale": {
+        "type": "linear"
+      },
+      "axis": {
+        "title": "Year",
+        "labelAngle": 0
+      }
+    },
+    "y": {
+      "field": "deaths",
+      "type": "quantitative",
+      "scale": {
+        "type": "linear",
+        "zero": true
+      },
+      "axis": {
+        "title": "Number of Deaths",
+        "format": ",.0f"
+      }
+    },
+    "color": {
+      "field": "entity",
+      "type": "nominal",
+      "scale": {
+        "type": "ordinal",
+        "scheme": "category10"
+      },
+      "legend": {
+        "title": "Disaster Type",
+        "orient": "right"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "year",
+        "type": "quantitative",
+        "title": "Year"
+      },
+      {
+        "field": "entity",
+        "type": "nominal",
+        "title": "Disaster Type"
+      },
+      {
+        "field": "deaths",
+        "type": "quantitative",
+        "title": "Deaths",
+        "format": ",.0f"
+      }
+    ]
+  }
+}

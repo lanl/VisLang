@@ -1,0 +1,3 @@
+# Baseline Design
+
+This visualization effectively identifies the largest gender gaps in employment by: (1) Using the most recent year (2000) to show current state; (2) Pivoting the data to calculate the absolute difference between male and female employment shares; (3) Displaying the top 20 job categories with largest gaps as a horizontal bar chart for easy comparison; (4) Color-coding by gap direction (male vs female-dominated) to show which gender dominates each field; (5) Sorting bars by gap size for immediate visual ranking; (6) Including comprehensive tooltips showing both the gap and individual percentages for context. The horizontal bar layout accommodates long job titles and makes reading easier than vertical bars.

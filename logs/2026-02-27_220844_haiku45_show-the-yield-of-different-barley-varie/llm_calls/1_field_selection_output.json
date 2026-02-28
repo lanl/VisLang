@@ -1,0 +1,10 @@
+{
+  "fields": [
+    "yield",
+    "variety",
+    "site"
+  ],
+  "reasoning": "These three fields directly address the user's questions: yield values show performance, variety identifies which barley types to compare, and site reveals whether performance depends on location.",
+  "mark_hint": null,
+  "channel_hints": {}
+}
