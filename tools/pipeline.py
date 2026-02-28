@@ -189,7 +189,29 @@ async def _run_pipeline(
         column_summary=col_summary,
         sample_rows=sample,
     )
-    field_result = await _llm_call_with_retries(model, field_selection_system, field_selection_user)
+    schema_fields = {f["name"] for f in schema.get("field", [])}
+    field_retry_messages: list[dict] = []
+    field_result = {}
+    for _field_attempt in range(3):
+        field_result = await _llm_call(
+            model, field_selection_system, field_selection_user,
+            retry_messages=field_retry_messages or None,
+        )
+        fields = field_result.get("fields", [])
+        bad = [f for f in fields if f not in schema_fields]
+        hints = field_result.get("channel_hints", {})
+        bad += [k for k in hints if k not in schema_fields]
+        if not bad:
+            break
+        field_retry_messages.append({"role": "assistant", "content": json.dumps(field_result)})
+        field_retry_messages.append({
+            "role": "user",
+            "content": (
+                f"The following field names are not in the schema: {bad}. "
+                f"Valid field names are: {sorted(schema_fields)}. "
+                "Please return corrected JSON using only exact field names from the schema."
+            ),
+        })
 
     fields = field_result.get("fields", [])
     mark_hint = field_result.get("mark_hint")
@@ -197,47 +219,21 @@ async def _run_pipeline(
 
     if log:
         _log_llm_call(log_dir, "1_field_selection",
-                       field_selection_system, field_selection_user, field_result)
+                       field_selection_system, field_selection_user, field_result,
+                       retry_messages=field_retry_messages or None)
 
     # Step 3: Build partial spec facts and run Draco
     partial_spec = _build_partial_spec_facts(schema_facts, fields, mark_hint, channel_hints)
 
     draco_results = None
     recommendations = {}
-    draco_attempts = []
-    for attempt in range(3):
-        try:
-            draco_results = run_draco(partial_spec)
-            if draco_results:
-                recommendations = extract_recommendations(draco_results[0])
-                draco_attempts.append({
-                    "attempt": attempt + 1,
-                    "fields": list(fields),
-                    "status": "success",
-                })
-                break
-            else:
-                draco_attempts.append({
-                    "attempt": attempt + 1,
-                    "fields": list(fields),
-                    "status": "no_results",
-                    "error": "Draco solver returned empty results",
-                })
-        except Exception as e:
-            draco_attempts.append({
-                "attempt": attempt + 1,
-                "fields": list(fields),
-                "status": "error",
-                "error": str(e),
-            })
-            # Drop last field and retry
-            if len(fields) > 2:
-                fields = fields[:-1]
-                partial_spec = _build_partial_spec_facts(
-                    schema_facts, fields, mark_hint, channel_hints
-                )
-            else:
-                break
+    draco_error = None
+    try:
+        draco_results = run_draco(partial_spec)
+        if draco_results:
+            recommendations = extract_recommendations(draco_results[0])
+    except Exception as e:
+        draco_error = str(e)
 
     if log:
         log_task(log_dir, **{"2_draco_solver_input.json": partial_spec})
@@ -250,14 +246,10 @@ async def _run_pipeline(
                 },
                 "2_draco_recommendations.json": recommendations,
             })
-        if not draco_results or len(draco_attempts) > 1:
-            log_task(log_dir, **{
-                "2_draco_solver_attempts.json": draco_attempts,
-            })
+        if draco_error:
+            log_task(log_dir, **{"2_draco_error.txt": draco_error})
 
-    # Step 4: Generate specs in parallel
-    recs_json = json.dumps(recommendations, indent=2, default=str)
-
+    # Step 4: Generate specs (Draco path only if we got recommendations)
     base_user = SPEC_USER.format(
         prompt=prompt,
         data_path=data_path,
@@ -265,41 +257,60 @@ async def _run_pipeline(
         sample_rows=sample,
     )
 
-    draco_spec_system = SPEC_SYSTEM + DRACO_ADDON_SYSTEM
-    draco_spec_user = base_user + DRACO_ADDON_USER.format(
-        recommendations_json=recs_json,
-    )
     baseline_spec_system = SPEC_SYSTEM
     baseline_spec_user = base_user
 
-    draco_task = _generate_spec_with_retry(
-        model, draco_spec_system, draco_spec_user, df,
-        log_dir=log_dir, call_name="2a_draco_spec",
-    )
-    baseline_task = _generate_spec_with_retry(
-        model, baseline_spec_system, baseline_spec_user, df,
-        log_dir=log_dir, call_name="2b_baseline_spec",
-    )
+    draco_spec = {}
+    draco_reasoning = ""
+    draco_result = {}
+    draco_chart: alt.Chart | None = None
 
-    (draco_result, draco_chart), (baseline_result, baseline_chart) = \
-        await asyncio.gather(draco_task, baseline_task)
+    if recommendations:
+        recs_json = json.dumps(recommendations, indent=2, default=str)
+        draco_spec_system = SPEC_SYSTEM + DRACO_ADDON_SYSTEM
+        draco_spec_user = base_user + DRACO_ADDON_USER.format(
+            recommendations_json=recs_json,
+        )
 
-    draco_spec = draco_result.get("vegalite_spec", {})
-    draco_reasoning = draco_result.get("reasoning", "")
+        draco_task = _generate_spec_with_retry(
+            model, draco_spec_system, draco_spec_user, df,
+            log_dir=log_dir, call_name="2a_draco_spec",
+        )
+        baseline_task = _generate_spec_with_retry(
+            model, baseline_spec_system, baseline_spec_user, df,
+            log_dir=log_dir, call_name="2b_baseline_spec",
+        )
+
+        (draco_result, draco_chart), (baseline_result, baseline_chart) = \
+            await asyncio.gather(draco_task, baseline_task)
+
+        draco_spec = draco_result.get("vegalite_spec", {})
+        draco_reasoning = draco_result.get("reasoning", "")
+    else:
+        recs_json = "{}"
+        baseline_result, baseline_chart = await _generate_spec_with_retry(
+            model, baseline_spec_system, baseline_spec_user, df,
+            log_dir=log_dir, call_name="2b_baseline_spec",
+        )
+
     baseline_spec = baseline_result.get("vegalite_spec", {})
     baseline_reasoning = baseline_result.get("reasoning", "")
 
     if log:
-        _log_llm_call(log_dir, "2a_draco_spec",
-                       draco_spec_system, draco_spec_user, draco_result)
+        if recommendations:
+            _log_llm_call(log_dir, "2a_draco_spec",
+                           draco_spec_system, draco_spec_user, draco_result)
         _log_llm_call(log_dir, "2b_baseline_spec",
                        baseline_spec_system, baseline_spec_user, baseline_result)
         log_task(log_dir, **{
-            "3a_draco_spec.vl.json": draco_spec,
-            "3a_draco_reasoning.md": f"# Draco-Informed Design\n\n{draco_reasoning}",
             "3b_baseline_spec.vl.json": baseline_spec,
             "3b_baseline_reasoning.md": f"# Baseline Design\n\n{baseline_reasoning}",
         })
+        if recommendations:
+            log_task(log_dir, **{
+                "3a_draco_spec.vl.json": draco_spec,
+                "3a_draco_reasoning.md": f"# Draco-Informed Design\n\n{draco_reasoning}",
+            })
         for name, chart in [("3a_draco_spec.png", draco_chart),
                              ("3b_baseline_spec.png", baseline_chart)]:
             if chart is not None:
@@ -310,36 +321,41 @@ async def _run_pipeline(
                         f"{name}.render_error.txt": str(e),
                     })
 
-    # Step 5: LLM comparison (with rendered images if available)
-    comparison_system = COMPARISON_SYSTEM
-    comparison_user = COMPARISON_USER.format(
-        prompt=prompt,
-        recommendations_json=recs_json,
-        draco_spec_json=json.dumps(draco_spec, indent=2),
-        draco_reasoning=draco_reasoning,
-        baseline_spec_json=json.dumps(baseline_spec, indent=2),
-        baseline_reasoning=baseline_reasoning,
-    )
+    # Step 5: LLM comparison (skip if Draco produced nothing)
+    comparison_md = ""
+    comparison_summary = ""
+    comparison_verdict = ""
 
-    chart_images = []
-    for label, chart in [("Draco-informed visualization:", draco_chart),
-                         ("Baseline visualization:", baseline_chart)]:
-        if chart is not None:
-            try:
-                chart_images.append((label, _chart_to_base64(chart)))
-            except Exception:
-                pass
+    if recommendations:
+        comparison_system = COMPARISON_SYSTEM
+        comparison_user = COMPARISON_USER.format(
+            prompt=prompt,
+            recommendations_json=recs_json,
+            draco_spec_json=json.dumps(draco_spec, indent=2),
+            draco_reasoning=draco_reasoning,
+            baseline_spec_json=json.dumps(baseline_spec, indent=2),
+            baseline_reasoning=baseline_reasoning,
+        )
 
-    comparison = await _llm_call_with_retries(
-        model, comparison_system, comparison_user,
-        images=chart_images or None,
-    )
+        chart_images = []
+        for label, chart in [("Draco-informed visualization:", draco_chart),
+                             ("Baseline visualization:", baseline_chart)]:
+            if chart is not None:
+                try:
+                    chart_images.append((label, _chart_to_base64(chart)))
+                except Exception:
+                    pass
 
-    comparison_md = comparison.get("comparison_markdown", "")
-    comparison_summary = comparison.get("summary", "")
-    comparison_verdict = comparison.get("verdict", "")
+        comparison = await _llm_call_with_retries(
+            model, comparison_system, comparison_user,
+            images=chart_images or None,
+        )
 
-    if log:
+        comparison_md = comparison.get("comparison_markdown", "")
+        comparison_summary = comparison.get("summary", "")
+        comparison_verdict = comparison.get("verdict", "")
+
+    if log and comparison_md:
         _log_llm_call(log_dir, "3_comparison",
                        comparison_system, comparison_user, comparison)
         log_task(log_dir, **{"4_comparison.md": comparison_md})
