@@ -16,4 +16,5 @@ dspy-ai>=2.4.0
 
 # JSON schema inference and flattening for nested records
 genson>=1.2
+flatten_json>=0.1.13
 pandas>=1.5

@@ -1,0 +1,16 @@
+{
+  "mark": {
+    "type": "point"
+  },
+  "encoding": {
+    "x": {
+      "field": "pages"
+    },
+    "y": {
+      "field": "rating"
+    }
+  },
+  "data": {
+    "url": "data/synthetic_books.json"
+  }
+}

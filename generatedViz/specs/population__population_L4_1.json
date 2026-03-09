@@ -1,0 +1,20 @@
+{
+  "mark": {
+    "type": "line"
+  },
+  "encoding": {
+    "x": {
+      "field": "year"
+    },
+    "y": {
+      "aggregate": "sum",
+      "field": "population"
+    },
+    "color": {
+      "field": "country"
+    }
+  },
+  "data": {
+    "url": "data/population.json"
+  }
+}

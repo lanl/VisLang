@@ -1,0 +1,92 @@
+[
+  {
+    "id": 1,
+    "city": "New York",
+    "weather.temperature": 72,
+    "weather.humidity": 55,
+    "weather.wind_speed": 12,
+    "metadata.station": "NYC-001",
+    "metadata.elevation": 10
+  },
+  {
+    "id": 2,
+    "city": "Los Angeles",
+    "weather.temperature": 85,
+    "weather.humidity": 30,
+    "weather.wind_speed": 8,
+    "metadata.station": "LAX-002",
+    "metadata.elevation": 71
+  },
+  {
+    "id": 3,
+    "city": "Chicago",
+    "weather.temperature": 58,
+    "weather.humidity": 65,
+    "weather.wind_speed": 18,
+    "metadata.station": "CHI-003",
+    "metadata.elevation": 181
+  },
+  {
+    "id": 4,
+    "city": "Houston",
+    "weather.temperature": 92,
+    "weather.humidity": 78,
+    "weather.wind_speed": 6,
+    "metadata.station": "HOU-004",
+    "metadata.elevation": 15
+  },
+  {
+    "id": 5,
+    "city": "Phoenix",
+    "weather.temperature": 105,
+    "weather.humidity": 12,
+    "weather.wind_speed": 5,
+    "metadata.station": "PHX-005",
+    "metadata.elevation": 331
+  },
+  {
+    "id": 6,
+    "city": "Seattle",
+    "weather.temperature": 62,
+    "weather.humidity": 72,
+    "weather.wind_speed": 10,
+    "metadata.station": "SEA-006",
+    "metadata.elevation": 53
+  },
+  {
+    "id": 7,
+    "city": "Denver",
+    "weather.temperature": 68,
+    "weather.humidity": 35,
+    "weather.wind_speed": 14,
+    "metadata.station": "DEN-007",
+    "metadata.elevation": 1609
+  },
+  {
+    "id": 8,
+    "city": "Miami",
+    "weather.temperature": 88,
+    "weather.humidity": 82,
+    "weather.wind_speed": 9,
+    "metadata.station": "MIA-008",
+    "metadata.elevation": 2
+  },
+  {
+    "id": 9,
+    "city": "Boston",
+    "weather.temperature": 55,
+    "weather.humidity": 60,
+    "weather.wind_speed": 16,
+    "metadata.station": "BOS-009",
+    "metadata.elevation": 6
+  },
+  {
+    "id": 10,
+    "city": "Atlanta",
+    "weather.temperature": 78,
+    "weather.humidity": 68,
+    "weather.wind_speed": 7,
+    "metadata.station": "ATL-010",
+    "metadata.elevation": 320
+  }
+]

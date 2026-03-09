@@ -1,0 +1,16 @@
+{
+  "mark": {
+    "type": "point"
+  },
+  "encoding": {
+    "x": {
+      "field": "payment_method"
+    },
+    "y": {
+      "field": "customer_country"
+    }
+  },
+  "data": {
+    "url": "data/complex-order.json"
+  }
+}

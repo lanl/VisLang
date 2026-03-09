@@ -1,0 +1,25 @@
+{
+  "description": "Line chart of Population over Year",
+  "mark": {
+    "type": "line"
+  },
+  "encoding": {
+    "x": {
+      "field": "year"
+    },
+    "y": {
+      "field": "population"
+    }
+  },
+  "config": {
+    "view": {
+      "strokeWidth": 2
+    }
+  },
+  "height": 300,
+  "width": 600,
+  "title": "Line Chart of Population over Year",
+  "data": {
+    "url": "data/population.json"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "mark": {
+    "type": "bar"
+  },
+  "encoding": {
+    "x": {
+      "field": "key",
+      "type": "nominal"
+    },
+    "y": {
+      "aggregate": "sum",
+      "field": "value"
+    }
+  },
+  "data": {
+    "url": "data/aircraft.json"
+  }
+}

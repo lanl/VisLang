@@ -1,0 +1,25 @@
+{
+  "mark": {
+    "type": "bar"
+  },
+  "encoding": {
+    "x": {
+      "field": "city",
+      "axis": {
+        "title": "City"
+      }
+    },
+    "y": {
+      "field": "temp",
+      "axis": {
+        "title": "Temperature (\u00b0F)"
+      }
+    },
+    "color": {
+      "field": "humidity"
+    }
+  },
+  "data": {
+    "url": "data/synthetic_nested_flat.json"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "orderId": "ORD-2025-5821",
+  "status": "shipped",
+  "customer": {
+    "id": 842,
+    "name": "Michael Chen",
+    "address": {
+      "street": "123 Tech Park Blvd",
+      "city": "San Francisco",
+      "zip": "94105",
+      "country": "USA"
+    }
+  },
+  "items": [
+    {
+      "productId": 1,
+      "name": "Wireless Headphones",
+      "quantity": 1,
+      "unitPrice": 299.99
+    },
+    {
+      "productId": 42,
+      "name": "USB-C Cable",
+      "quantity": 2,
+      "unitPrice": 15.00
+    }
+  ],
+  "payment": {
+    "method": "credit_card",
+    "transactionId": "tx_987654321",
+    "amount": 329.99
+  }
+}

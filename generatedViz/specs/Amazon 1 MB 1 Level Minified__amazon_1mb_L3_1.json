@@ -1,0 +1,18 @@
+{
+  "encoding": {
+    "x": {
+      "field": "toDateTime(OrderDate)",
+      "type": "temporal"
+    },
+    "y": {
+      "field": "Category",
+      "aggregate": "count"
+    }
+  },
+  "mark": {
+    "type": "bar"
+  },
+  "data": {
+    "url": "data/Amazon 1 MB 1 Level Minified.json"
+  }
+}

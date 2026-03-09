@@ -1,0 +1,19 @@
+{
+  "mark": {
+    "type": "bar"
+  },
+  "encoding": {
+    "x": {
+      "field": "city"
+    },
+    "y": {
+      "field": "temp"
+    },
+    "fillOpacity": {
+      "value": 0.8
+    }
+  },
+  "data": {
+    "url": "data/synthetic_nested_flat.json"
+  }
+}

@@ -1,18 +1,18 @@
 {
   "mark": {
-    "type": "point"
+    "type": "bar"
   },
   "encoding": {
     "x": {
-      "field": "year",
+      "field": "city",
       "type": "nominal"
     },
     "y": {
-      "field": "age",
+      "field": "weather.temperature",
       "type": "quantitative"
     }
   },
   "data": {
-    "url": "data/population.json"
+    "url": "data/synthetic_nested.json"
   }
 }

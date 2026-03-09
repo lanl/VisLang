@@ -1,0 +1,22 @@
+{
+  "encoding": {
+    "x": {
+      "field": "_temporal",
+      "type": "temporal"
+    },
+    "y": {
+      "field": "_quantitative",
+      "type": "quantitative"
+    },
+    "color": {
+      "field": "sensor_id",
+      "type": "nominal"
+    }
+  },
+  "mark": {
+    "type": "line"
+  },
+  "data": {
+    "url": "data/synthetic_sensors.json"
+  }
+}

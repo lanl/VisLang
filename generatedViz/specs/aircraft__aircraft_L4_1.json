@@ -1,17 +1,17 @@
 {
-  "width": 600,
-  "height": 400,
-  "mark": "point",
+  "mark": {
+    "type": "bar"
+  },
   "encoding": {
     "x": {
-      "field": "Age"
+      "field": "Manufacturer",
+      "aggregate": "count"
     },
     "y": {
-      "aggregate": "max",
       "field": "Passenger capacity"
     },
     "color": {
-      "field": "Aircraft"
+      "field": "Manufacturer"
     }
   },
   "data": {

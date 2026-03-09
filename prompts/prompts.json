@@ -1,30 +1,253 @@
 {
-  "version": 1,
-  "prompts": [
-    {
-      "id": "generic_auto_2d",
-      "text": "Given this dataset, generate the most appropriate 2D Vega-Lite JSON spec for my data. Return only valid JSON.",
-      "enabled": true
-    },
-    {
-      "id": "generic_best_pattern",
-      "text": "Create a 2D visualization that best communicates the main pattern in this data. Choose mark and encodings automatically. Return only Vega-Lite JSON.",
-      "enabled": true
-    },
-    {
-      "id": "generic_relationship",
-      "text": "Create a 2D relationship chart between two relevant fields in this data. Use proper axis types and readable defaults.",
-      "enabled": true
-    },
-    {
-      "id": "generic_category_comparison",
-      "text": "Produce a 2D comparison chart across categories with clear x/y encodings, sorting, and labels where appropriate.",
-      "enabled": true
-    },
-    {
-      "id": "generic_ranking",
-      "text": "Generate a 2D ranking visualization from this dataset, selecting the most meaningful metric and category fields automatically.",
-      "enabled": true
-    }
-  ]
+  "aircraft_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "aircraft.json",
+    "level": "L1"
+  },
+  "aircraft_L2_1": {
+    "text": "Create a bar chart for this dataset.",
+    "dataset": "aircraft.json",
+    "level": "L2"
+  },
+  "aircraft_L3_1": {
+    "text": "Create a bar chart with Aircraft on the x-axis and Passenger capacity on the y-axis.",
+    "dataset": "aircraft.json",
+    "level": "L3"
+  },
+  "aircraft_L4_1": {
+    "text": "Create a bar chart with Aircraft on the x-axis and Passenger capacity on the y-axis. Color the bars by Manufacturer.",
+    "dataset": "aircraft.json",
+    "level": "L4"
+  },
+
+  "population_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "population.json",
+    "level": "L1"
+  },
+  "population_L2_1": {
+    "text": "Create a line chart for this dataset.",
+    "dataset": "population.json",
+    "level": "L2"
+  },
+  "population_L3_1": {
+    "text": "Create a line chart with Year on the x-axis and Population on the y-axis.",
+    "dataset": "population.json",
+    "level": "L3"
+  },
+  "population_L4_1": {
+    "text": "Create a line chart with Year on the x-axis and Population on the y-axis. Color the lines by Country.",
+    "dataset": "population.json",
+    "level": "L4"
+  },
+
+  "synthetic_books_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "synthetic_books.json",
+    "level": "L1"
+  },
+  "synthetic_books_L2_1": {
+    "text": "Create a scatter plot for this dataset.",
+    "dataset": "synthetic_books.json",
+    "level": "L2"
+  },
+  "synthetic_books_L3_1": {
+    "text": "Create a scatter plot with pages on the x-axis and rating on the y-axis.",
+    "dataset": "synthetic_books.json",
+    "level": "L3"
+  },
+  "synthetic_books_L4_1": {
+    "text": "Create a scatter plot with pages on the x-axis and rating on the y-axis. Color the points by genre.",
+    "dataset": "synthetic_books.json",
+    "level": "L4"
+  },
+
+  "synthetic_sensors_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "synthetic_sensors.json",
+    "level": "L1"
+  },
+  "synthetic_sensors_L2_1": {
+    "text": "Create a line chart for this dataset.",
+    "dataset": "synthetic_sensors.json",
+    "level": "L2"
+  },
+  "synthetic_sensors_L3_1": {
+    "text": "Create a line chart with battery percentage on the x-axis and value on the y-axis.",
+    "dataset": "synthetic_sensors.json",
+    "level": "L3"
+  },
+  "synthetic_sensors_L4_1": {
+    "text": "Create a line chart with battery percentage on the x-axis and value on the y-axis. Color the lines by sensor_id.",
+    "dataset": "synthetic_sensors.json",
+    "level": "L4"
+  },
+
+  "synthetic_nested_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "synthetic_nested.json",
+    "level": "L1"
+  },
+  "synthetic_nested_L2_1": {
+    "text": "Create a bar chart for this dataset.",
+    "dataset": "synthetic_nested.json",
+    "level": "L2"
+  },
+  "synthetic_nested_L3_1": {
+    "text": "Create a bar chart with city on the x-axis and weather.temp on the y-axis.",
+    "dataset": "synthetic_nested.json",
+    "level": "L3"
+  },
+  "synthetic_nested_L4_1": {
+    "text": "Create a bar chart with city on the x-axis and weather.temp on the y-axis. Color the bars by weather.humidity.",
+    "dataset": "synthetic_nested.json",
+    "level": "L4"
+  },
+
+  "synthetic_nested_flat_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "synthetic_nested_flat.json",
+    "level": "L1"
+  },
+  "synthetic_nested_flat_L2_1": {
+    "text": "Create a bar chart for this dataset.",
+    "dataset": "synthetic_nested_flat.json",
+    "level": "L2"
+  },
+  "synthetic_nested_flat_L3_1": {
+    "text": "Create a bar chart with city on the x-axis and weather.temp on the y-axis.",
+    "dataset": "synthetic_nested_flat.json",
+    "level": "L3"
+  },
+  "synthetic_nested_flat_L4_1": {
+    "text": "Create a bar chart with city on the x-axis and weather.temp on the y-axis. Color the bars by weather.humidity.",
+    "dataset": "synthetic_nested_flat.json",
+    "level": "L4"
+  },
+
+  "complex_order_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "complex-order.json",
+    "level": "L1"
+  },
+  "complex_order_L2_1": {
+    "text": "Create a scatter plot for this dataset.",
+    "dataset": "complex-order.json",
+    "level": "L2"
+  },
+  "complex_order_L3_1": {
+    "text": "Create a scatter plot with payment.method on the x-axis and customer.country on the y-axis.",
+    "dataset": "complex-order.json",
+    "level": "L3"
+  },
+  "complex_order_L4_1": {
+    "text": "Create a scatter plot with payment.method on the x-axis and customer.country on the y-axis. Color the bars by status.",
+    "dataset": "complex-order.json",
+    "level": "L4"
+  },
+
+  "employee_1mb_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "Employee 1 MB 5 Level Formatted.json",
+    "level": "L1"
+  },
+  "employee_1mb_L2_1": {
+    "text": "Create a bar chart for this dataset.",
+    "dataset": "Employee 1 MB 5 Level Formatted.json",
+    "level": "L2"
+  },
+  "employee_1mb_L3_1": {
+    "text": "Create a bar chart with project.startDate on the x-axis and project.projectID on the y-axis.",
+    "dataset": "Employee 1 MB 5 Level Formatted.json",
+    "level": "L3"
+  },
+  "employee_1mb_L4_1": {
+    "text": "Create a bar chart with project.startDate on the x-axis and project.projectID on the y-axis. Color the bars by position.",
+    "dataset": "Employee 1 MB 5 Level Formatted.json",
+    "level": "L4"
+  },
+
+  "amazon_1mb_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "Amazon 1 MB 1 Level Minified.json",
+    "level": "L1"
+  },
+  "amazon_1mb_L2_1": {
+    "text": "Create a bar chart for this dataset.",
+    "dataset": "Amazon 1 MB 1 Level Minified.json",
+    "level": "L2"
+  },
+  "amazon_1mb_L3_1": {
+    "text": "Create a bar chart with orderDate on the x-axis and category on the y-axis.",
+    "dataset": "Amazon 1 MB 1 Level Minified.json",
+    "level": "L3"
+  },
+  "amazon_1mb_L4_1": {
+    "text": "Create a bar chart with orderDate on the x-axis and category on the y-axis. Color the bars by PaymentMethod.",
+    "dataset": "Amazon 1 MB 1 Level Minified.json",
+    "level": "L4"
+  },
+  
+  "employee_10mb_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "Employee 10 MB 5 Level Formatted.json",
+    "level": "L1"
+  },
+  "employee_10mb_L2_1": {
+    "text": "Create a bar chart for this dataset.",
+    "dataset": "Employee 10 MB 5 Level Formatted.json",
+    "level": "L2"
+  },
+  "employee_10mb_L3_1": {
+    "text": "Create a bar chart with project.startDate on the x-axis and project.projectID on the y-axis.",
+    "dataset": "Employee 10 MB 5 Level Formatted.json",
+    "level": "L3"
+  },
+  "employee_10mb_L4_1": {
+    "text": "Create a bar chart with project.startDate on the x-axis and project.projectID on the y-axis. Color the bars by position.",
+    "dataset": "Employee 10 MB 5 Level Formatted.json",
+    "level": "L4"
+  },
+
+  "employee_100mb_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "Employee 100 MB 5 Level Formatted.json",
+    "level": "L1"
+  },
+  "employee_100mb_L2_1": {
+    "text": "Create a bar chart for this dataset.",
+    "dataset": "Employee 100 MB 5 Level Formatted.json",
+    "level": "L2"
+  },
+  "employee_100mb_L3_1": {
+    "text": "Create a bar chart with project.startDate on the x-axis and project.projectID on the y-axis.",
+    "dataset": "Employee 100 MB 5 Level Formatted.json",
+    "level": "L3"
+  },
+  "employee_100mb_L4_1": {
+    "text": "Create a bar chart with project.startDate on the x-axis and project.projectID on the y-axis. Color the bars by position.",
+    "dataset": "Employee 100 MB 5 Level Formatted.json",
+    "level": "L4"
+  },
+
+  "amazon_10mb_L1_1": {
+    "text": "Give me an appropriate visualization for this dataset.",
+    "dataset": "Amazon 10 MB 1 Level Minified.json",
+    "level": "L1"
+  },
+  "amazon_10mb_L2_1": {
+    "text": "Create a bar chart for this dataset.",
+    "dataset": "Amazon 10 MB 1 Level Minified.json",
+    "level": "L2"
+  },
+  "amazon_10mb_L3_1": {
+    "text": "Create a bar chart with orderDate on the x-axis and category on the y-axis.",
+    "dataset": "Amazon 10 MB 1 Level Minified.json",
+    "level": "L3"
+  },
+  "amazon_10mb_L4_1": {
+    "text": "Create a bar chart with category on the x-axis and price on the y-axis. Color the bars by PaymentMethod.",
+    "dataset": "Amazon 10 MB 1 Level Minified.json",
+    "level": "L4"
+  }
 }
