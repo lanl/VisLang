@@ -13,3 +13,7 @@ bitsandbytes>=0.41.0
 
 # DSPy
 dspy-ai>=2.4.0
+
+# JSON schema inference and flattening for nested records
+genson>=1.2
+pandas>=1.5
