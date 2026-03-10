@@ -3,6 +3,7 @@ import json
 import copy
 import dspy
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -538,7 +539,8 @@ def run_prompt_dataset_matrix(
         # Save spec file (URL-based, no inline data)
         if result["is_valid"] and result.get("spec_dict"):
             saved_spec = spec_with_url(result["spec_dict"], str(dataset_path))
-            spec_filename = f"{dataset_name}__{pid}.json"
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            spec_filename = f"{pid}_{schema_mode}{max_retries}_{date_str}.json"
             spec_path = Path(specs_dir) / spec_filename
             with open(spec_path, "w") as f:
                 json.dump(saved_spec, f, indent=2)
