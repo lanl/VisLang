@@ -14,6 +14,10 @@ from flatten_json import flatten as flatten_obj
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import ValidationError
 
+# Draco integration
+import draco
+from draco import dict_to_facts, answer_set_to_dict, run_clingo
+
 
 # vegalite schema validation
 
@@ -92,6 +96,48 @@ class RetryVegaLite(dspy.Signature):
             "'flatten' or 'fold' transforms as needed."
         )
     )
+#
+
+def llm_to_draco_vl_spec(user_request: str, data_schema: str, draco_models: int = 1):
+    """
+    Get DSpy to generate a partial Draco spec, appropriate from user prompt and the data schema,
+    Use Draco to complete this spec.
+    """
+
+    intent_chain = dspy.ChainOfThought(DracoIntentSignature)
+    intent_result = intent_chain(user_request=user_request, data_schema=data_schema)
+    partial_facts = intent_result.vega_lite_partial_spec
+
+    if isinstance(partial_facts, str):
+        facts = [f.strip() for f in partial_facts.split(".") if f.strip()]
+    else:
+        facts = partial_facts
+
+    # Draco complete step
+    d = draco.Draco()
+    completions = d.complete_spec(facts, models=draco_models)
+
+    # Convert to VL
+    results = []
+    for model in completions:
+        vl_spec = answer_set_to_dict(model.answer_set)
+        results.append((vl_spec, model.answer_set))
+    return results
+
+
+# DSPy signature for Draco partial spec intent
+class DracoIntentSignature(dspy.Signature):
+    user_request = dspy.InputField(desc="Natural language visualization request")
+    data_schema = dspy.InputField(desc="Data schema or sample records describing the dataset structure, fields, and types")
+    vega_lite_partial_spec = dspy.OutputField(
+        desc=(
+            "An incomplete Vega-Lite spec (as JSON/dict) that captures the user's visualization intent. "
+            "Do not output a full spec—leave some fields (like encoding/channel/mark details) unspecified if not mentioned by the user. "
+            "Output ONLY the JSON object, no explanation or markdown."
+        )
+    )
+
+
 
 #
 def infer_schema(records: list[dict], sample_n: int = 5) -> str:
@@ -166,15 +212,18 @@ def infer_schema_genson(records: list[dict], sample_n: int = 5) -> str:
     )
 
 
-def infer_schema_raw(records: list[dict], n: int = 5, max_chars: int = 3000) -> str:
+        # Step 1: LLM generates incomplete Vega-Lite spec
     """Return the first N records as raw JSON (truncated). No schema info."""
     if not records:
-        return "Empty dataset"
-    raw = json.dumps(records[:n], indent=2)
-    if len(raw) > max_chars:
-        raw = raw[:max_chars] + "\n... (truncated)"
-    return f"Sample records ({len(records)} rows total):\n{raw}"
+        partial_spec = intent_result.vega_lite_partial_spec
+        if isinstance(partial_spec, str):
+            try:
+                partial_spec = json.loads(partial_spec)
+            except Exception:
+                raise ValueError("LLM did not return valid JSON for partial Vega-Lite spec.")
 
+        # Step 2: Convert to Draco facts
+        facts = dict_to_facts(partial_spec)
 
 def flatten_records(records: list[dict], separator: str = ".") -> list[dict]:
     """Flatten nested dicts/lists in each record using dot-path keys."""
@@ -282,8 +331,8 @@ class VegaLiteGenerator(dspy.Module):
         self.first_try = dspy.ChainOfThought(DirectVegaLite)
         self.retry = dspy.ChainOfThought(RetryVegaLite)
         self.max_retries = max_retries
-        if schema_mode not in ("raw", "genson", "flat"):
-            raise ValueError(f"Invalid schema_mode: {schema_mode!r}. Must be 'raw', 'genson', or 'flat'.")
+        if schema_mode not in ("raw", "genson", "flat", "draco-intent"):
+            raise ValueError(f"Invalid schema_mode: {schema_mode!r}. Must be 'raw', 'genson', 'flat', or 'draco-intent'.")
         self.schema_mode = schema_mode
 
     def forward(self, user_request: str, records: list[dict]):
@@ -294,9 +343,44 @@ class VegaLiteGenerator(dspy.Module):
         elif self.schema_mode == "genson":
             schema_str = infer_schema_genson(records)
         elif self.schema_mode == "raw":
-            schema_str = infer_schema_raw(records)
+            schema_str = infer_schema(records)
+        elif self.schema_mode == "draco-intent":
+            schema_str = infer_schema_genson(records)  # Use genson schema for LLM context?
+            draco_results = llm_to_draco_vl_spec(user_request, schema_str, draco_models=1)
+            attempts = []
+            for i, (vl_spec, draco_answer_set) in enumerate(draco_results, 1):
+                # Try to render
+                render_error = try_render_altair(vl_spec, records)
+                attempt_record = {
+                    "attempt": i,
+                    "draco_answer_set": str(draco_answer_set),
+                    "spec_dict": vl_spec,
+                    "success": render_error is None,
+                    "error": render_error,
+                    "failure_mode": classify_failure(render_error) if render_error else None,
+                }
+                attempts.append(attempt_record)
+                if render_error is None:
+                    print(f"    Draco attempt {i}: Valid spec")
+                    return {
+                        "is_valid": True,
+                        "spec_dict": vl_spec,
+                        "error": None,
+                        "attempts": attempts,
+                    }
+                else:
+                    print(f"    Draco attempt {i}: {render_error}")
+            last = attempts[-1] if attempts else {}
+            return {
+                "is_valid": False,
+                "spec_dict": last.get("spec_dict"),
+                "error": last.get("error"),
+                "raw": None,
+                "attempts": attempts,
+            }
         else:
             schema_str = infer_schema_genson(records)
+
         attempts = []
 
         # first attempt
@@ -451,6 +535,14 @@ def run_prompt_dataset_matrix(
     schema_mode: str = "genson",
     level_filter: list[str] | str | None = None,
 ) -> list[dict]:
+    """
+    Run the prompt-dataset matrix pipeline.
+    schema_mode options:
+      - 'raw': pass raw data sample to LLM
+      - 'genson': pass genson-generated schema to LLM
+      - 'flat': flatten data, then pass genson schema
+      - 'draco-intent': use LLM to generate partial Draco spec, then Draco to complete to full Vega-Lite spec
+    """
     
     # configure dspy
     lm = dspy.LM(model=f"ollama/{model_name}", api_base=ollama_base)
