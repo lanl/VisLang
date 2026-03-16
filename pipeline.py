@@ -346,38 +346,7 @@ class VegaLiteGenerator(dspy.Module):
             schema_str = infer_schema(records)
         elif self.schema_mode == "draco-intent":
             schema_str = infer_schema_genson(records)  # Use genson schema for LLM context?
-            draco_results = llm_to_draco_vl_spec(user_request, schema_str, draco_models=1)
-            attempts = []
-            for i, (vl_spec, draco_answer_set) in enumerate(draco_results, 1):
-                # Try to render
-                render_error = try_render_altair(vl_spec, records)
-                attempt_record = {
-                    "attempt": i,
-                    "draco_answer_set": str(draco_answer_set),
-                    "spec_dict": vl_spec,
-                    "success": render_error is None,
-                    "error": render_error,
-                    "failure_mode": classify_failure(render_error) if render_error else None,
-                }
-                attempts.append(attempt_record)
-                if render_error is None:
-                    print(f"    Draco attempt {i}: Valid spec")
-                    return {
-                        "is_valid": True,
-                        "spec_dict": vl_spec,
-                        "error": None,
-                        "attempts": attempts,
-                    }
-                else:
-                    print(f"    Draco attempt {i}: {render_error}")
-            last = attempts[-1] if attempts else {}
-            return {
-                "is_valid": False,
-                "spec_dict": last.get("spec_dict"),
-                "error": last.get("error"),
-                "raw": None,
-                "attempts": attempts,
-            }
+
         else:
             schema_str = infer_schema_genson(records)
 
@@ -428,6 +397,40 @@ class VegaLiteGenerator(dspy.Module):
                 raw_response = capture_dspy_response()
                 raw = _strip_fences(result.vega_spec)
                 continue
+
+            if self.schema_mode == "draco-intent":
+                draco_results = llm_to_draco_vl_spec(user_request, schema_str, draco_models=1)
+                attempts = []
+                for i, (vl_spec, draco_answer_set) in enumerate(draco_results, 1):
+                    # Try to render
+                    render_error = try_render_altair(vl_spec, records)
+                    attempt_record = {
+                        "attempt": i,
+                        "draco_answer_set": str(draco_answer_set),
+                        "spec_dict": vl_spec,
+                        "success": render_error is None,
+                        "error": render_error,
+                        "failure_mode": classify_failure(render_error) if render_error else None,
+                    }
+                    attempts.append(attempt_record)
+                    if render_error is None:
+                        print(f"    Draco attempt {i}: Valid spec")
+                        return {
+                            "is_valid": True,
+                            "spec_dict": vl_spec,
+                            "error": None,
+                            "attempts": attempts,
+                        }
+                    else:
+                        print(f"    Draco attempt {i}: {render_error}")
+                last = attempts[-1] if attempts else {}
+                return {
+                    "is_valid": False,
+                    "spec_dict": last.get("spec_dict"),
+                    "error": last.get("error"),
+                    "raw": None,
+                    "attempts": attempts,
+                }
 
             # try to render
             chart, render_error = try_render_altair(spec_dict, records)
