@@ -2,127 +2,15 @@ import re
 import json
 import copy
 import dspy
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import requests
-from functools import lru_cache
-from genson import SchemaBuilder
-from flatten_json import flatten as flatten_obj
-from jsonschema import Draft7Validator
 from jsonschema.exceptions import ValidationError
 
 # Draco integration
 import draco
-from draco import dict_to_facts, answer_set_to_dict, run_clingo
-
-
-# vegalite schema validation
-
-@lru_cache(maxsize=1)
-def _load_vegalite_schema(
-    schema_url: str = "https://vega.github.io/schema/vega-lite/v5.json",
-) -> dict:
-    r = requests.get(schema_url, timeout=20)
-    r.raise_for_status()
-    return r.json()
-
-
-def validate_vegalite_spec(spec_input) -> dict:
-    #returns: {is_valid: bool, errors: list[str], spec_dict: dict|None}
-
-    if isinstance(spec_input, str):
-        try:
-            spec = json.loads(spec_input)
-        except json.JSONDecodeError as e:
-            return {"is_valid": False, "errors": [f"Invalid JSON: {e}"], "spec_dict": None}
-    elif isinstance(spec_input, dict):
-        spec = spec_input
-    else:
-        return {"is_valid": False, "errors": [f"Unsupported input type: {type(spec_input)}"], "spec_dict": None}
-
-    try:
-        schema = _load_vegalite_schema(
-            spec.get("$schema", "https://vega.github.io/schema/vega-lite/v5.json")
-        )
-        validator = Draft7Validator(schema)
-        errs = sorted(validator.iter_errors(spec), key=lambda e: list(e.path))
-        if errs:
-            messages = []
-            for e in errs[:20]:
-                path = ".".join(map(str, e.path)) or "<root>"
-                messages.append(f"{path}: {e.message}")
-            return {"is_valid": False, "errors": messages, "spec_dict": spec}
-    except Exception as e:
-        return {"is_valid": False, "errors": [f"Schema validation failed: {e}"], "spec_dict": spec}
-
-    return {"is_valid": True, "errors": [], "spec_dict": spec}
-
-
-# DSPy signatures
-
-class DirectVegaLite(dspy.Signature):
-    user_request = dspy.InputField(desc="Natural language visualization request")
-    data_schema = dspy.InputField(
-        desc="Data schema or sample records describing the dataset structure, fields, and types"
-    )
-    vega_spec = dspy.OutputField(
-        desc=(
-            "Valid Vega-Lite JSON spec. Return ONLY raw JSON, no markdown or "
-            "explanation. Ensure 'mark' only contains one thing. x, y, etc. "
-            "must be defined inside encoding, not inside mark. "
-            "If the data contains nested objects or arrays, use Vega-Lite "
-            "'flatten' or 'fold' transforms as needed."
-        )
-    )
-
-
-class RetryVegaLite(dspy.Signature):
-    user_request = dspy.InputField(desc="Original visualization request")
-    data_schema = dspy.InputField(
-        desc="Data schema or sample records describing the dataset structure, fields, and types"
-    )
-    previous_spec = dspy.InputField(desc="The previous (broken) Vega-Lite JSON spec attempt")
-    error_message = dspy.InputField(
-        desc="Error message from parsing or rendering the previous spec"
-    )
-    vega_spec = dspy.OutputField(
-        desc=(
-            "Corrected Vega-Lite JSON spec. Return ONLY raw JSON, no markdown "
-            "or explanation. Fix the issues described in the error message. "
-            "If the data contains nested objects or arrays, use Vega-Lite "
-            "'flatten' or 'fold' transforms as needed."
-        )
-    )
-#
-
-def llm_to_draco_vl_spec(user_request: str, data_schema: str, draco_models: int = 1):
-    """
-    Get DSpy to generate a partial Draco spec, appropriate from user prompt and the data schema,
-    Use Draco to complete this spec.
-    """
-
-    intent_chain = dspy.ChainOfThought(DracoIntentSignature)
-    intent_result = intent_chain(user_request=user_request, data_schema=data_schema)
-    partial_facts = intent_result.vega_lite_partial_spec
-
-    if isinstance(partial_facts, str):
-        facts = [f.strip() for f in partial_facts.split(".") if f.strip()]
-    else:
-        facts = partial_facts
-
-    # Draco complete step
-    d = draco.Draco()
-    completions = d.complete_spec(facts, models=draco_models)
-
-    # Convert to VL
-    results = []
-    for model in completions:
-        vl_spec = answer_set_to_dict(model.answer_set)
-        results.append((vl_spec, model.answer_set))
-    return results
+from draco import dict_to_facts, answer_set_to_dict
 
 
 # DSPy signature for Draco partial spec intent
@@ -138,8 +26,55 @@ class DracoIntentSignature(dspy.Signature):
     )
 
 
+class RetryDracoIntentSignature(dspy.Signature):
+    user_request = dspy.InputField(desc="Original visualization request")
+    data_schema = dspy.InputField(
+        desc="Data schema or sample records describing the dataset structure, fields, and types"
+    )
+    previous_spec = dspy.InputField(desc="The previous (broken) Draco partial Vega-Lite spec attempt")
+    error_message = dspy.InputField(desc="Error message from Draco completion or rendering")
+    vega_lite_partial_spec = dspy.OutputField(
+        desc=(
+            "Corrected incomplete Vega-Lite spec (as JSON/dict) for Draco completion. "
+            "Return ONLY JSON, no markdown or explanation. "
+            "Fix the issues described in the error message."
+        )
+    )
 
-#
+
+
+def llm_to_draco_vl_spec(partial_spec_input, draco_models: int = 1):
+    """
+    Convert a partial Vega-Lite spec to Draco facts and complete it.
+    """
+
+    partial_spec = partial_spec_input
+
+    if isinstance(partial_spec, str):
+        partial_spec = _strip_fences(partial_spec)
+        try:
+            partial_spec = json.loads(partial_spec)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"LLM did not return valid JSON for partial Vega-Lite spec: {e}") from e
+
+    if not isinstance(partial_spec, dict):
+        raise ValueError(
+            f"Expected partial Vega-Lite spec as dict, got {type(partial_spec).__name__}"
+        )
+
+    facts = dict_to_facts(partial_spec)
+
+    # Draco complete step
+    d = draco.Draco()
+    completions = d.complete_spec(facts, models=draco_models)
+
+    # Convert to VL
+    results = []
+    for model in completions:
+        vl_spec = answer_set_to_dict(model.answer_set)
+        results.append((vl_spec, model.answer_set))
+    return results
+
 def infer_schema(records: list[dict], sample_n: int = 5) -> str:
     if not records:
         return "Empty dataset"
@@ -181,74 +116,20 @@ def infer_schema(records: list[dict], sample_n: int = 5) -> str:
     return f"Fields ({len(records)} rows):\n" + "\n".join(lines)
 
 
-def infer_schema_genson(records: list[dict], sample_n: int = 5) -> str:
-    """Use genson to produce a JSON Schema, then append sample values per top-level field."""
-    if not records:
-        return "Empty dataset"
-
-    builder = SchemaBuilder()
-    for record in records[:100]:
-        builder.add_object(record)
-    schema = builder.to_schema()
-
-    # trim unnecessary top-level boilerplate
-    schema.pop("$schema", None)
-    schema.pop("$id", None)
-
-    # collect sample values for each top-level field
-    samples: dict[str, list] = {}
-    for record in records[:sample_n]:
-        for k, v in record.items():
-            samples.setdefault(k, []).append(v)
-
-    sample_lines = []
-    for field, vals in samples.items():
-        sample_lines.append(f"  {field!r}: {vals}")
-
-    schema_json = json.dumps(schema, indent=2)
-    return (
-        f"JSON Schema ({len(records)} rows):\n{schema_json}\n\n"
-        f"Sample values:\n" + "\n".join(sample_lines)
-    )
-
-
-        # Step 1: LLM generates incomplete Vega-Lite spec
-    """Return the first N records as raw JSON (truncated). No schema info."""
-    if not records:
-        partial_spec = intent_result.vega_lite_partial_spec
-        if isinstance(partial_spec, str):
-            try:
-                partial_spec = json.loads(partial_spec)
-            except Exception:
-                raise ValueError("LLM did not return valid JSON for partial Vega-Lite spec.")
-
-        # Step 2: Convert to Draco facts
-        facts = dict_to_facts(partial_spec)
-
-def flatten_records(records: list[dict], separator: str = ".") -> list[dict]:
-    """Flatten nested dicts/lists in each record using dot-path keys."""
-    return [flatten_obj(record, separator) for record in records]
-
-
 def classify_failure(error_msg: str) -> str:
     """Classify a failed attempt into a failure-mode category."""
     if not error_msg:
         return "unknown"
     lower = error_msg.lower()
 
-    if "json parse error" in lower or "invalid json" in lower or "jsondecodeerror" in lower:
+    if "invalid json" in lower or "jsondecodeerror" in lower:
         return "json_parse"
-    if "is not defined in the schema" in lower or "additional properties" in lower:
-        return "invalid_field"
-    if "flatten" in lower or "nested" in lower or "array" in lower:
-        return "missing_transform"
-    if "altair render error" in lower:
-        # sub-classify render errors
-        if "field" in lower and ("not found" in lower or "undefined" in lower):
-            return "invalid_field"
-        return "render_error"
-    if any(kw in lower for kw in ["validation", "schema", "is not valid", "is not one of"]):
-        return "schema_validation"
+    if "draco completion error" in lower and "parsing failed" in lower:
+        return "draco_parse"
+    if "draco completion error" in lower:
+        return "draco_completion"
+    if "draco render error" in lower:
+        return "draco_render"
     return "unknown"
 
 
@@ -326,157 +207,118 @@ def try_render_altair(spec: dict, records: list[dict]) -> tuple[Any, str | None]
 # main pipeline
 class VegaLiteGenerator(dspy.Module):
 
-    def __init__(self, max_retries: int = 5, schema_mode: str = "genson"):
+    def __init__(self, max_retries: int = 5):
         super().__init__()
-        self.first_try = dspy.ChainOfThought(DirectVegaLite)
-        self.retry = dspy.ChainOfThought(RetryVegaLite)
+        self.draco_first_try = dspy.ChainOfThought(DracoIntentSignature)
+        self.draco_retry = dspy.ChainOfThought(RetryDracoIntentSignature)
         self.max_retries = max_retries
-        if schema_mode not in ("raw", "genson", "flat", "draco-intent"):
-            raise ValueError(f"Invalid schema_mode: {schema_mode!r}. Must be 'raw', 'genson', 'flat', or 'draco-intent'.")
-        self.schema_mode = schema_mode
 
     def forward(self, user_request: str, records: list[dict]):
-        # apply schema_mode routing
-        if self.schema_mode == "flat":
-            records = flatten_records(records)
-            schema_str = infer_schema_genson(records)
-        elif self.schema_mode == "genson":
-            schema_str = infer_schema_genson(records)
-        elif self.schema_mode == "raw":
-            schema_str = infer_schema(records)
-        elif self.schema_mode == "draco-intent":
-            schema_str = infer_schema_genson(records)  # Use genson schema for LLM context?
-
-        else:
-            schema_str = infer_schema_genson(records)
+        schema_str = infer_schema(records)
 
         attempts = []
-
-        # first attempt
-        result = self.first_try(user_request=user_request, data_schema=schema_str)
+        result = self.draco_first_try(user_request=user_request, data_schema=schema_str)
         prompt_msgs = capture_dspy_prompt()
         raw_response = capture_dspy_response()
-        raw = _strip_fences(result.vega_spec)
+        raw_partial = result.vega_lite_partial_spec
 
         for attempt_num in range(1, self.max_retries + 1):
             attempt_record = {
                 "attempt": attempt_num,
                 "prompt_messages": prompt_msgs,
                 "raw_response": raw_response,
+                "raw_partial": raw_partial,
             }
 
-            # try to parse json
             try:
-                spec_dict = json.loads(raw)
-                if isinstance(spec_dict, list):
-                    spec_dict = spec_dict[0] if spec_dict else {}
-                if not isinstance(spec_dict, dict):
-                    raise ValueError(f"Expected dict, got {type(spec_dict).__name__}")
-            except (json.JSONDecodeError, ValueError) as e:
-                error_msg = f"JSON parse error: {e}"
+                draco_results = llm_to_draco_vl_spec(raw_partial, draco_models=1)
+                if not draco_results:
+                    raise ValueError("Draco returned no completions")
+            except Exception as e:
+                error_msg = f"Draco completion error: {e}"
                 attempt_record.update({
                     "success": False,
                     "error": error_msg,
                     "failure_mode": classify_failure(error_msg),
-                    "raw": raw,
                 })
                 attempts.append(attempt_record)
-                print(f"    Attempt {attempt_num}: {error_msg}")
+                print(f"    Draco attempt {attempt_num}: {error_msg}")
 
                 if attempt_num >= self.max_retries:
                     break
 
-                # retry and give error field
-                result = self.retry(
+                previous_spec = raw_partial if isinstance(raw_partial, str) else json.dumps(raw_partial, indent=2)
+                result = self.draco_retry(
                     user_request=user_request,
                     data_schema=schema_str,
-                    previous_spec=raw,
+                    previous_spec=previous_spec,
                     error_message=error_msg,
                 )
                 prompt_msgs = capture_dspy_prompt()
                 raw_response = capture_dspy_response()
-                raw = _strip_fences(result.vega_spec)
+                raw_partial = result.vega_lite_partial_spec
                 continue
 
-            if self.schema_mode == "draco-intent":
-                draco_results = llm_to_draco_vl_spec(user_request, schema_str, draco_models=1)
-                attempts = []
-                for i, (vl_spec, draco_answer_set) in enumerate(draco_results, 1):
-                    # Try to render
-                    render_error = try_render_altair(vl_spec, records)
-                    attempt_record = {
-                        "attempt": i,
+            render_errors = []
+            best_attempt_meta = None
+            for model_idx, (vl_spec, draco_answer_set) in enumerate(draco_results, 1):
+                _, render_error = try_render_altair(vl_spec, records)
+                if render_error is None:
+                    attempt_record.update({
+                        "success": True,
+                        "error": None,
+                        "failure_mode": None,
+                        "draco_model_index": model_idx,
                         "draco_answer_set": str(draco_answer_set),
                         "spec_dict": vl_spec,
-                        "success": render_error is None,
-                        "error": render_error,
-                        "failure_mode": classify_failure(render_error) if render_error else None,
-                    }
+                    })
                     attempts.append(attempt_record)
-                    if render_error is None:
-                        print(f"    Draco attempt {i}: Valid spec")
-                        return {
-                            "is_valid": True,
-                            "spec_dict": vl_spec,
-                            "error": None,
-                            "attempts": attempts,
-                        }
-                    else:
-                        print(f"    Draco attempt {i}: {render_error}")
-                last = attempts[-1] if attempts else {}
-                return {
-                    "is_valid": False,
-                    "spec_dict": last.get("spec_dict"),
-                    "error": last.get("error"),
-                    "raw": None,
-                    "attempts": attempts,
+                    print(f"    Draco attempt {attempt_num}: Valid spec")
+                    return {
+                        "is_valid": True,
+                        "spec_dict": vl_spec,
+                        "error": None,
+                        "attempts": attempts,
+                    }
+
+                render_errors.append(render_error)
+                best_attempt_meta = {
+                    "draco_model_index": model_idx,
+                    "draco_answer_set": str(draco_answer_set),
+                    "spec_dict": vl_spec,
                 }
 
-            # try to render
-            chart, render_error = try_render_altair(spec_dict, records)
-            if render_error:
-                error_msg = f"Altair render error: {render_error}"
-                attempt_record.update({
-                    "success": False,
-                    "error": error_msg,
-                    "failure_mode": classify_failure(error_msg),
-                    "spec_dict": spec_dict,
-                })
-                attempts.append(attempt_record)
-                print(f"    Attempt {attempt_num}: {error_msg}")
-
-                if attempt_num >= self.max_retries:
-                    break
-
-                # retry with error field
-                result = self.retry(
-                    user_request=user_request,
-                    data_schema=schema_str,
-                    previous_spec=json.dumps(spec_dict, indent=2),
-                    error_message=error_msg,
-                )
-                prompt_msgs = capture_dspy_prompt()
-                raw_response = capture_dspy_response()
-                raw = _strip_fences(result.vega_spec)
-                continue
-
-            # success
-            attempt_record.update({"success": True, "error": None, "failure_mode": None, "spec_dict": spec_dict})
+            error_msg = "Draco render error: " + " | ".join(render_errors[:3])
+            attempt_record.update({
+                "success": False,
+                "error": error_msg,
+                "failure_mode": classify_failure(error_msg),
+            })
+            if best_attempt_meta is not None:
+                attempt_record.update(best_attempt_meta)
             attempts.append(attempt_record)
-            print(f"    Attempt {attempt_num}: Valid spec")
-            return {
-                "is_valid": True,
-                "spec_dict": spec_dict,
-                "error": None,
-                "attempts": attempts,
-            }
+            print(f"    Draco attempt {attempt_num}: {error_msg}")
+
+            if attempt_num >= self.max_retries:
+                break
+
+            previous_spec = raw_partial if isinstance(raw_partial, str) else json.dumps(raw_partial, indent=2)
+            result = self.draco_retry(
+                user_request=user_request,
+                data_schema=schema_str,
+                previous_spec=previous_spec,
+                error_message=error_msg,
+            )
+            prompt_msgs = capture_dspy_prompt()
+            raw_response = capture_dspy_response()
+            raw_partial = result.vega_lite_partial_spec
 
         last = attempts[-1] if attempts else {}
         return {
             "is_valid": False,
             "spec_dict": last.get("spec_dict"),
             "error": last.get("error"),
-            "raw": last.get("raw", raw),
+            "raw": last.get("raw_partial"),
             "attempts": attempts,
         }
 
@@ -535,17 +377,17 @@ def run_prompt_dataset_matrix(
     ollama_base: str = "http://localhost:11434",
     model_name: str = "mistral",
     prompt_limit: int | None = None,
-    schema_mode: str = "genson",
+    schema_mode: str = "draco-intent",
     level_filter: list[str] | str | None = None,
 ) -> list[dict]:
     """
-    Run the prompt-dataset matrix pipeline.
-    schema_mode options:
-      - 'raw': pass raw data sample to LLM
-      - 'genson': pass genson-generated schema to LLM
-      - 'flat': flatten data, then pass genson schema
-      - 'draco-intent': use LLM to generate partial Draco spec, then Draco to complete to full Vega-Lite spec
+    Run the prompt-dataset matrix pipeline in Draco intent mode.
     """
+
+    if schema_mode != "draco-intent":
+        raise ValueError(
+            f"Only 'draco-intent' is supported in this simplified pipeline, got {schema_mode!r}."
+        )
     
     # configure dspy
     lm = dspy.LM(model=f"ollama/{model_name}", api_base=ollama_base)
@@ -598,7 +440,7 @@ def run_prompt_dataset_matrix(
     print(f"  Levels   : {levels or 'all'}")
     print(f"  Retries  : max {max_retries} per run")
 
-    pipeline = VegaLiteGenerator(max_retries=max_retries, schema_mode=schema_mode)
+    pipeline = VegaLiteGenerator(max_retries=max_retries)
     all_results: list[dict] = []
     valid_count = 0
 
