@@ -1,0 +1,52 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Population Trends by Sex",
+  "width": 600,
+  "height": 400,
+  "transform": [
+    {
+      "aggregate": [
+        {
+          "op": "sum",
+          "field": "population",
+          "as": "total_population"
+        }
+      ],
+      "groupby": [
+        "year",
+        "sex"
+      ]
+    }
+  ],
+  "mark": "line",
+  "encoding": {
+    "x": {
+      "field": "year",
+      "type": "quantitative",
+      "title": "Year"
+    },
+    "y": {
+      "field": "total_population",
+      "type": "quantitative",
+      "title": "Total Population"
+    },
+    "color": {
+      "field": "sex",
+      "type": "nominal",
+      "title": "Sex",
+      "scale": {
+        "domain": [
+          1,
+          2
+        ],
+        "range": [
+          "#1f77b4",
+          "#d62728"
+        ]
+      }
+    }
+  },
+  "data": {
+    "url": "data/population.json"
+  }
+}

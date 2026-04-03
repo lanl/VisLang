@@ -443,7 +443,7 @@ def run_prompt_dataset_matrix(
     data_dir: str = "data",
     prompts_file: str = "prompts/prompts.json",
     output_file: str = "generatedViz/run_results.json",
-    specs_dir: str = "generatedViz/specs",
+    output_dir: str = "generatedViz",
     max_retries: int = 5,
     model_name: str = "moonshotai/kimi-k2.5",
     prompt_limit: int | None = None,
@@ -459,6 +459,7 @@ def run_prompt_dataset_matrix(
         model=f"openai/{model_name}",
         api_base="https://integrate.api.nvidia.com/v1",
         api_key=api_key,
+        chat_template_kwargs={"thinking": False},
     )
     dspy.settings.configure(lm=lm)
 
@@ -512,8 +513,6 @@ def run_prompt_dataset_matrix(
     all_results: list[dict] = []
     valid_count = 0
 
-    Path(specs_dir).mkdir(parents=True, exist_ok=True)
-
     for run_idx, (pid, pobj, dataset_path) in enumerate(paired, 1):
         ptxt = pobj["text"] if isinstance(pobj, dict) else str(pobj)
         prompt_level = pobj.get("level", "unknown") if isinstance(pobj, dict) else "unknown"
@@ -541,25 +540,48 @@ def run_prompt_dataset_matrix(
             "total_attempts": len(result.get("attempts", [])),
         }
 
+        # Create per-prompt output directories
+        prompt_dir = Path(output_dir) / pid
+        specs_path = prompt_dir / "specs"
+        traces_path = prompt_dir / "traces"
+        specs_path.mkdir(parents=True, exist_ok=True)
+        traces_path.mkdir(parents=True, exist_ok=True)
+
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        run_tag = f"{schema_mode}_{max_retries}_{date_str}"
+
+        # Save trace (prompt messages + LLM responses for all attempts)
+        trace_data = []
+        for a in result.get("attempts", []):
+            trace_data.append({
+                "attempt": a.get("attempt"),
+                "success": a.get("success"),
+                "error": a.get("error"),
+                "prompt_messages": a.get("prompt_messages"),
+                "raw_response": a.get("raw_response"),
+            })
+        trace_file = traces_path / f"{run_tag}.json"
+        with open(trace_file, "w") as f:
+            json.dump(trace_data, f, indent=2)
+
         # Save spec file (URL-based, no inline data)
         if result["is_valid"] and result.get("spec_dict"):
             saved_spec = spec_with_url(result["spec_dict"], str(dataset_path))
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            spec_filename = f"{pid}_{schema_mode}{max_retries}_{date_str}.json"
-            spec_path = Path(specs_dir) / spec_filename
-            with open(spec_path, "w") as f:
+            spec_file = specs_path / f"{run_tag}.json"
+            with open(spec_file, "w") as f:
                 json.dump(saved_spec, f, indent=2)
-            run_record["spec_file"] = str(spec_path)
+            run_record["spec_file"] = str(spec_file)
             run_record["spec_dict"] = result["spec_dict"]
             valid_count += 1
             print(f"  Result   : Valid (attempt {run_record['total_attempts']})")
-            print(f"  Saved    : {spec_path}")
+            print(f"  Saved    : {spec_file}")
         else:
             run_record["spec_file"] = None
             run_record["spec_dict"] = result.get("spec_dict")
             run_record["raw"] = result.get("raw")
             print(f"  Result   : FAILED after {run_record['total_attempts']} attempts")
             print(f"  Error    : {result.get('error', 'unknown')}")
+        print(f"  Trace    : {trace_file}")
 
         all_results.append(run_record)
 
@@ -579,7 +601,7 @@ def run_prompt_dataset_matrix(
     _divider("BATCH RUN COMPLETE")
     print(f"  Valid    : {valid_count}/{total_runs}")
     print(f"  Results  : {output_path}")
-    print(f"  Specs    : {specs_dir}/")
+    print(f"  Output   : {output_dir}/<prompt_id>/{{specs,diagrams,traces}}/")
     _divider()
 
     return all_results

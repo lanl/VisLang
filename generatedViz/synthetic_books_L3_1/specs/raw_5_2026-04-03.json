@@ -1,0 +1,55 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Book Pages vs Rating",
+  "width": 600,
+  "height": 400,
+  "mark": "point",
+  "encoding": {
+    "x": {
+      "field": "pages",
+      "type": "quantitative",
+      "title": "Pages"
+    },
+    "y": {
+      "field": "rating",
+      "type": "quantitative",
+      "title": "Rating",
+      "scale": {
+        "domain": [
+          0,
+          5
+        ]
+      }
+    },
+    "tooltip": [
+      {
+        "field": "title",
+        "type": "nominal",
+        "title": "Title"
+      },
+      {
+        "field": "author",
+        "type": "nominal",
+        "title": "Author"
+      },
+      {
+        "field": "genre",
+        "type": "nominal",
+        "title": "Genre"
+      },
+      {
+        "field": "pages",
+        "type": "quantitative",
+        "title": "Pages"
+      },
+      {
+        "field": "rating",
+        "type": "quantitative",
+        "title": "Rating"
+      }
+    ]
+  },
+  "data": {
+    "url": "data/synthetic_books.json"
+  }
+}
