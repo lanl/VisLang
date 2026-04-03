@@ -1,0 +1,18 @@
+{
+  "encoding": {
+    "x": {
+      "field": "Aircraft",
+      "type": "nominal"
+    },
+    "y": {
+      "field": "Passenger capacity",
+      "type": "quantitative"
+    }
+  },
+  "mark": {
+    "type": "bar"
+  },
+  "data": {
+    "url": "data/aircraft.json"
+  }
+}

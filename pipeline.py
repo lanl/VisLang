@@ -449,7 +449,7 @@ def run_prompt_dataset_matrix(
     model_name: str = "mistral",
     prompt_limit: int | None = None,
     schema_mode: str = "genson",
-    level_filter: list[str] | str | None = None,
+    prompt_ids: list[str] | str | None = None,
 ) -> list[dict]:
     
     # configure dspy
@@ -459,13 +459,13 @@ def run_prompt_dataset_matrix(
     # load prompts (dict of {id: {text, dataset, level}})
     prompts_dict = load_prompts_file(prompts_file)
 
-    # normalize level_filter
-    if level_filter is None:
-        levels = None
-    elif isinstance(level_filter, str):
-        levels = {level_filter}
+    # normalize prompt_ids filter
+    if prompt_ids is None:
+        pid_filter = None
+    elif isinstance(prompt_ids, str):
+        pid_filter = {prompt_ids}
     else:
-        levels = set(level_filter)
+        pid_filter = set(prompt_ids)
 
     # build lookup of available dataset files by filename
     dataset_files: dict[str, Path] = {}
@@ -478,8 +478,8 @@ def run_prompt_dataset_matrix(
     # pair prompts with their datasets, applying level filter
     paired: list[tuple[str, dict, Path]] = []  # (prompt_id, prompt_obj, dataset_path)
     for pid, pobj in prompts_dict.items():
-        # level filter
-        if levels and pobj.get("level") not in levels:
+        # prompt_id filter
+        if pid_filter and pid not in pid_filter:
             continue
         # match to dataset
         target_ds = pobj.get("dataset")
@@ -500,7 +500,6 @@ def run_prompt_dataset_matrix(
     print(f"  Datasets : {len(dataset_files)} in {data_dir}/")
     print(f"  Prompts  : {len(prompts_dict)} loaded, {total_runs} runs after filtering")
     print(f"  Schema   : {schema_mode}")
-    print(f"  Levels   : {levels or 'all'}")
     print(f"  Retries  : max {max_retries} per run")
 
     pipeline = VegaLiteGenerator(max_retries=max_retries, schema_mode=schema_mode)

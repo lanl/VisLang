@@ -1,0 +1,668 @@
+[
+  {
+    "run_index": 1,
+    "dataset": "data/aircraft.json",
+    "dataset_name": "aircraft",
+    "prompt_id": "aircraft_L1_1",
+    "prompt_text": "Give me an appropriate visualization for this dataset.",
+    "prompt_level": "L1",
+    "schema_mode": "raw",
+    "is_valid": false,
+    "error": "JSON parse error: Expecting ':' delimiter: line 5 column 19 (char 180)",
+    "attempts": [
+      {
+        "attempt": 1,
+        "raw_response": " [[ ## reasoning ## ]]\nTo create an appropriate visualization for this dataset, we will choose a multi-layer bar chart that compares aircraft mileage and age, as well as their passenger capacity. We will also include a scatter plot to show the relationship between flight time and aircraft age.\n\n[[ ## vega_spec ## ]]\n```json\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Multi-layer bar chart and scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"transform\": [\n    {\n      \"groupby\": [\"Aircraft\"],\n      \"aggregate\": [{\"field\": \"Mileage\", \"as\": \"Total_mileage\"}, {\"field\": \"Age\", \"as\": \"Aircraft_age\"}]\n    },\n    {\"fold\": {\"field\": \"Aircraft\", \"as\": [\"values\", \"key\"]}}\n  ],\n  \"layers\": [\n    {\n      \"mark\": {\n        \"bar\": true,\n        \"fill\": \"#546E7A\"\n      },\n      \"encoding\": {\n        \"x\": {\"field\": \"Aircraft_age\", \"axis\": {\"title\": \"Aircraft Age\"}},\n        \"y\": {\"aggregate\": \"sum\", \"field\": \"Total_mileage\", \"stack\": null},\n        \"opacity\": {\"value\": 0.7}\n      }\n    },\n    {\n      \"mark\": {\"bar\", \"fill\": \"#3F51B5\"},\n      \"encoding\": {\n        \"x\": {\"field\": \"Aircraft_age\", \"axis\": {\"title\": \"Aircraft Age\"}},\n        \"y\": {\"aggregate\": \"sum\", \"field\": \"Passenger capacity\", \"stack\": null},\n        \"yAxis\": {\"grid\": false}\n      }\n    },\n    {\n      \"mark\": {\"point\"},\n      \"encoding\": {\n        \"x\": {\"field\": \"Aircraft_age\", \"axis\": {\"title\": \"Aircraft Age\"}},\n        \"y\": {\"field\": \"Longest Flight time\"},\n        \"color\": {\"value\": \"#F57C00\"}\n      }\n    }\n  ]\n}\n```\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "JSON parse error: Expecting ':' delimiter: line 25 column 21 (char 758)",
+        "failure_mode": "json_parse",
+        "raw": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Multi-layer bar chart and scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"transform\": [\n    {\n      \"groupby\": [\"Aircraft\"],\n      \"aggregate\": [{\"field\": \"Mileage\", \"as\": \"Total_mileage\"}, {\"field\": \"Age\", \"as\": \"Aircraft_age\"}]\n    },\n    {\"fold\": {\"field\": \"Aircraft\", \"as\": [\"values\", \"key\"]}}\n  ],\n  \"layers\": [\n    {\n      \"mark\": {\n        \"bar\": true,\n        \"fill\": \"#546E7A\"\n      },\n      \"encoding\": {\n        \"x\": {\"field\": \"Aircraft_age\", \"axis\": {\"title\": \"Aircraft Age\"}},\n        \"y\": {\"aggregate\": \"sum\", \"field\": \"Total_mileage\", \"stack\": null},\n        \"opacity\": {\"value\": 0.7}\n      }\n    },\n    {\n      \"mark\": {\"bar\", \"fill\": \"#3F51B5\"},\n      \"encoding\": {\n        \"x\": {\"field\": \"Aircraft_age\", \"axis\": {\"title\": \"Aircraft Age\"}},\n        \"y\": {\"aggregate\": \"sum\", \"field\": \"Passenger capacity\", \"stack\": null},\n        \"yAxis\": {\"grid\": false}\n      }\n    },\n    {\n      \"mark\": {\"point\"},\n      \"encoding\": {\n        \"x\": {\"field\": \"Aircraft_age\", \"axis\": {\"title\": \"Aircraft Age\"}},\n        \"y\": {\"field\": \"Longest Flight time\"},\n        \"color\": {\"value\": \"#F57C00\"}\n      }\n    }\n  ]\n}"
+      },
+      {
+        "attempt": 2,
+        "raw_response": " [[ ## reasoning ## ]]\nThe error message indicates that there's a syntax issue at line 25, column 21. From looking at the provided Vega-Lite specification, it seems that the problem is with the `layers` section where each layer has overlapping fields such as \"x\", \"y\", and \"encoding\". To fix this, I will modify the spec by renaming some of the field names in each layer to avoid conflicts.\n\n[[ ## vega_spec ## ]]\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Multi-layer bar chart and scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"transform\": [\n    {\n      \"groupby\": [\"Aircraft\"],\n      \"aggregate\": [{\"field\": \"Mileage\", \"as\": \"Total_mileage\"}, {\"field\": \"Age\", \"as\": \"Aircraft_age\"}]\n    },\n    {\"fold\": {\"field\": \"Aircraft\", \"as\": [\"values\", \"key\"]}}\n  ],\n  \"layers\": [\n    {\n      \"mark\": {\n        \"bar\": true,\n        \"fill\": \"#546E7A\"\n      },\n      \"encoding\": {\n        \"xAxis\": {\"field\": \"Aircraft_age\", \"title\": \"Aircraft Age\"},\n        \"yAxis\": {\"aggregate\": \"sum\", \"field\": \"Total_mileage\", \"stack\": null},\n        \"opacity\": {\"value\": 0.7}\n      }\n    },\n    {\n      \"mark\": {\"bar\", \"fill\": \"#3F51B5\"},\n      \"encoding\": {\n        \"xAxis\": {\"field\": \"Aircraft_age\", \"title\": \"Aircraft Age\"},\n        \"yAxis\": {\"aggregate\": \"sum\", \"field\": \"Passenger capacity\"},\n        \"yAxis2\": {\"grid\": false}\n      }\n    },\n    {\n      \"mark\": {\"point\"},\n      \"encoding\": {\n        \"xAxis\": {\"field\": \"Aircraft_age\", \"title\": \"Aircraft Age\"},\n        \"yAxis\": {\"field\": \"Longest Flight time\"},\n        \"color\": {\"value\": \"#F57C00\"}\n      }\n    }\n  ]\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "JSON parse error: Expecting ':' delimiter: line 25 column 21 (char 756)",
+        "failure_mode": "json_parse",
+        "raw": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Multi-layer bar chart and scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"transform\": [\n    {\n      \"groupby\": [\"Aircraft\"],\n      \"aggregate\": [{\"field\": \"Mileage\", \"as\": \"Total_mileage\"}, {\"field\": \"Age\", \"as\": \"Aircraft_age\"}]\n    },\n    {\"fold\": {\"field\": \"Aircraft\", \"as\": [\"values\", \"key\"]}}\n  ],\n  \"layers\": [\n    {\n      \"mark\": {\n        \"bar\": true,\n        \"fill\": \"#546E7A\"\n      },\n      \"encoding\": {\n        \"xAxis\": {\"field\": \"Aircraft_age\", \"title\": \"Aircraft Age\"},\n        \"yAxis\": {\"aggregate\": \"sum\", \"field\": \"Total_mileage\", \"stack\": null},\n        \"opacity\": {\"value\": 0.7}\n      }\n    },\n    {\n      \"mark\": {\"bar\", \"fill\": \"#3F51B5\"},\n      \"encoding\": {\n        \"xAxis\": {\"field\": \"Aircraft_age\", \"title\": \"Aircraft Age\"},\n        \"yAxis\": {\"aggregate\": \"sum\", \"field\": \"Passenger capacity\"},\n        \"yAxis2\": {\"grid\": false}\n      }\n    },\n    {\n      \"mark\": {\"point\"},\n      \"encoding\": {\n        \"xAxis\": {\"field\": \"Aircraft_age\", \"title\": \"Aircraft Age\"},\n        \"yAxis\": {\"field\": \"Longest Flight time\"},\n        \"color\": {\"value\": \"#F57C00\"}\n      }\n    }\n  ]\n}"
+      },
+      {
+        "attempt": 3,
+        "raw_response": " [[ ## reasoning ## ]]\nThe error occurred because the `fold` transform in the `transform` section is trying to fold both fields \"Aircraft\" and \"key\", which is incorrect. The `fold` function should be applied only to a single column or field. In this case, it seems that we don't actually need to use the `fold` transform for this specific data schema. Instead, let's create separate layers for each type of visualization (bar chart and scatter plot) without folding the \"Aircraft\" field.\n\n[[ ## vega_spec ## ]]\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Multi-layer bar chart and scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"mark\": {\n    \"bar\": true,\n    \"fill\": \"#546E7A\"\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n    \"y\": {\"aggregate\": \"sum\", \"field\": \"Mileage\", \"stack\": null},\n    \"opacity\": {\"value\": 0.7}\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"bar\",\n        \"fill\": \"#3F51B5\"\n      },\n      \"encoding\": {\n        \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n        \"y\": {\"aggregate\": \"sum\", \"field\": \"Passenger capacity\"}\n      }\n    },\n    {\n      \"mark\": {\"point\"},\n      \"encoding\": {\n        \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n        \"y\": {\"field\": \"Longest Flight time\"},\n        \"color\": {\"value\": \"#F57C00\"}\n      }\n    }\n  ]\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "JSON parse error: Expecting ':' delimiter: line 17 column 14 (char 462)",
+        "failure_mode": "json_parse",
+        "raw": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Multi-layer bar chart and scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"mark\": {\n    \"bar\": true,\n    \"fill\": \"#546E7A\"\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n    \"y\": {\"aggregate\": \"sum\", \"field\": \"Mileage\", \"stack\": null},\n    \"opacity\": {\"value\": 0.7}\n  },\n  \"layer\": [\n    {\n      \"mark\": {\n        \"bar\",\n        \"fill\": \"#3F51B5\"\n      },\n      \"encoding\": {\n        \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n        \"y\": {\"aggregate\": \"sum\", \"field\": \"Passenger capacity\"}\n      }\n    },\n    {\n      \"mark\": {\"point\"},\n      \"encoding\": {\n        \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n        \"y\": {\"field\": \"Longest Flight time\"},\n        \"color\": {\"value\": \"#F57C00\"}\n      }\n    }\n  ]\n}"
+      },
+      {
+        "attempt": 4,
+        "raw_response": " [[ ## reasoning ## ]]\nThe error message indicates that there is a syntax issue on line 17, column 14 of the JSON spec. In this case, the issue occurs in the \"layer\" array where both layers share the same encoding for the x-axis field \"Aircraft\". To resolve the conflict and fix the syntax error, we will split these two layers into separate specifications for the bar chart and scatter plot.\n\n[[ ## vega_spec ## ]]\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Bar chart for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"mark\": {\n    \"bar\": true,\n    \"fill\": \"#3F51B5\"\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n    \"y\": {\"aggregate\": \"sum\", \"field\": \"Passenger capacity\"}\n  }\n}\n\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"mark\": {\"point\"},\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n    \"y\": {\"field\": \"Longest Flight time\"},\n    \"color\": {\"value\": \"#F57C00\"}\n  }\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "JSON parse error: Extra data: line 15 column 1 (char 352)",
+        "failure_mode": "json_parse",
+        "raw": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Bar chart for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"mark\": {\n    \"bar\": true,\n    \"fill\": \"#3F51B5\"\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n    \"y\": {\"aggregate\": \"sum\", \"field\": \"Passenger capacity\"}\n  }\n}\n\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"mark\": {\"point\"},\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n    \"y\": {\"field\": \"Longest Flight time\"},\n    \"color\": {\"value\": \"#F57C00\"}\n  }\n}"
+      },
+      {
+        "attempt": 5,
+        "raw_response": " [[ ## reasoning ## ]]\nThe error occurs because there is an extra comma at the end of the second Vega-Lite spec. This comma causes the parsing to fail as it considers it as another object, which does not exist in the data schema. To fix this issue, I will remove the extra comma.\n\n[[ ## vega_spec ## ]]\n{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"mark\": {\"point\"},\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n    \"y\": {\"field\": \"Longest Flight time\"},\n    \"color\": {\"value\": \"#F57C00\"}\n  }\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "JSON parse error: Expecting ':' delimiter: line 5 column 19 (char 180)",
+        "failure_mode": "json_parse",
+        "raw": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"mark\": {\"point\"},\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n    \"y\": {\"field\": \"Longest Flight time\"},\n    \"color\": {\"value\": \"#F57C00\"}\n  }\n}"
+      }
+    ],
+    "total_attempts": 5,
+    "spec_file": null,
+    "spec_dict": null,
+    "raw": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Scatter plot for aircraft data\",\n  \"data\": {\"url\": \"data/aircraft_data.csv\"},\n  \"mark\": {\"point\"},\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\", \"title\": \"Aircraft\"},\n    \"y\": {\"field\": \"Longest Flight time\"},\n    \"color\": {\"value\": \"#F57C00\"}\n  }\n}"
+  },
+  {
+    "run_index": 2,
+    "dataset": "data/aircraft.json",
+    "dataset_name": "aircraft",
+    "prompt_id": "aircraft_L2_1",
+    "prompt_text": "Create a bar chart for this dataset.",
+    "prompt_level": "L2",
+    "schema_mode": "raw",
+    "is_valid": true,
+    "error": null,
+    "attempts": [
+      {
+        "attempt": 1,
+        "raw_response": " [[ ## reasoning ## ]]\nThe user has requested a bar chart for the provided dataset. To create this, we will use Vega-Lite to encode each field as either x (bars on the x-axis) or y (height of the bars). Since the 'Aircraft' field contains unique values, it can serve as the x-axis categories. 'Mileage', 'Age', and 'Passenger capacity' would be suitable for encoding as y to show the comparison among different aircraft models.\n\n[[ ## vega_spec ## ]]\n{\n  \"data\": {\"url\": \"https://yourdatasource.com/aircraft\"},\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\", \"type\": \"nominal\"},\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"Mileage\"\n    },\n    \"color\": {\"field\": \"Aircraft\"}\n  },\n  \"mark\": {\"type\": \"bar\"}\n}\n\n[[ ## completed ## ]]",
+        "success": true,
+        "error": null,
+        "failure_mode": null,
+        "spec_dict": {
+          "data": {
+            "url": "https://yourdatasource.com/aircraft"
+          },
+          "encoding": {
+            "x": {
+              "field": "Aircraft",
+              "type": "nominal"
+            },
+            "y": {
+              "aggregate": "sum",
+              "field": "Mileage"
+            },
+            "color": {
+              "field": "Aircraft"
+            }
+          },
+          "mark": {
+            "type": "bar"
+          }
+        }
+      }
+    ],
+    "total_attempts": 1,
+    "spec_file": "generatedViz/specs/aircraft_L2_1_raw5_2026-04-03.json",
+    "spec_dict": {
+      "data": {
+        "url": "https://yourdatasource.com/aircraft"
+      },
+      "encoding": {
+        "x": {
+          "field": "Aircraft",
+          "type": "nominal"
+        },
+        "y": {
+          "aggregate": "sum",
+          "field": "Mileage"
+        },
+        "color": {
+          "field": "Aircraft"
+        }
+      },
+      "mark": {
+        "type": "bar"
+      }
+    }
+  },
+  {
+    "run_index": 3,
+    "dataset": "data/aircraft.json",
+    "dataset_name": "aircraft",
+    "prompt_id": "aircraft_L3_1",
+    "prompt_text": "Create a bar chart with Aircraft on the x-axis and Passenger capacity on the y-axis.",
+    "prompt_level": "L3",
+    "schema_mode": "raw",
+    "is_valid": true,
+    "error": null,
+    "attempts": [
+      {
+        "attempt": 1,
+        "raw_response": " [[ ## reasoning ## ]]\nTo create a bar chart with Aircraft on the x-axis and Passenger capacity on the y-axis, we need to perform two main steps:\n1. Transform the data into the necessary structure suitable for Vega-Lite bar charts, where the x and y fields are defined in encoding.\n2. Set up the mark as a bar chart and provide scale options.\n\n[[ ## vega_spec ## ]]\n{\n  \"data\": {\n    \"values\": [\n      {\"Aircraft\": \"AeroLynx A220\", \"Passenger capacity\": 135},\n      {\"Aircraft\": \"SkyBridge B737-900\", \"Passenger capacity\": 178},\n      {\"Aircraft\": \"Nimbus A321X\", \"Passenger capacity\": 210},\n      {\"Aircraft\": \"TitanAir B787-8\", \"Passenger capacity\": 242},\n      {\"Aircraft\": \"StratoCruise A350-900\", \"Passenger capacity\": 300}\n    ]\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"Aircraft\",\n      \"type\": \"nominal\"\n    },\n    \"y\": {\n      \"field\": \"Passenger capacity\",\n      \"type\": \"quantitative\"\n    }\n  },\n  \"mark\": {\"type\": \"bar\"}\n}\n\n[[ ## completed ## ]]",
+        "success": true,
+        "error": null,
+        "failure_mode": null,
+        "spec_dict": {
+          "data": {
+            "values": [
+              {
+                "Aircraft": "AeroLynx A220",
+                "Passenger capacity": 135
+              },
+              {
+                "Aircraft": "SkyBridge B737-900",
+                "Passenger capacity": 178
+              },
+              {
+                "Aircraft": "Nimbus A321X",
+                "Passenger capacity": 210
+              },
+              {
+                "Aircraft": "TitanAir B787-8",
+                "Passenger capacity": 242
+              },
+              {
+                "Aircraft": "StratoCruise A350-900",
+                "Passenger capacity": 300
+              }
+            ]
+          },
+          "encoding": {
+            "x": {
+              "field": "Aircraft",
+              "type": "nominal"
+            },
+            "y": {
+              "field": "Passenger capacity",
+              "type": "quantitative"
+            }
+          },
+          "mark": {
+            "type": "bar"
+          }
+        }
+      }
+    ],
+    "total_attempts": 1,
+    "spec_file": "generatedViz/specs/aircraft_L3_1_raw5_2026-04-03.json",
+    "spec_dict": {
+      "data": {
+        "values": [
+          {
+            "Aircraft": "AeroLynx A220",
+            "Passenger capacity": 135
+          },
+          {
+            "Aircraft": "SkyBridge B737-900",
+            "Passenger capacity": 178
+          },
+          {
+            "Aircraft": "Nimbus A321X",
+            "Passenger capacity": 210
+          },
+          {
+            "Aircraft": "TitanAir B787-8",
+            "Passenger capacity": 242
+          },
+          {
+            "Aircraft": "StratoCruise A350-900",
+            "Passenger capacity": 300
+          }
+        ]
+      },
+      "encoding": {
+        "x": {
+          "field": "Aircraft",
+          "type": "nominal"
+        },
+        "y": {
+          "field": "Passenger capacity",
+          "type": "quantitative"
+        }
+      },
+      "mark": {
+        "type": "bar"
+      }
+    }
+  },
+  {
+    "run_index": 4,
+    "dataset": "data/aircraft.json",
+    "dataset_name": "aircraft",
+    "prompt_id": "aircraft_L4_1",
+    "prompt_text": "Create a bar chart with Aircraft on the x-axis and Passenger capacity on the y-axis. Color the bars by Manufacturer.",
+    "prompt_level": "L4",
+    "schema_mode": "raw",
+    "is_valid": false,
+    "error": "JSON parse error: Expecting property name enclosed in double quotes: line 4 column 8 (char 37)",
+    "attempts": [
+      {
+        "attempt": 1,
+        "raw_response": " [[ ## reasoning ## ]]\nTo create a bar chart with Aircraft on the x-axis, Passenger capacity on the y-axis, and color the bars by Manufacturer, we will need to use Vega-Lite's encoding features. The 'Aircraft', 'Passenger capacity', and 'Manufacturer' fields correspond to the x, y, and color channels, respectively.\n\n[[ ## vega_spec ## ]]\n```json\n{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}\n```\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "JSON parse error: Expecting property name enclosed in double quotes: line 4 column 8 (char 37)",
+        "failure_mode": "json_parse",
+        "raw": "{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}"
+      },
+      {
+        "attempt": 2,
+        "raw_response": " [[ ## reasoning ## ]]\nThe error occurred due to missing double quotes around a property name in the previous spec. In this case, it was the 'encoding' object that did not have quotes. To fix this issue, we need to enclose the 'encoding' object in double quotes and also add double quotes around the field names (x, y, color) within it.\n\n[[ ## vega_spec ## ]]\n{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "JSON parse error: Expecting property name enclosed in double quotes: line 4 column 8 (char 37)",
+        "failure_mode": "json_parse",
+        "raw": "{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}"
+      },
+      {
+        "attempt": 3,
+        "raw_response": " [[ ## reasoning ## ]]\nThe error occurred due to missing double quotes around a property name in the previous spec. In this case, it was the 'encoding' object that did not have quotes. To fix this issue, we need to enclose the 'encoding' object in double quotes and also add double quotes around the field names (x, y, color) within it.\n\n[[ ## vega_spec ## ]]\n{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "JSON parse error: Expecting property name enclosed in double quotes: line 4 column 8 (char 37)",
+        "failure_mode": "json_parse",
+        "raw": "{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}"
+      },
+      {
+        "attempt": 4,
+        "raw_response": " [[ ## reasoning ## ]]\nThe error occurred due to missing double quotes around a property name in the previous spec. In this case, it was the 'encoding' object that did not have quotes. To fix this issue, we need to enclose the 'encoding' object in double quotes and also add double quotes around the field names (x, y, color) within it.\n\n[[ ## vega_spec ## ]]\n{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "JSON parse error: Expecting property name enclosed in double quotes: line 4 column 8 (char 37)",
+        "failure_mode": "json_parse",
+        "raw": "{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}"
+      },
+      {
+        "attempt": 5,
+        "raw_response": " [[ ## reasoning ## ]]\nThe error occurred due to missing double quotes around a property name in the previous spec. In this case, it was the 'encoding' object that did not have quotes. To fix this issue, we need to enclose the 'encoding' object in double quotes and also add double quotes around the field names (x, y, color) within it.\n\n[[ ## vega_spec ## ]]\n{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "JSON parse error: Expecting property name enclosed in double quotes: line 4 column 8 (char 37)",
+        "failure_mode": "json_parse",
+        "raw": "{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}"
+      }
+    ],
+    "total_attempts": 5,
+    "spec_file": null,
+    "spec_dict": null,
+    "raw": "{\n  \"data\": {\n    \"values\": [\n      {...},\n      {...},\n      {...},\n      {...},\n      {...}\n    ],\n    \"format\": {\"type\": \"csv\"}\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"Aircraft\"},\n    \"y\": {\"field\": \"Passenger capacity\"},\n    \"color\": {\"field\": \"Manufacturer\"}\n  }\n}"
+  },
+  {
+    "run_index": 5,
+    "dataset": "data/population.json",
+    "dataset_name": "population",
+    "prompt_id": "population_L1_1",
+    "prompt_text": "Give me an appropriate visualization for this dataset.",
+    "prompt_level": "L1",
+    "schema_mode": "raw",
+    "is_valid": false,
+    "error": "Altair render error: {'sum': 'population'} is not of type 'array'",
+    "attempts": [
+      {
+        "attempt": 1,
+        "raw_response": " [[ ## reasoning ## ]]\nThe user has requested a visualization of the provided dataset. The dataset contains four fields: year, age, sex, and population. To create an informative visualization, we can use a bar chart to show the population distribution by age group for each year. However, since there are multiple groups based on 'age' and 'sex', we will need to combine these factors using a faceted plot. Additionally, since the data is ordered chronologically, we can stack the bars within each year to easily compare populations over time.\n\n[[ ## vega_spec ## ]]\n{\n  \"$schema\": \"https://vega.github.io/schema/vegalite/v5.json\",\n  \"width\": 800,\n  \"height\": 600,\n  \"padding\": { \"top\": 10, \"bottom\": 30, \"left\": 40, \"right\": 40 },\n  \"data\": [{\"name\": \"data\", \"url\": \"data/sample_records.json\"}],\n  \"transform\": [\n    {\"aggregate\": [\"sum\", \"count\"],\"fields\": [\"population\"], \"as\": [\"total_population\", \"num_rows\"], \"groupBy\": [\"year\", \"age\", \"sex\"]},\n    {\"calculate\": \"datum.year + datum.age\", \"as\": \"combined_age\", \"groupBy\": [\"year\", \"sex\"]}\n  ],\n  \"mark\": {\n    \"type\": \"bar\",\n    \"stack\": true,\n    \"key\": \"sex\"\n  },\n  \"encoding\": {\n    \"x\": {\"field\": \"combined_age\", \"type\": \"ordinal\"},\n    \"y\": {\"aggregate\": \"sum\", \"field\": \"total_population\", \"type\": \"quantitative\"},\n    \"color\": {\"field\": \"sex\", \"type\": \"nominal\"}\n  },\n  \"facet\": {\"rows\": [\"year\"], \"columns\": null}\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "Altair render error: 'boxplot' was expected",
+        "failure_mode": "render_error",
+        "spec_dict": {
+          "$schema": "https://vega.github.io/schema/vegalite/v5.json",
+          "width": 800,
+          "height": 600,
+          "padding": {
+            "top": 10,
+            "bottom": 30,
+            "left": 40,
+            "right": 40
+          },
+          "data": [
+            {
+              "name": "data",
+              "url": "data/sample_records.json"
+            }
+          ],
+          "transform": [
+            {
+              "aggregate": [
+                "sum",
+                "count"
+              ],
+              "fields": [
+                "population"
+              ],
+              "as": [
+                "total_population",
+                "num_rows"
+              ],
+              "groupBy": [
+                "year",
+                "age",
+                "sex"
+              ]
+            },
+            {
+              "calculate": "datum.year + datum.age",
+              "as": "combined_age",
+              "groupBy": [
+                "year",
+                "sex"
+              ]
+            }
+          ],
+          "mark": {
+            "type": "bar",
+            "stack": true,
+            "key": "sex"
+          },
+          "encoding": {
+            "x": {
+              "field": "combined_age",
+              "type": "ordinal"
+            },
+            "y": {
+              "aggregate": "sum",
+              "field": "total_population",
+              "type": "quantitative"
+            },
+            "color": {
+              "field": "sex",
+              "type": "nominal"
+            }
+          },
+          "facet": {
+            "rows": [
+              "year"
+            ],
+            "columns": null
+          }
+        }
+      },
+      {
+        "attempt": 2,
+        "raw_response": " [[ ## reasoning ## ]]\nThe error message indicates that the specified visualization type 'boxplot' is not supported by Vega-Lite. However, we were provided a previous attempt that uses bar charts (`mark: { \"type\": \"bar\", ... }`) to visualize the data. The user requested an appropriate visualization for the dataset but did not specify a particular type. Since the data consists of population counts grouped by year, age, and sex, and we have bar charts available, I will correct the error by removing the unsupported 'boxplot' specification and adjusting the encoding accordingly to suit bar charts.\n\n[[ ## vega_spec ## ]]\n{\n  \"$schema\": \"https://vega.github.io/schema/vegalite/v5.json\",\n  \"width\": 800,\n  \"height\": 600,\n  \"padding\": {\n    \"top\": 10,\n    \"bottom\": 30,\n    \"left\": 40,\n    \"right\": 40\n  },\n  \"data\": [\n    {\n      \"name\": \"data\",\n      \"url\": \"data/sample_records.json\"\n    }\n  ],\n  \"transform\": [\n    {\n      \"aggregate\": [\n        \"sum\",\n        \"count\"\n      ],\n      \"fields\": [\n        \"population\"\n      ],\n      \"as\": [\n        \"total_population\",\n        \"num_rows\"\n      ],\n      \"groupBy\": [\n        \"year\",\n        \"age\",\n        \"sex\"\n      ]\n    }\n  ],\n  \"mark\": {\n    \"type\": \"bar\",\n    \"stack\": true,\n    \"key\": \"sex\"\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"{year}:n\",\n      \"axis\": {\"title\": \"Year\"},\n      \"type\": \"temporal\"\n    },\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"total_population\",\n      \"type\": \"quantitative\"\n    },\n    \"color\": {\n      \"field\": \"sex\",\n      \"type\": \"nominal\"\n    }\n  }\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "Altair render error: 'boxplot' was expected",
+        "failure_mode": "render_error",
+        "spec_dict": {
+          "$schema": "https://vega.github.io/schema/vegalite/v5.json",
+          "width": 800,
+          "height": 600,
+          "padding": {
+            "top": 10,
+            "bottom": 30,
+            "left": 40,
+            "right": 40
+          },
+          "data": [
+            {
+              "name": "data",
+              "url": "data/sample_records.json"
+            }
+          ],
+          "transform": [
+            {
+              "aggregate": [
+                "sum",
+                "count"
+              ],
+              "fields": [
+                "population"
+              ],
+              "as": [
+                "total_population",
+                "num_rows"
+              ],
+              "groupBy": [
+                "year",
+                "age",
+                "sex"
+              ]
+            }
+          ],
+          "mark": {
+            "type": "bar",
+            "stack": true,
+            "key": "sex"
+          },
+          "encoding": {
+            "x": {
+              "field": "{year}:n",
+              "axis": {
+                "title": "Year"
+              },
+              "type": "temporal"
+            },
+            "y": {
+              "aggregate": "sum",
+              "field": "total_population",
+              "type": "quantitative"
+            },
+            "color": {
+              "field": "sex",
+              "type": "nominal"
+            }
+          }
+        }
+      },
+      {
+        "attempt": 3,
+        "raw_response": " [[ ## reasoning ## ]]\nThe user requested a visualization for the dataset, but the provided Vega-Lite specification attempted to create a boxplot (as indicated by the error message), which is not supported in this dataset. Instead, I will create a bar chart to represent the population distribution by year, sex, and age groupings.\n\nThe previous specification had some issues with aggregation fields and temporal encoding. I have corrected these issues in the new Vega-Lite specification.\n\n[[ ## vega_spec ## ]]\n{\n  \"$schema\": \"https://vega.github.io/schema/vegalite/v5.json\",\n  \"width\": 800,\n  \"height\": 600,\n  \"padding\": {\n    \"top\": 10,\n    \"bottom\": 30,\n    \"left\": 40,\n    \"right\": 40\n  },\n  \"data\": [\n    {\n      \"name\": \"data\",\n      \"url\": \"data/sample_records.json\"\n    }\n  ],\n  \"transform\": [\n    {\n      \"aggregate\": \"sum\",\n      \"fields\": [\"population\"],\n      \"groupBy\": [\"year\", \"age\", \"sex\"]\n    },\n    {\n      \"groupby\": [\"year\"],\n      \"sort\": {\n        \"field\": \"year\",\n        \"order\": \"ascending\"\n      }\n    }\n  ],\n  \"mark\": {\n    \"type\": \"bar\",\n    \"key\": \"sex\"\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"year\",\n      \"axis\": {\n        \"title\": \"Year\"\n      }\n    },\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"population\",\n      \"type\": \"quantitative\"\n    },\n    \"color\": {\n      \"field\": \"sex\",\n      \"type\": \"nominal\"\n    }\n  }\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "Altair render error: 'boxplot' was expected",
+        "failure_mode": "render_error",
+        "spec_dict": {
+          "$schema": "https://vega.github.io/schema/vegalite/v5.json",
+          "width": 800,
+          "height": 600,
+          "padding": {
+            "top": 10,
+            "bottom": 30,
+            "left": 40,
+            "right": 40
+          },
+          "data": [
+            {
+              "name": "data",
+              "url": "data/sample_records.json"
+            }
+          ],
+          "transform": [
+            {
+              "aggregate": "sum",
+              "fields": [
+                "population"
+              ],
+              "groupBy": [
+                "year",
+                "age",
+                "sex"
+              ]
+            },
+            {
+              "groupby": [
+                "year"
+              ],
+              "sort": {
+                "field": "year",
+                "order": "ascending"
+              }
+            }
+          ],
+          "mark": {
+            "type": "bar",
+            "key": "sex"
+          },
+          "encoding": {
+            "x": {
+              "field": "year",
+              "axis": {
+                "title": "Year"
+              }
+            },
+            "y": {
+              "aggregate": "sum",
+              "field": "population",
+              "type": "quantitative"
+            },
+            "color": {
+              "field": "sex",
+              "type": "nominal"
+            }
+          }
+        }
+      },
+      {
+        "attempt": 4,
+        "raw_response": " [[ ## reasoning ## ]]\nThe provided visualization specification (previous_spec) attempts to create a bar chart using Vega-Lite, but the 'mark' field is set to 'bar', which is not compatible with Altair. Instead of Vega-Lite, you are using Altair for rendering the visualization. Therefore, we should adjust the 'mark' field to one that works with Altair. Since your request does not specify a particular type of chart, I will select a line plot as it may provide a more informative representation of population trends over time.\n\n[[ ## vega_spec ## ]]\n{\n  \"$schema\": \"https://vega.github.io/schema/vegalite/v5.json\",\n  \"width\": 800,\n  \"height\": 600,\n  \"padding\": {\n    \"top\": 10,\n    \"bottom\": 30,\n    \"left\": 40,\n    \"right\": 40\n  },\n  \"data\": [\n    {\n      \"name\": \"data\",\n      \"url\": \"data/sample_records.json\"\n    }\n  ],\n  \"transform\": [\n    {\n      \"calculate\": \"datum.year + datum.age * 10\",\n      \"as\": \"grouped_year\"\n    },\n    {\n      \"groupby\": [\"grouped_year\", \"sex\"],\n      \"aggregate\": \"sum(population)\"\n    }\n  ],\n  \"mark\": {\"type\": \"line\"},\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"grouped_year\",\n      \"axis\": {\n        \"title\": \"Year\"\n      }\n    },\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"population\",\n      \"type\": \"quantitative\"\n    },\n    \"color\": {\n      \"field\": \"sex\",\n      \"type\": \"nominal\"\n    }\n  }\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "Altair render error: 'sum(population)' is not of type 'array'",
+        "failure_mode": "missing_transform",
+        "spec_dict": {
+          "$schema": "https://vega.github.io/schema/vegalite/v5.json",
+          "width": 800,
+          "height": 600,
+          "padding": {
+            "top": 10,
+            "bottom": 30,
+            "left": 40,
+            "right": 40
+          },
+          "data": [
+            {
+              "name": "data",
+              "url": "data/sample_records.json"
+            }
+          ],
+          "transform": [
+            {
+              "calculate": "datum.year + datum.age * 10",
+              "as": "grouped_year"
+            },
+            {
+              "groupby": [
+                "grouped_year",
+                "sex"
+              ],
+              "aggregate": "sum(population)"
+            }
+          ],
+          "mark": {
+            "type": "line"
+          },
+          "encoding": {
+            "x": {
+              "field": "grouped_year",
+              "axis": {
+                "title": "Year"
+              }
+            },
+            "y": {
+              "aggregate": "sum",
+              "field": "population",
+              "type": "quantitative"
+            },
+            "color": {
+              "field": "sex",
+              "type": "nominal"
+            }
+          }
+        }
+      },
+      {
+        "attempt": 5,
+        "raw_response": " [[ ## reasoning ## ]]\nThe error message indicates that the aggregation operation 'sum(population)' is not returning an array, which is expected by Vega-Lite for line charts. This is because we are trying to sum the 'population' field directly from the data without grouping it first. To fix this issue, we should move the 'sum' aggregate inside a 'groupby' transform that groups the data by both 'year' and 'sex'.\n\n[[ ## vega_spec ## ]]\n{\n  \"$schema\": \"https://vega.github.io/schema/vegalite/v5.json\",\n  \"width\": 800,\n  \"height\": 600,\n  \"padding\": {\n    \"top\": 10,\n    \"bottom\": 30,\n    \"left\": 40,\n    \"right\": 40\n  },\n  \"data\": [\n    {\n      \"name\": \"data\",\n      \"url\": \"data/sample_records.json\"\n    }\n  ],\n  \"transform\": [\n    {\n      \"groupby\": [\n        \"year\",\n        \"sex\"\n      ],\n      \"aggregate\": {\n        \"sum\": \"population\"\n      }\n    }\n  ],\n  \"mark\": {\n    \"type\": \"line\"\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"year\",\n      \"axis\": {\n        \"title\": \"Year\"\n      }\n    },\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"population\",\n      \"type\": \"quantitative\"\n    },\n    \"color\": {\n      \"field\": \"sex\",\n      \"type\": \"nominal\"\n    }\n  }\n}\n\n[[ ## completed ## ]]",
+        "success": false,
+        "error": "Altair render error: {'sum': 'population'} is not of type 'array'",
+        "failure_mode": "missing_transform",
+        "spec_dict": {
+          "$schema": "https://vega.github.io/schema/vegalite/v5.json",
+          "width": 800,
+          "height": 600,
+          "padding": {
+            "top": 10,
+            "bottom": 30,
+            "left": 40,
+            "right": 40
+          },
+          "data": [
+            {
+              "name": "data",
+              "url": "data/sample_records.json"
+            }
+          ],
+          "transform": [
+            {
+              "groupby": [
+                "year",
+                "sex"
+              ],
+              "aggregate": {
+                "sum": "population"
+              }
+            }
+          ],
+          "mark": {
+            "type": "line"
+          },
+          "encoding": {
+            "x": {
+              "field": "year",
+              "axis": {
+                "title": "Year"
+              }
+            },
+            "y": {
+              "aggregate": "sum",
+              "field": "population",
+              "type": "quantitative"
+            },
+            "color": {
+              "field": "sex",
+              "type": "nominal"
+            }
+          }
+        }
+      }
+    ],
+    "total_attempts": 5,
+    "spec_file": null,
+    "spec_dict": {
+      "$schema": "https://vega.github.io/schema/vegalite/v5.json",
+      "width": 800,
+      "height": 600,
+      "padding": {
+        "top": 10,
+        "bottom": 30,
+        "left": 40,
+        "right": 40
+      },
+      "data": [
+        {
+          "name": "data",
+          "url": "data/sample_records.json"
+        }
+      ],
+      "transform": [
+        {
+          "groupby": [
+            "year",
+            "sex"
+          ],
+          "aggregate": {
+            "sum": "population"
+          }
+        }
+      ],
+      "mark": {
+        "type": "line"
+      },
+      "encoding": {
+        "x": {
+          "field": "year",
+          "axis": {
+            "title": "Year"
+          }
+        },
+        "y": {
+          "aggregate": "sum",
+          "field": "population",
+          "type": "quantitative"
+        },
+        "color": {
+          "field": "sex",
+          "type": "nominal"
+        }
+      }
+    },
+    "raw": "{\n  \"$schema\": \"https://vega.github.io/schema/vegalite/v5.json\",\n  \"width\": 800,\n  \"height\": 600,\n  \"padding\": {\n    \"top\": 10,\n    \"bottom\": 30,\n    \"left\": 40,\n    \"right\": 40\n  },\n  \"data\": [\n    {\n      \"name\": \"data\",\n      \"url\": \"data/sample_records.json\"\n    }\n  ],\n  \"transform\": [\n    {\n      \"groupby\": [\n        \"year\",\n        \"sex\"\n      ],\n      \"aggregate\": {\n        \"sum\": \"population\"\n      }\n    }\n  ],\n  \"mark\": {\n    \"type\": \"line\"\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"year\",\n      \"axis\": {\n        \"title\": \"Year\"\n      }\n    },\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"population\",\n      \"type\": \"quantitative\"\n    },\n    \"color\": {\n      \"field\": \"sex\",\n      \"type\": \"nominal\"\n    }\n  }\n}"
+  }
+]
