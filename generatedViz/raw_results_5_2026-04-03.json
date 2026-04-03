@@ -112,7 +112,7 @@
       }
     ],
     "total_attempts": 1,
-    "spec_file": "generatedViz/aircraft_L1_1/specs/raw_5_2026-04-03.json",
+    "spec_file": "generatedViz/aircraft_L1_1/raw/specs/5_2026-04-03.json",
     "spec_dict": {
       "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
       "description": "Aircraft comparison showing relationship between Age, Mileage, Passenger capacity, and Longest Flight time",
@@ -279,7 +279,7 @@
       }
     ],
     "total_attempts": 1,
-    "spec_file": "generatedViz/population_L2_1/specs/raw_5_2026-04-03.json",
+    "spec_file": "generatedViz/population_L2_1/raw/specs/5_2026-04-03.json",
     "spec_dict": {
       "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
       "title": "Population Trends by Sex",
@@ -469,7 +469,7 @@
       }
     ],
     "total_attempts": 1,
-    "spec_file": "generatedViz/synthetic_books_L3_1/specs/raw_5_2026-04-03.json",
+    "spec_file": "generatedViz/synthetic_books_L3_1/raw/specs/5_2026-04-03.json",
     "spec_dict": {
       "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
       "title": "Book Pages vs Rating",

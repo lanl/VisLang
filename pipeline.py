@@ -540,15 +540,17 @@ def run_prompt_dataset_matrix(
             "total_attempts": len(result.get("attempts", [])),
         }
 
-        # Create per-prompt output directories
-        prompt_dir = Path(output_dir) / pid
-        specs_path = prompt_dir / "specs"
-        traces_path = prompt_dir / "traces"
+        # Create per-prompt/schema_mode output directories
+        mode_dir = Path(output_dir) / pid / schema_mode
+        specs_path = mode_dir / "specs"
+        traces_path = mode_dir / "traces"
+        diagrams_path = mode_dir / "diagrams"
         specs_path.mkdir(parents=True, exist_ok=True)
         traces_path.mkdir(parents=True, exist_ok=True)
+        diagrams_path.mkdir(parents=True, exist_ok=True)
 
         date_str = datetime.now().strftime("%Y-%m-%d")
-        run_tag = f"{schema_mode}_{max_retries}_{date_str}"
+        run_tag = f"{max_retries}_{date_str}"
 
         # Save trace (prompt messages + LLM responses for all attempts)
         trace_data = []
