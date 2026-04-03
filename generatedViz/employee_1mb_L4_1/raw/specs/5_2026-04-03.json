@@ -1,40 +1,40 @@
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/vega-lite/v5.json",
   "transform": [
     {
       "flatten": [
         "employee.projects"
       ],
       "as": [
-        "project"
+        "projects"
       ]
     },
     {
       "flatten": [
-        "project.tasks"
+        "projects.tasks"
       ],
       "as": [
-        "task"
+        "tasks"
       ]
     },
     {
       "aggregate": [
         {
           "op": "count",
-          "field": "project.projectId",
+          "field": "projects.projectId",
           "as": "projectCount"
         }
       ],
       "groupby": [
-        "project.startDate",
-        "task.status"
+        "projects.startDate",
+        "tasks.status"
       ]
     }
   ],
   "mark": "bar",
   "encoding": {
     "x": {
-      "field": "project.startDate",
+      "field": "projects.startDate",
       "type": "temporal"
     },
     "y": {
@@ -42,7 +42,7 @@
       "type": "quantitative"
     },
     "color": {
-      "field": "task.status",
+      "field": "tasks.status",
       "type": "nominal"
     }
   },

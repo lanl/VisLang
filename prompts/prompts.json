@@ -15,7 +15,7 @@
     "level": "L3"
   },
   "aircraft_L4_1": {
-    "text": "Create a bar chart with Aircraft on the x-axis and Passenger capacity on the y-axis. Color the bars by Manufacturer.",
+    "text": "Create a bar chart with Aircraft on the x-axis and Passenger capacity on the y-axis. Color the bars by Max flight time.",
     "dataset": "aircraft.json",
     "level": "L4"
   },
@@ -162,10 +162,11 @@
     "level": "L3"
   },
   "employee_1mb_L4_1": {
-    "text": "Create a bar chart with project.startDate on the x-axis and project.status on the y-axis. Color the bars by position.",
+    "text": "Create a bar chart with project.startDate on the x-axis and  the number of project count on the y-axis. Color the bars by project.tasks.status.",
     "dataset": "Employee 1 MB 5 Level Formatted.json",
     "level": "L4"
   },
+  
 
   "amazon_1mb_L1_1": {
     "text": "Give me an appropriate visualization for this dataset.",

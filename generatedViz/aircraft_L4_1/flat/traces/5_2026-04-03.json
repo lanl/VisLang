@@ -1,0 +1,18 @@
+[
+  {
+    "attempt": 1,
+    "success": true,
+    "error": null,
+    "prompt_messages": [
+      {
+        "role": "system",
+        "content": "Your input fields are:\n1. `user_request` (str): Natural language visualization request\n2. `data_schema` (str): Data schema or sample records describing the dataset structure, fields, and types\nYour output fields are:\n1. `reasoning` (str): \n2. `vega_spec` (str): Valid Vega-Lite JSON spec. Return ONLY raw JSON, no markdown or explanation. Ensure 'mark' only contains one thing. x, y, etc. must be defined inside encoding, not inside mark.\nAll interactions will be structured in the following way, with the appropriate values filled in.\n\n[[ ## user_request ## ]]\n{user_request}\n\n[[ ## data_schema ## ]]\n{data_schema}\n\n[[ ## reasoning ## ]]\n{reasoning}\n\n[[ ## vega_spec ## ]]\n{vega_spec}\n\n[[ ## completed ## ]]\nIn adhering to this structure, your objective is: \n        Given the fields `user_request`, `data_schema`, produce the fields `vega_spec`."
+      },
+      {
+        "role": "user",
+        "content": "[[ ## user_request ## ]]\nCreate a bar chart with Aircraft on the x-axis and Passenger capacity on the y-axis. Color the bars by Max flight time.\n\n[[ ## data_schema ## ]]\nJSON Schema (8 rows):\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"Aircraft\": {\n      \"type\": \"string\"\n    },\n    \"Age\": {\n      \"type\": \"integer\"\n    },\n    \"Passenger capacity\": {\n      \"type\": \"integer\"\n    },\n    \"Mileage\": {\n      \"type\": \"integer\"\n    },\n    \"Longest Flight time\": {\n      \"type\": \"number\"\n    }\n  },\n  \"required\": [\n    \"Age\",\n    \"Aircraft\",\n    \"Longest Flight time\",\n    \"Mileage\",\n    \"Passenger capacity\"\n  ]\n}\n\nSample values:\n  'Aircraft': ['AeroLynx A220', 'SkyBridge B737-900', 'Nimbus A321X', 'TitanAir B787-8', 'StratoCruise A350-900']\n  'Age': [3, 9, 5, 7, 4]\n  'Passenger capacity': [135, 178, 210, 242, 300]\n  'Mileage': [420000, 2850000, 1600000, 3900000, 2100000]\n  'Longest Flight time': [6.2, 7.1, 8.4, 15.6, 17.3]\n\nIMPORTANT: This data has already been flattened. All fields are top-level with dot-separated names (e.g. 'employee.projects.startDate'). Do NOT use 'flatten' or 'fold' transforms. Reference field names directly.\n\nRespond with the corresponding output fields, starting with the field `[[ ## reasoning ## ]]`, then `[[ ## vega_spec ## ]]`, and then ending with the marker for `[[ ## completed ## ]]`."
+      }
+    ],
+    "raw_response": "[[ ## reasoning ## ]] To create the bar chart as requested, we need to map the 'Aircraft' field to the x-axis, 'Passenger capacity' to the y-axis, and color the bars based on 'Longest Flight time'. This involves using the 'encode' functionality in Vega-Lite to specify the x, y, and color channels. Since 'Longest Flight time' is a continuous field and we are coloring by it, we will use a color scale that can handle continuous data, such as a sequential color scheme.\n\n[[ ## vega_spec ## ]] \n{\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"Aircraft\",\n      \"type\": \"nominal\"\n    },\n    \"y\": {\n      \"field\": \"Passenger capacity\",\n      \"type\": \"quantitative\"\n    },\n    \"color\": {\n      \"field\": \"Longest Flight time\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"scheme\": \"blueorange\"\n      }\n    }\n  }\n}\n\n[[ ## completed ## ]]"
+  }
+]

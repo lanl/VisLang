@@ -7,8 +7,8 @@
       "type": "temporal"
     },
     "y": {
-      "aggregate": "count",
-      "field": "employee.projects.0.projectId"
+      "field": "employee.department.name",
+      "type": "nominal"
     },
     "color": {
       "field": "employee.projects.0.tasks.0.status",

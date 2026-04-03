@@ -10,24 +10,12 @@
       ]
     },
     {
-      "flatten": [
-        "project.tasks"
+      "fold": [
+        "project.status"
       ],
       "as": [
-        "task"
-      ]
-    },
-    {
-      "aggregate": [
-        {
-          "op": "count",
-          "field": "project.projectId",
-          "as": "projectCount"
-        }
-      ],
-      "groupby": [
-        "project.startDate",
-        "task.status"
+        "status",
+        "value"
       ]
     }
   ],
@@ -38,11 +26,11 @@
       "type": "temporal"
     },
     "y": {
-      "field": "projectCount",
+      "aggregate": "count",
       "type": "quantitative"
     },
     "color": {
-      "field": "task.status",
+      "field": "employee.position",
       "type": "nominal"
     }
   },

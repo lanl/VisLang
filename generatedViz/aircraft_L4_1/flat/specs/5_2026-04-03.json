@@ -1,0 +1,23 @@
+{
+  "mark": "bar",
+  "encoding": {
+    "x": {
+      "field": "Aircraft",
+      "type": "nominal"
+    },
+    "y": {
+      "field": "Passenger capacity",
+      "type": "quantitative"
+    },
+    "color": {
+      "field": "Longest Flight time",
+      "type": "quantitative",
+      "scale": {
+        "scheme": "blueorange"
+      }
+    }
+  },
+  "data": {
+    "url": "data/aircraft.json"
+  }
+}
