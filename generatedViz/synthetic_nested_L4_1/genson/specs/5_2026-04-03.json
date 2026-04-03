@@ -1,0 +1,23 @@
+{
+  "mark": "bar",
+  "encoding": {
+    "x": {
+      "field": "city",
+      "type": "nominal"
+    },
+    "y": {
+      "field": "weather.temperature",
+      "type": "quantitative"
+    },
+    "color": {
+      "field": "weather.humidity",
+      "type": "quantitative",
+      "legend": {
+        "orient": "bottom"
+      }
+    }
+  },
+  "data": {
+    "url": "data/synthetic_nested.json"
+  }
+}

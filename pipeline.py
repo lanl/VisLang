@@ -454,7 +454,7 @@ def run_prompt_dataset_matrix(
     output_file: str = "generatedViz/run_results.json",
     output_dir: str = "generatedViz",
     max_retries: int = 5,
-    model_name: str = "moonshotai/kimi-k2.5",
+    model_name: str = "meta/llama-3.3-70b-instruct",
     prompt_limit: int | None = None,
     schema_mode: str = "genson",
     prompt_ids: list[str] | str | None = None,

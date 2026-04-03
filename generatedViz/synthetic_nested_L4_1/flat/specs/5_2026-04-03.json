@@ -1,0 +1,21 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "mark": "bar",
+  "encoding": {
+    "x": {
+      "field": "city",
+      "type": "nominal"
+    },
+    "y": {
+      "field": "weather.temperature",
+      "type": "quantitative"
+    },
+    "color": {
+      "field": "weather.humidity",
+      "type": "quantitative"
+    }
+  },
+  "data": {
+    "url": "data/synthetic_nested.json"
+  }
+}

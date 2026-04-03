@@ -1,0 +1,21 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "mark": "bar",
+  "encoding": {
+    "x": {
+      "field": "employee.projects.0.startDate",
+      "type": "temporal"
+    },
+    "y": {
+      "field": "employee.projects.0.tasks.0.status",
+      "type": "nominal"
+    },
+    "color": {
+      "field": "employee.position",
+      "type": "nominal"
+    }
+  },
+  "data": {
+    "url": "data/Employee 1 MB 5 Level Formatted.json"
+  }
+}

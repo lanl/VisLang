@@ -1,0 +1,40 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "transform": [
+    {
+      "flatten": [
+        "employee.projects"
+      ],
+      "as": [
+        "project"
+      ]
+    },
+    {
+      "fold": [
+        "project.status"
+      ],
+      "as": [
+        "status",
+        "value"
+      ]
+    }
+  ],
+  "mark": "bar",
+  "encoding": {
+    "x": {
+      "field": "project.startDate",
+      "type": "temporal"
+    },
+    "y": {
+      "aggregate": "count",
+      "type": "quantitative"
+    },
+    "color": {
+      "field": "employee.position",
+      "type": "nominal"
+    }
+  },
+  "data": {
+    "url": "data/Employee 1 MB 5 Level Formatted.json"
+  }
+}
