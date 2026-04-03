@@ -157,12 +157,12 @@
     "level": "L2"
   },
   "employee_1mb_L3_1": {
-    "text": "Create a bar chart with project.startDate on the x-axis and project.projectID on the y-axis.",
+    "text": "Create a bar chart with project.startDate on the x-axis and project.status on the y-axis.",
     "dataset": "Employee 1 MB 5 Level Formatted.json",
     "level": "L3"
   },
   "employee_1mb_L4_1": {
-    "text": "Create a bar chart with project.startDate on the x-axis and project.projectID on the y-axis. Color the bars by position.",
+    "text": "Create a bar chart with project.startDate on the x-axis and project.status on the y-axis. Color the bars by position.",
     "dataset": "Employee 1 MB 5 Level Formatted.json",
     "level": "L4"
   },

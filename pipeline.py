@@ -68,9 +68,7 @@ class DirectVegaLite(dspy.Signature):
         desc=(
             "Valid Vega-Lite JSON spec. Return ONLY raw JSON, no markdown or "
             "explanation. Ensure 'mark' only contains one thing. x, y, etc. "
-            "must be defined inside encoding, not inside mark. "
-            "If the data contains nested objects or arrays, use Vega-Lite "
-            "'flatten' or 'fold' transforms as needed."
+            "must be defined inside encoding, not inside mark."
         )
     )
 
@@ -87,9 +85,7 @@ class RetryVegaLite(dspy.Signature):
     vega_spec = dspy.OutputField(
         desc=(
             "Corrected Vega-Lite JSON spec. Return ONLY raw JSON, no markdown "
-            "or explanation. Fix the issues described in the error message. "
-            "If the data contains nested objects or arrays, use Vega-Lite "
-            "'flatten' or 'fold' transforms as needed."
+            "or explanation. Fix the issues described in the error message."
         )
     )
 
@@ -291,10 +287,23 @@ class VegaLiteGenerator(dspy.Module):
         if self.schema_mode == "flat":
             records = flatten_records(records)
             schema_str = infer_schema_genson(records)
+            schema_str += (
+                "\n\nIMPORTANT: This data has already been flattened. All fields "
+                "are top-level with dot-separated names (e.g. 'employee.projects.startDate'). "
+                "Do NOT use 'flatten' or 'fold' transforms. Reference field names directly."
+            )
         elif self.schema_mode == "genson":
             schema_str = infer_schema_genson(records)
+            schema_str += (
+                "\n\nIf the data contains nested objects or arrays, use Vega-Lite "
+                "'flatten' or 'fold' transforms as needed to access nested fields."
+            )
         elif self.schema_mode == "raw":
             schema_str = infer_schema_raw(records)
+            schema_str += (
+                "\n\nIf the data contains nested objects or arrays, use Vega-Lite "
+                "'flatten' or 'fold' transforms as needed to access nested fields."
+            )
         else:
             schema_str = infer_schema_genson(records)
         attempts = []
