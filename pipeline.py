@@ -445,15 +445,21 @@ def run_prompt_dataset_matrix(
     output_file: str = "generatedViz/run_results.json",
     specs_dir: str = "generatedViz/specs",
     max_retries: int = 5,
-    ollama_base: str = "http://localhost:11434",
-    model_name: str = "mistral",
+    model_name: str = "moonshotai/kimi-k2.5",
     prompt_limit: int | None = None,
     schema_mode: str = "genson",
     prompt_ids: list[str] | str | None = None,
 ) -> list[dict]:
     
     # configure dspy
-    lm = dspy.LM(model=f"ollama/{model_name}", api_base=ollama_base)
+    api_key = os.environ.get("NVIDIA_API_KEY")
+    if not api_key:
+        raise ValueError("NVIDIA_API_KEY environment variable is not set")
+    lm = dspy.LM(
+        model=f"openai/{model_name}",
+        api_base="https://integrate.api.nvidia.com/v1",
+        api_key=api_key,
+    )
     dspy.settings.configure(lm=lm)
 
     # load prompts (dict of {id: {text, dataset, level}})
