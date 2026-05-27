@@ -1,0 +1,20 @@
+[project]
+name = "cosdatrendproj"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "astropy>=7.2.0",
+    "h5py>=3.16.0",
+    "matplotlib>=3.10.9",
+    "napari[all]>=0.6.6",
+    "numpy>=2.4.6",
+    "pygio",
+    "pyqt5>=5.15.11",
+    "yt>=4.4.2",
+    "yt-idv>=0.5.4",
+]
+
+[tool.uv.sources]
+pygio = { path = "../../Downloads/genericio" }
