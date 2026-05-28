@@ -6,9 +6,9 @@ import pygio
 import numpy as np
 
 # Load ALL 8 GenericIO files
-base_filename = "/Users/ashrestha/Documents/cosmologyData/hacc/m000p.full.mpicosmo.567"
+base_filename = "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.567"
 
-print("Loading all 8 files...")
+print("Loading all files...")
 all_positions = []
 all_masses = []
 all_uu = []
