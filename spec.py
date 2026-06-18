@@ -1,4 +1,5 @@
-# Inspect -> load (strided for the browser) -> render the heptane volume.
-info   = inspect("/vast/projects/autonomousvis/ashrestha/code/VisLang/csafe_heptane_302x302x302_uint8.raw")
-loaded = load(info, dimensions={'grid': 150})   # 302^3 -> ~151^3 for browser responsiveness
-render(loaded, cmap='inferno')   # dark hellfire ramp — black -> blood red -> orange
+# Render HACC GenericIO particle data
+
+info   = inspect("/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.567")
+loaded = load(info, variables=['x', 'y', 'z', 'hh', 'mass'], dimensions={'particles': 0.1})
+render(loaded)
