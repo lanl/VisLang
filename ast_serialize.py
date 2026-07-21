@@ -34,7 +34,7 @@ import json
 
 from dsl_forms.nodes import (
     SourceNode, FieldsNode, RegionNode, SubsampleNode,
-    ThresholdNode, CompressNode, SaveNode, RenderNode, upstream_of,
+    ThresholdNode, CompressNode, SaveNode, RenderNode, TimestepsNode, upstream_of,
 )
 
 PLAN_KEY = "vislang_plan"
@@ -107,10 +107,15 @@ def _ser_render(n):
             if n.opacity is not None else None}
 
 
+def _ser_timesteps(n):
+    return {"kind": "timesteps", "start": n.start, "stop": n.stop}
+
+
 _SERIALIZERS = {
     "source": _ser_source, "fields": _ser_fields, "region": _ser_region,
     "subsample": _ser_subsample, "threshold": _ser_threshold,
     "compress": _ser_compress, "save": _ser_save, "render": _ser_render,
+    "timesteps": _ser_timesteps,
 }
 
 # exact key set per kind — anything missing OR extra is rejected
@@ -123,6 +128,7 @@ _STEP_KEYS = {
     "compress":  frozenset(("kind", "variables", "error_bound", "mode")),
     "save":      frozenset(("kind", "path")),
     "render":    frozenset(("kind", "cmap", "opacity")),
+    "timesteps": frozenset(("kind", "start", "stop")),
 }
 
 
@@ -235,10 +241,22 @@ def _val_render(s, where):
                          f"got {opacity!r}")
 
 
+def _val_timesteps(s, where):
+    """Mirror forms.timesteps: start/stop are integer labels (never bool, never
+    float — an fp label can't index a `#N` file) with start <= stop."""
+    for k in ("start", "stop"):
+        v = s[k]
+        if isinstance(v, bool) or not isinstance(v, int):
+            _fail(where, f"'{k}' must be an integer timestep label, got {v!r}")
+    if s["start"] > s["stop"]:
+        _fail(where, f"need start <= stop, got ({s['start']}, {s['stop']})")
+
+
 _VALIDATORS = {
     "source": _val_source, "fields": _val_fields, "region": _val_region,
     "subsample": _val_subsample, "threshold": _val_threshold,
     "compress": _val_compress, "save": _val_save, "render": _val_render,
+    "timesteps": _val_timesteps,
 }
 
 
@@ -319,10 +337,15 @@ def _build_render(s, up):
                       opacity=None if o is None else tuple(o))
 
 
+def _build_timesteps(s, up):
+    return TimestepsNode(upstream=up, start=s["start"], stop=s["stop"])
+
+
 _BUILDERS = {
     "source": _build_source, "fields": _build_fields, "region": _build_region,
     "subsample": _build_subsample, "threshold": _build_threshold,
     "compress": _build_compress, "save": _build_save, "render": _build_render,
+    "timesteps": _build_timesteps,
 }
 
 

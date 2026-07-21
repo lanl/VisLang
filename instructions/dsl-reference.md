@@ -13,10 +13,17 @@ A spec with no sink is dry-run (the inferred plan is reported; nothing is read).
 
 ## source(uri, positions=None) -> node
 Starts a chain; names the dataset.
-- `uri` — a local path to **one file** (globs are rejected), or remote
-  `ssh://[user@]host/path` / `user@host:/path` (fetched to a local cache first).
+- `uri` — a local path to **one file** (globs are rejected); a remote
+  `ssh://[user@]host/path` / `user@host:/path`; or a **folder** (a *timeseries* —
+  see below).
 - `positions` — `('x','y','z')` override naming the coordinate variables when
   auto-detection can't tell (point data with unusual names).
+
+**A folder is a timeseries.** One file per timestep, named `…#N` where N is the
+timestep number (e.g. `run#8.hdf5`). The interpreter maps the rest of the chain
+over every timestep (same narrowing per file) and, for `save`, writes one file
+per timestep. Select a range with `timesteps(...)`. `render` over a series is not
+supported — pick a single timestep or use `save`.
 
 ## fields(node, keep) -> node
 Keep only `keep` (a name or list of names); the rest are dropped. Validated
@@ -52,12 +59,24 @@ The predicate variable does not need to be in `fields(...)` — it is read for
 the mask, then dropped. Multiple `threshold`s AND together; combine with
 `region` freely.
 
+## timesteps(node, start, stop) -> node
+Time-axis selection for a **folder (timeseries)** source: keep the timesteps
+whose `#N` label is within `[start, stop]`, **inclusive** (the integer in each
+filename). Read once before the interpreter maps the rest of the chain over the
+selected files — it is not a per-file narrowing. Using it on a single-file
+source raises a clear error.
+
 ## compress(node, variables, error_bound, mode="auto") -> node
 Error-bounded compression of the named variables (SPERR/Zstd, in-memory).
 Storage only — it does **not** cheapen a render.
 
 ## save(node, path) -> (sink)
-Write the materialized result to disk (currently `.npz` of the arrays).
+Write the materialized result to disk, **preserving the source's format**. The
+output format follows `path`'s extension when it's a known one (`.npz`,
+`.hdf5`/`.h5`); with no recognized extension it defaults to the source's original
+format (HDF5 today; other formats fall back to `.npz` with a note until a writer
+exists). A **folder (timeseries)** source writes one file per timestep into the
+`path` directory, named `timestep#N.<ext>` — itself a valid timeseries folder.
 
 ## render(node, cmap=None, opacity=None) -> (sink)
 Serve the headless k3d browser viewer; prints its URL. Renders everything the

@@ -14,12 +14,14 @@ downstream is format-blind.
   auto-detects most simulation formats with proper fields/units), then magic-byte
   fallbacks: HDF5 (h5py), FITS (astropy), GenericIO/HACC (pygio). Registry order
   is `[yt, HDF5, FITS, GenericIO]`; first `can_handle` wins.
-- **Tier 1 — no built-in reader, but a trusted library exists.** The LLM
-  (`llm_adapter.py`) identifies the format and writes a small module with only
-  `inspect` + `read_array` using that library. It is run through a hand-written
-  conformance gate against the real file, then **frozen** to
-  `generated_adapters/<ext>.py` and registered — becoming Tier 0 for future
-  files (no further LLM calls).
+- **Tier 1 — no built-in reader, but a trusted library exists.** `get_adapter`
+  raises `NeedsAdapterError` and the `inspect` tool returns a `NEEDS_ADAPTER`
+  handshake. The **session model** (not a separate API) identifies the format and
+  writes a small module with only `inspect` + `read_array` using that library,
+  then calls `submit_adapter`, which runs the hand-written conformance gate
+  (`llm_adapter.conform_and_freeze`) against the real file and, on pass, **freezes**
+  it to `generated_adapters/<ext>.py` and registers it — Tier 0 for future files
+  (no model at all). Guide: `vislang://instructions/writing-adapters`.
 - **Tier 2 — headerless / handmade raw bytes with no library.** Generally NOT
   supported; raise `UnsupportedFormatError` rather than guess a byte layout. The
   one sanctioned exception is a **declared, verifiable convention** — e.g.
@@ -30,8 +32,11 @@ downstream is format-blind.
 ## The binding path (custom HDF5) — `schema_binding.py`
 For HDF5 the *container* is known (h5py reads any HDF5) but the *semantics* are
 not. So: fingerprint the schema → cache hit reuses a frozen declarative binding
-(no LLM) → miss has the LLM propose a JSON binding (data, not code) that MUST
-pass `verify_binding` (a deterministic oracle against the file's own metadata)
-before it is used and frozen. No exec, no run-and-pray.
+(no model) → miss shows a generic listing plus a `BINDING_AVAILABLE` offer, and
+the **session model** proposes a JSON binding (data, not code) that MUST pass
+`verify_binding` (a deterministic oracle against the file's own metadata) via the
+`submit_binding` tool before it is frozen. Binding is optional enrichment — the
+generic listing works without it. No exec, no run-and-pray. Guide:
+`vislang://instructions/writing-bindings`.
 
 See `vislang://instructions/soundness` for why it works this way.

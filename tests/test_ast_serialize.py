@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dsl_forms import reset_sinks, collected_sinks
 from dsl_forms.forms import (source, fields, region, subsample, threshold,
-                             compress, save, render)
+                             compress, save, render, timesteps)
 from dsl_forms.nodes import upstream_of
 from ast_serialize import (to_plan, to_plan_json, from_plan, from_plan_json,
                            PlanValidationError, PLAN_VERSION)
@@ -85,6 +85,15 @@ def main():
           isinstance(from_plan(to_plan(fields(source("/x", positions=["a", "b", "c"]),
                                               ["v"]))).keep, tuple))
 
+    # timesteps: the folder (timeseries) selector — a folder-reduce plan carries it
+    reset_sinks()
+    ts = subsample(fields(timesteps(source("/data/series"), 0, 19),
+                          ["density"]), 2)
+    check("timesteps folder chain round-trip",
+          chains_equal(ts, from_plan_json(to_plan_json(ts))))
+    tsr = from_plan(to_plan(timesteps(source("/data/series"), 3, 7)))
+    check("timesteps start/stop preserved", tsr.start == 3 and tsr.stop == 7)
+
     sv = from_plan(to_plan(save(subsample(source("/d/f.h5"), 2), "/tmp/o.npz")))
     reset_sinks()
     check("save round-trip", chains_equal(save(subsample(source("/d/f.h5"), 2),
@@ -153,6 +162,15 @@ def main():
     rejects("positions wrong arity",
             {"vislang_plan": PLAN_VERSION,
              "chain": [dict(src_step, positions=["x", "y"])]})
+    rejects("timesteps bool start",
+            {"vislang_plan": PLAN_VERSION,
+             "chain": [src_step, {"kind": "timesteps", "start": True, "stop": 3}]})
+    rejects("timesteps float label",
+            {"vislang_plan": PLAN_VERSION,
+             "chain": [src_step, {"kind": "timesteps", "start": 1.5, "stop": 3}]})
+    rejects("timesteps start > stop",
+            {"vislang_plan": PLAN_VERSION,
+             "chain": [src_step, {"kind": "timesteps", "start": 5, "stop": 2}]})
 
     check("rejected plans register no sinks", len(collected_sinks()) == 0)
 

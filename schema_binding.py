@@ -9,14 +9,17 @@ is verifiable without executing any generated code:
     1. h5py deterministically extracts the schema tree (paths, shapes, dtypes,
        attribute keys/values) — small text, no bulk data.
     2. Fingerprint the schema (structure, not sizes) -> a signature.
-    3. Seen the signature -> reuse the frozen, verified binding (no LLM).
-       Fresh -> the LLM proposes a binding SPEC (data, not code).
-    4. Verify every claim in the spec against the file's own metadata. Pass ->
-       freeze it keyed by the signature. Fail -> reject (and, for the LLM path,
-       retry with the specific violation).
+    3. Seen the signature -> reuse the frozen, verified binding (no model).
+       Fresh -> the MCP `inspect` tool offers the schema tree to the SESSION
+       model, which proposes a binding SPEC (declarative data, never code).
+    4. Verify every claim in the spec against the file's own metadata (the
+       `submit_binding` tool -> verify_and_freeze_binding). Pass -> freeze it
+       keyed by the signature. Fail -> reject with the specific violation so the
+       model can fix and resubmit.
 
 No exec, no run-and-pray: the spec is declarative and the file's metadata is the
-oracle. The LLM never reads the data and never cuts bytes.
+oracle. The model never reads the data and never cuts bytes; binding is optional
+enrichment — HDF5 always has a working generic listing without it.
 """
 
 import os
@@ -25,9 +28,12 @@ import hashlib
 
 from datasetInfo import DatasetInfo
 
-MAX_BINDING_RETRIES = 4
-BINDING_CACHE_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "binding_cache")
+def _bindings_dir():
+    """Where frozen HDF5 bindings live — resolved lazily so a runtime env
+    override (VISLANG_BINDING_CACHE / VISLANG_HOME) is honored. Consolidated
+    under <repo>/.vislang/bindings by default (see vislang_paths)."""
+    from vislang_paths import bindings_dir
+    return bindings_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +250,7 @@ def build_info(filepath, schema, binding):
 # Binding cache (signature -> verified binding)
 # ---------------------------------------------------------------------------
 def _cache_path(sig):
-    return os.path.join(BINDING_CACHE_DIR, f"{sig}.json")
+    return os.path.join(_bindings_dir(), f"{sig}.json")
 
 
 def load_cached_binding(sig):
@@ -259,7 +265,7 @@ def load_cached_binding(sig):
 
 
 def save_cached_binding(sig, schema, binding):
-    os.makedirs(BINDING_CACHE_DIR, exist_ok=True)
+    os.makedirs(_bindings_dir(), exist_ok=True)
     with open(_cache_path(sig), "w") as f:
         json.dump({"signature": sig,
                    "canonical_schema": canonical_schema(schema),
@@ -267,58 +273,8 @@ def save_cached_binding(sig, schema, binding):
 
 
 # ---------------------------------------------------------------------------
-# LLM proposer (declarative spec out; verified before use)
+# Schema evidence + submit path for the session model (the binding handshake)
 # ---------------------------------------------------------------------------
-_binder = None
-
-
-def _configure_binder():
-    global _binder
-    if _binder is not None:
-        return _binder
-
-    import dspy  # ImportError if not installed
-    from llm_config import get_lm
-
-    class BindSchema(dspy.Signature):
-        """Map an HDF5 file's schema to a semantic binding.
-
-        You are given the schema of a self-describing HDF5 file: every dataset
-        path with its shape and dtype, and the attribute keys/values on each
-        group. Decide which datasets are the data VARIABLES, what the DIMENSIONS
-        are, and which groups hold the global ATTRIBUTES. Output ONLY a JSON
-        object (no prose, no code) of this form:
-
-            {
-              "dimensions": {
-                 "particles": {"source": "<dataset path>", "axis": 0}
-              },
-              "variables": [
-                 {"name": "x",  "source": "PartType1/Coordinates", "component": 0, "dim": "particles"},
-                 {"name": "id", "source": "PartType1/ParticleIDs", "dim": "particles"}
-              ],
-              "attributes_from": ["/Header"]
-            }
-
-        Rules:
-        - Only reference dataset paths and groups that appear in the schema.
-        - "component" selects a column of a 2-D dataset (e.g. Coordinates (N,3)):
-          0=x, 1=y, 2=z. Omit it for 1-D datasets.
-        - Every variable on a dimension must have that dimension's length as its
-          leading axis. A 3-D dataset (nx,ny,nz) is a grid variable: give it a
-          "grid" dimension (or omit "dim"), no component.
-        - Give variables clear physical names (x, y, z, vx, vy, vz, mass, id,
-          density, temperature, ...). Group attributes like /Header carry
-          BoxSize, Redshift, etc.
-        """
-        schema_json: str = dspy.InputField(desc="JSON schema: datasets (path/shape/dtype) and group attributes")
-        previous_error: str = dspy.InputField(
-            desc="Why the previous binding failed verification; empty on first try. Fix it.")
-        binding_json: str = dspy.OutputField(desc="A single JSON binding object")
-
-    dspy.configure(lm=get_lm(max_tokens=8000))
-    _binder = dspy.ChainOfThought(BindSchema)
-    return _binder
 
 
 def _strip_fences(text):
@@ -331,8 +287,9 @@ def _strip_fences(text):
     return text
 
 
-def _schema_for_llm(schema):
-    """Compact text of the schema shown to the LLM."""
+def format_schema(schema):
+    """Compact text of the schema tree (dataset paths/shapes/dtypes + group
+    attribute values) shown to the session model so it can propose a binding."""
     return json.dumps({
         "datasets": {p: {"shape": d["shape"], "dtype": d["dtype"]}
                      for p, d in schema["datasets"].items()},
@@ -340,59 +297,62 @@ def _schema_for_llm(schema):
     }, indent=2, default=str)
 
 
-def propose_and_verify(schema):
-    """Ask the LLM for a binding and verify it against the schema. Returns a
-    verified binding dict, or None if the LLM path is unavailable / never
-    validated within the retry budget."""
+def schema_evidence(filepath):
+    """The HDF5 schema tree as compact text (metadata only, no bulk read), for
+    the inspect binding-offer. Pairs with verify_and_freeze_binding()."""
+    return format_schema(extract_schema(filepath))
+
+
+def has_cached_binding(filepath):
+    """True if a frozen, verified binding already exists for this file's schema
+    signature (so inspect need not offer to create one)."""
     try:
-        binder = _configure_binder()
+        sig = schema_signature(extract_schema(filepath))
     except Exception:
-        return None
+        return False
+    return load_cached_binding(sig) is not None
 
-    schema_text = _schema_for_llm(schema)
-    previous_error = ""
 
-    for attempt in range(1, MAX_BINDING_RETRIES + 1):
-        prediction = None  # may stay None if binder() itself raises
+def verify_and_freeze_binding(filepath, binding, schema=None):
+    """The `submit_binding` trust step: verify a session-model-proposed binding
+    against the file's OWN schema (the deterministic oracle), freeze it keyed by
+    the schema signature, and return the enriched DatasetInfo. `binding` may be a
+    dict or a JSON string (fenced or bare). Raises ValueError on any violation —
+    nothing is frozen — so the model can fix the binding and resubmit.
+
+    `schema` may be supplied pre-extracted (the shipped schema tree of a REMOTE
+    file); when None it is read locally via extract_schema(filepath). Bindings are
+    keyed by a structure-only signature, so one frozen from a remote file's schema
+    serves any local/remote file of the same schema. build_info never reads the
+    file, so a remote `filepath` is fine here."""
+    if isinstance(binding, str):
         try:
-            prediction = binder(schema_json=schema_text, previous_error=previous_error)
-            binding = json.loads(_strip_fences(prediction.binding_json))
-            verify_binding(binding, schema)  # deterministic check vs the file
-        except Exception as e:
-            produced = getattr(prediction, 'binding_json', '') if prediction is not None else ''
-            previous_error = (
-                f"Attempt {attempt} produced:\n{produced}\n"
-                f"Verification error: {e}"
-            )
-            continue
-        return binding
-
-    return None
+            binding = json.loads(_strip_fences(binding))
+        except json.JSONDecodeError as e:
+            raise ValueError(f"binding is not valid JSON: {e}")
+    if schema is None:
+        schema = extract_schema(filepath)
+    verify_binding(binding, schema)                     # oracle: raises on violation
+    save_cached_binding(schema_signature(schema), schema, binding)
+    return build_info(filepath, schema, binding)
 
 
 # ---------------------------------------------------------------------------
 # Entry point used by HDF5Adapter.inspect
 # ---------------------------------------------------------------------------
-def bind_hdf5(filepath, cache_only=False):
-    """Return a richly-bound DatasetInfo for an HDF5 file, or None to let the
-    caller fall back to a generic flat listing.
+def bind_hdf5(filepath):
+    """Return a richly-bound DatasetInfo from a FROZEN binding, or None to let
+    the caller fall back to the generic flat listing.
 
-    cache_only=True reuses a frozen binding if one exists but NEVER calls the
-    LLM (returns None on a cache miss). The remote reducer uses this so it stays
-    LLM-free while agreeing with whatever binding the local planner already
-    froze — no generated code runs on the remote."""
+    There is no automatic proposer anymore: a new binding is created only through
+    the `submit_binding` handshake (verify_and_freeze_binding), where the session
+    model proposes and the deterministic oracle verifies. Behavior here is always
+    frozen-or-None — no model is ever called — so both the local planner and the
+    remote reducer stay deterministic and name-consistent."""
     schema = extract_schema(filepath)
-    sig = schema_signature(schema)
-
-    binding = load_cached_binding(sig)
+    binding = load_cached_binding(schema_signature(schema))
     if binding is None:
-        if cache_only:
-            return None
-        binding = propose_and_verify(schema)
-        if binding is None:
-            return None
-        save_cached_binding(sig, schema, binding)
-
+        return None
     # Re-verify even a cached binding against THIS file's schema (guards against
     # signature collisions or schema drift). Cheap and deterministic.
     verify_binding(binding, schema)

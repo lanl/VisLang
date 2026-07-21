@@ -13,7 +13,7 @@ does not import them.
 
 from .nodes import (
     SourceNode, FieldsNode, RegionNode, SubsampleNode,
-    ThresholdNode, CompressNode, SaveNode, RenderNode, Node,
+    ThresholdNode, TimestepsNode, CompressNode, SaveNode, RenderNode, Node,
 )
 
 _OPS = (">=", "<=", "==", "!=", ">", "<")
@@ -56,11 +56,16 @@ def _parse_predicate(expr):
 
 # ---------------------------------------------------------------------------
 def source(uri, positions=None):
+    """The dataset at the head of a chain. `uri` is one concrete file (globs are
+    rejected), a remote source (ssh://host/path or user@host:/path), or a FOLDER
+    of files — a folder is treated as a TIMESTEP SERIES: one file per timestep,
+    named `…#N` where N is the timestep number. The interpreter maps the rest of
+    the chain over the timesteps; select a range with timesteps(node, start, stop)."""
     if not isinstance(uri, str) or not uri:
         raise TypeError(f"source() needs a path/URI string, got {uri!r}")
     if any(c in uri for c in "*?["):
-        raise ValueError(f"source() takes a single file, not a glob pattern: {uri!r}. "
-                         "Point it at one concrete file.")
+        raise ValueError(f"source() takes a single file or a folder, not a glob "
+                         f"pattern: {uri!r}. Point it at one concrete path.")
     if positions is not None:
         positions = tuple(positions)
         if len(positions) != 3 or not all(isinstance(p, str) for p in positions):
@@ -126,6 +131,22 @@ def threshold(node, expr):
     _require_node(node, "threshold")
     var, op, value = _parse_predicate(expr)
     return ThresholdNode(upstream=node, var=var, op=op, value=value)
+
+
+def timesteps(node, start, stop):
+    """Time-axis selection for a FOLDER (timeseries) source: keep the timesteps
+    whose `#N` label is within [start, stop], INCLUSIVE (the integer in each
+    filename, e.g. run#8.hdf5 -> 8). The interpreter reads this before mapping
+    the rest of the chain over the selected files. On a single-file source it is
+    a no-op (there is one timestep); mismatches surface at plan time."""
+    _require_node(node, "timesteps")
+    for v, name in ((start, "start"), (stop, "stop")):
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise TypeError(f"timesteps(): {name} must be an integer timestep "
+                            f"label, got {v!r}")
+    if start > stop:
+        raise ValueError(f"timesteps(): need start <= stop, got ({start}, {stop})")
+    return TimestepsNode(upstream=node, start=start, stop=stop)
 
 
 def compress(node, variables, error_bound, mode="auto"):

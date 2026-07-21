@@ -16,7 +16,7 @@ The numbers below mirror my_render.py so the estimate matches what render ships:
 import glob
 import os
 
-from my_inspect import inspect_file
+from my_inspect import inspect_source, is_remote
 
 _VOL_BYTES_PER_VOXEL = 4          # k3d.volume input is float32 (my_render casts)
 _PT_BYTES_PER_POINT = 16          # xyz + 1 attribute, float32 each
@@ -31,7 +31,10 @@ _READ_REDUCIBLE = {'HDF5'}
 
 def _on_disk_mb(filepath):
     """Total on-disk size in MB, summing GenericIO-style partitions (file#0, file#1, …).
-    A partitioned file's base path is just a tiny header, so getsize alone underreports."""
+    A partitioned file's base path is just a tiny header, so getsize alone underreports.
+    For a remote source, a single stat round-trip is used (partitions not summed)."""
+    if is_remote(filepath):
+        return _remote_on_disk_mb(filepath)
     total, found = 0, False
     for p in [filepath] + glob.glob(filepath + "#*"):
         try:
@@ -42,6 +45,21 @@ def _on_disk_mb(filepath):
     return total / _MB if found else None
 
 
+def _remote_on_disk_mb(uri):
+    """Remote file size (MB) via one stat round-trip, or None if unreachable /
+    no ssh key auth. Partitions (#0, #1, …) are not summed remotely."""
+    try:
+        from my_inspect import _remote_conn
+        from my_download import remote_stat
+        conn, remote_path = _remote_conn(uri)
+        if conn is None:
+            return None
+        st = remote_stat(conn, remote_path)
+        return (st[0] / _MB) if st else None
+    except Exception:
+        return None
+
+
 def estimate_render_cost(filepath, budget_mb=256):
     """Return a dict describing render cost + a recommended subset. Reads no bulk data.
 
@@ -49,7 +67,7 @@ def estimate_render_cost(filepath, budget_mb=256):
     budget — the MCP tool does not duplicate it. 256 is an interim default; the
     plan is to *estimate* it (from browser/memory limits) rather than hardcode it.
     """
-    info = inspect_file(filepath)
+    info = inspect_source(filepath)
     file_mb = _on_disk_mb(filepath)
 
     dims = info.dimensions or {}

@@ -10,6 +10,7 @@ code path. What this cannot prove: ssh/rsync against a live host.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,10 +31,12 @@ import h5py
 import remote_reduce
 from my_download import Connection
 from dsl_forms import reset_sinks
-from dsl_forms.forms import source, fields, subsample, threshold, save
+from dsl_forms.forms import source, fields, subsample, threshold, timesteps, save
 from planner import plan_pipeline
 
-PY = "/vast/home/ashrestha/.conda/envs/autoviz/bin/python"
+# The reducer runs as a LOCAL subprocess here (fakes stand in for ssh), so use
+# the interpreter running the test; override with VISLANG_TEST_PYTHON.
+PY = os.environ.get("VISLANG_TEST_PYTHON", sys.executable)
 EXEC = os.path.join(REPO, "vislang_exec.py")
 TMP = tempfile.mkdtemp(prefix="vislang_rreduce_")
 
@@ -68,7 +71,13 @@ def fake_header_hash(conn, path, nbytes=65536):
 
 
 def fake_run_remote(conn, command, stdin_bytes=None, timeout=None):
-    if command.startswith("rm -f"):
+    if command.startswith("rm -"):               # cleanup (rm -f / rm -rf ...)
+        for tok in command.split()[2:]:
+            shutil.rmtree(tok, ignore_errors=True)
+            try:
+                os.remove(tok)
+            except OSError:
+                pass
         return 0, "", ""
     if command.startswith("squeue"):             # auto-discovery of a held alloc
         # newest (654322) is unnamed; the named "vislang" alloc is older (654321)
@@ -81,15 +90,18 @@ def fake_run_remote(conn, command, stdin_bytes=None, timeout=None):
         return 0, "", ""
     if "vislang_exec.py" in command:
         CMDS.append(command)
-        rout = command.split("--out", 1)[1].strip().split()[0]
+        # A folder reduce writes a DIRECTORY (--outdir); a single-file reduce an
+        # .npz (--out). Detect --outdir first (it contains the substring --out).
+        flag = "--outdir" if "--outdir" in command else "--out"
+        rout = command.split(flag, 1)[1].strip().split()[0]
         if "--plan" in command:                  # srun-mode: reducer reads a file
             rplan = command.split("--plan", 1)[1].strip().split()[0]
             with open(rplan, "rb") as f:
                 plan_bytes = f.read()
-            run_args, stdin = [PY, EXEC, "--plan", rplan, "--out", rout], None
+            run_args, stdin = [PY, EXEC, "--plan", rplan, flag, rout], None
         else:                                     # direct-ssh: plan piped via stdin
             plan_bytes = stdin_bytes
-            run_args, stdin = [PY, EXEC, "--stdin", "--out", rout], stdin_bytes
+            run_args, stdin = [PY, EXEC, "--stdin", flag, rout], stdin_bytes
         EXECS.append(json.loads(plan_bytes.decode()))
         r = subprocess.run(run_args, input=stdin, capture_output=True, cwd=REPO)
         return (r.returncode, r.stdout.decode(errors="replace"),
@@ -101,6 +113,15 @@ def fake_transfer(conn, remote_path, local_path, size_warn_mb=500):
     os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
     shutil.copyfile(remote_path, local_path)
     return local_path
+
+
+def fake_transfer_dir(conn, remote_dir, local_dir):
+    os.makedirs(local_dir, exist_ok=True)
+    for name in os.listdir(remote_dir):
+        s = os.path.join(remote_dir, name)
+        if os.path.isfile(s):
+            shutil.copyfile(s, os.path.join(local_dir, name))
+    return local_dir
 
 
 def main():
@@ -120,6 +141,30 @@ def main():
     remote_reduce.remote_header_hash = fake_header_hash
     remote_reduce.run_remote = fake_run_remote
     remote_reduce.transfer = fake_transfer
+    remote_reduce.transfer_dir = fake_transfer_dir
+
+    # The planner now probes remote folder-ness before dispatch. Our fake remote
+    # IS this machine, so back both probes with the local filesystem (the ssh
+    # command construction is unit-tested separately in test_remote_helpers.py).
+    import my_inspect
+
+    def local_path(uri):
+        return remote_reduce._parse_remote(remote_reduce._normalize_remote(uri))[2]
+
+    def fake_remote_is_dir(uri):
+        return os.path.isdir(local_path(uri))
+
+    def fake_remote_timestep_files(uri):
+        path, base = local_path(uri), uri.rstrip("/")
+        out = [(int(m.group(1)), f"{base}/{name}")
+               for name in os.listdir(path)
+               if (m := re.search(r"#(\d+)", name))
+               and os.path.isfile(os.path.join(path, name))]
+        out.sort(key=lambda t: t[0])
+        return out
+
+    my_inspect.remote_is_dir = fake_remote_is_dir
+    my_inspect.remote_timestep_files = fake_remote_timestep_files
 
     cache = os.path.join(TMP, "cache")
     os.environ["VISLANG_CACHE"] = cache
@@ -238,6 +283,63 @@ def main():
             os.environ.pop("VISLANG_SRUN_JOBID", None)
             os.environ.pop("VISLANG_SRUN_NAME", None)
             os.environ.pop("VISLANG_REMOTE_TMP", None)
+
+        print("== remote FOLDER is a timeseries: chain maps over the #N files ==")
+        os.environ["VISLANG_CACHE"] = os.path.join(TMP, "cache_folder")
+        os.environ["VISLANG_REMOTE"] = "auto"
+        series = os.path.join(TMP, "series")
+        os.makedirs(series)
+        labels = [1, 2, 3]
+        dens_by_t = {}
+        for t in labels:                            # density varies per timestep
+            dens_t = np.arange(n, dtype=np.float64) + t
+            dens_by_t[t] = dens_t
+            with h5py.File(os.path.join(series, f"particles#{t}.hdf5"), "w") as f:
+                f["x"] = np.linspace(0.0, 99.9, n)
+                f["y"] = np.linspace(0.0, 99.9, n)
+                f["z"] = np.tile(np.arange(10.0), n // 10)
+                f["density"] = dens_t
+        folder_uri = f"u@fakehost:{series}"
+
+        def expect(t):                              # threshold >=500, then stride 3
+            d = dens_by_t[t]
+            return d[d >= 500][::3]
+
+        out_all = os.path.join(TMP, "series_out")
+        n_execs_before = len(EXECS)
+        reset_sinks()
+        res = plan_pipeline(save(subsample(threshold(fields(source(folder_uri),
+                            ["density"]), "density >= 500"), 3), out_all))
+        check("folder reduced next to the data on the remote",
+              any("remote folder" in s for s in res["steps"]),
+              str(res["steps"]))
+        check("one remote exec for the WHOLE folder (batched, not per-file)",
+              len(EXECS) == n_execs_before + 1, f"{len(EXECS) - n_execs_before}")
+        check("observability: remote compute reported for all timesteps",
+              any("remote compute:" in s and f"{len(labels)}/{len(labels)}" in s
+                  for s in res["steps"]), str(res["steps"]))
+        check("sites: all remote, none fetched",
+              res.get("sites") == {"remote": len(labels), "fetch": 0},
+              str(res.get("sites")))
+        check("materialized folder result", res["materialized"] is True)
+        check("one output file per timestep",
+              sorted(os.listdir(out_all)) ==
+              [f"timestep#{t}.hdf5" for t in labels], str(os.listdir(out_all)))
+        for t in labels:
+            with h5py.File(os.path.join(out_all, f"timestep#{t}.hdf5"), "r") as f:
+                check(f"timestep {t} reduced correctly",
+                      np.array_equal(f["density"][:], expect(t)))
+
+        print("== timesteps(...) selects an inclusive #N range of the folder ==")
+        out_rng = os.path.join(TMP, "series_out_rng")
+        reset_sinks()
+        plan_pipeline(save(subsample(threshold(fields(timesteps(source(folder_uri),
+                      2, 3), ["density"]), "density >= 500"), 3), out_rng))
+        check("range selects only #2..#3",
+              sorted(os.listdir(out_rng)) == ["timestep#2.hdf5", "timestep#3.hdf5"],
+              str(os.listdir(out_rng)))
+        with h5py.File(os.path.join(out_rng, "timestep#2.hdf5"), "r") as f:
+            check("ranged timestep 2 correct", np.array_equal(f["density"][:], expect(2)))
     finally:
         os.environ.pop("VISLANG_CACHE", None)
         os.environ.pop("VISLANG_REMOTE", None)

@@ -109,6 +109,57 @@ def main():
     check("bandwidth failure -> None",
           with_fake(lambda c, k: Result(1, b""), lambda: measure_bandwidth(KEY)) is None)
 
+    print("== remote_is_dir / remote_timestep_files (folder detection) ==")
+    import my_inspect
+
+    def folder_script(cmd, kw):
+        """Fake ssh: the establish probe (`true`), then stat / ls for a folder."""
+        last = cmd[-1]
+        if last == "true":                       # establish_connection -> ssh-key
+            return Result(0, b"")
+        if last.startswith("stat -c %F"):
+            return Result(0, b"directory\n")
+        if last.startswith("ls -1p"):
+            # a subdir and a dotfile mixed in; both must be dropped
+            return Result(0, b"run#1.hdf5\nrun#2.hdf5\nrun#10.hdf5\n"
+                             b"README\nsub/\n.hidden#3.hdf5\n")
+        return Result(1, b"", b"unexpected: " + last.encode())
+
+    is_dir = with_fake(folder_script,
+                       lambda: my_inspect.remote_is_dir("u@h:/data/series"))
+    check("remote_is_dir True on a directory", is_dir is True)
+    check("is_dir uses stat -c %F",
+          any("stat -c %F" in c[0][-1] for c in CALLS), str(CALLS))
+
+    check("remote_is_dir False on a regular file",
+          with_fake(lambda c, k: Result(0, b"") if c[-1] == "true"
+                    else Result(0, b"regular file\n"),
+                    lambda: my_inspect.remote_is_dir("u@h:/data/f.raw")) is False)
+
+    files = with_fake(folder_script,
+                      lambda: my_inspect.remote_timestep_files("u@h:/data/series"))
+    check("timesteps sorted by #N, non-#N and subdirs dropped",
+          [lab for lab, _ in files] == [1, 2, 10], str(files))
+    check("per-timestep uri rebuilt from the folder uri",
+          files[0][1] == "u@h:/data/series/run#1.hdf5", str(files))
+    check("trailing slash on the folder uri is handled",
+          with_fake(folder_script,
+                    lambda: my_inspect.remote_timestep_files("u@h:/data/series/"))[0][1]
+          == "u@h:/data/series/run#1.hdf5")
+
+    def no_ts_script(cmd, kw):
+        if cmd[-1] == "true":
+            return Result(0, b"")
+        if cmd[-1].startswith("ls -1p"):
+            return Result(0, b"notes.txt\ndata.bin\n")
+        return Result(1, b"")
+    try:
+        with_fake(no_ts_script,
+                  lambda: my_inspect.remote_timestep_files("u@h:/data/empty"))
+        check("no #N files raises ValueError", False, "no error raised")
+    except ValueError as e:
+        check("no #N files raises ValueError", "timestep" in str(e))
+
     print("== push_file ==")
     real_have = my_download._have_cmd
     my_download._have_cmd = lambda name: name == "rsync"

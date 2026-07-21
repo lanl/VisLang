@@ -43,37 +43,76 @@ def _fail(msg):
     return 1
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description="VisLang remote reducer")
-    src = ap.add_mutually_exclusive_group(required=True)
-    src.add_argument("--plan", help="path to plan.json")
-    src.add_argument("--stdin", action="store_true", help="read plan.json from stdin")
-    ap.add_argument("--out", required=True, help="output .npz path")
-    args = ap.parse_args(argv)
-
-    try:
-        text = sys.stdin.read() if args.stdin else open(args.plan).read()
-    except OSError as e:
-        return _fail(f"cannot read plan: {e}")
-
-    from dsl_forms import reset_sinks
-    from dsl_forms.forms import save
-    from ast_serialize import from_plan_json, PlanValidationError
+def _inspect_report(path):
+    """Metadata-only inspect on the remote (no bulk read, no data shipped): print
+    the schema meta between the sentinels. For HDF5 the raw schema tree is
+    included so the CALLER can bind locally (bindings are keyed by a
+    filesystem-independent schema signature). Invoked with VISLANG_NO_BINDING=1,
+    so the listing is generic; an unrecognized format reports needs_adapter (the
+    caller then falls back to a whole-file fetch — no model runs here)."""
     from my_inspect import inspect_file
-    from planner import plan_pipeline
+    import adapters
+    try:
+        info = inspect_file(path)
+    except adapters.NeedsAdapterError as e:
+        meta = {"vislang_exec": PLAN_VERSION, "ok": True, "needs_adapter": True,
+                "evidence": e.evidence}
+        print(f"{META_BEGIN}\n{json.dumps(meta)}\n{META_END}")
+        return 0
+    except Exception as e:
+        return _fail(f"{type(e).__name__}: {e}")
 
+    schema_tree = None
+    if getattr(info, "filetype", None) == "HDF5":
+        try:
+            import schema_binding
+            schema_tree = schema_binding.extract_schema(path)
+        except Exception:
+            schema_tree = None
+
+    meta = {
+        "vislang_exec": PLAN_VERSION, "ok": True, "needs_adapter": False,
+        "schema": {
+            "variables": list(info.variables),
+            "dimensions": dict(info.dimensions or {}),
+            "positions": list(info.positions) if info.positions else None,
+            "attributes": dict(info.attributes or {}),
+            "filetype": info.filetype,
+        },
+        "schema_tree": schema_tree,
+    }
+    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
+    return 0
+
+
+def _rebuild(text):
+    """Strictly rebuild the AST from a wire plan; return (terminal, err_rc).
+    A sink in the plan is rejected — the reducer appends its own save()."""
+    from dsl_forms import reset_sinks
+    from ast_serialize import from_plan_json, PlanValidationError
     reset_sinks()
     try:
         terminal = from_plan_json(text)
     except PlanValidationError as e:
-        return _fail(f"plan rejected: {e}")
+        return None, _fail(f"plan rejected: {e}")
     if getattr(terminal, "is_sink", False):
-        return _fail("a remote prefix must not contain a sink (render/save); "
-                     "the reducer appends its own save()")
-
-    out = args.out if args.out.endswith(".npz") else args.out + ".npz"
+        return None, _fail("a remote prefix must not contain a sink (render/save); "
+                           "the reducer appends its own save()")
     reset_sinks()
+    return terminal, None
 
+
+def _run_single(text, out):
+    """SINGLE-file reduce (unchanged behavior): save the narrowed arrays to an
+    .npz and report the reduced file + schema + saved variables to the caller."""
+    from dsl_forms.forms import save
+    from my_inspect import inspect_file
+    from planner import plan_pipeline
+
+    terminal, err = _rebuild(text)
+    if err is not None:
+        return err
+    out = out if out.endswith(".npz") else out + ".npz"
     try:
         result = plan_pipeline(save(terminal, out), dry_run=False)
     except Exception as e:
@@ -104,6 +143,62 @@ def main(argv=None):
     }
     print(f"{META_BEGIN}\n{json.dumps(meta)}\n{META_END}")
     return 0
+
+
+def _run_folder(text, outdir):
+    """FOLDER (timeseries) reduce: the source is a *local* directory here (we run
+    next to the data), so plan_pipeline dispatches to _plan_folder, which lists
+    the timesteps, narrows each, and save_timeseries()-writes one file per step
+    into `outdir`. We report the dir + per-timestep labels — NOT the arrays (the
+    caller pulls the directory once). Must not np.load / inspect the source as a
+    file: the source is a directory."""
+    from dsl_forms.forms import save
+    from planner import plan_pipeline
+
+    terminal, err = _rebuild(text)
+    if err is not None:
+        return err
+    try:
+        result = plan_pipeline(save(terminal, outdir), dry_run=False)  # dir, not .npz
+    except Exception as e:
+        return _fail(f"{type(e).__name__}: {e}")
+
+    meta = {
+        "vislang_exec": PLAN_VERSION,
+        "ok": True,
+        "outdir": result.get("output") or outdir,
+        "timesteps": result.get("timesteps", []),
+        "steps": result["steps"],
+    }
+    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="VisLang remote reducer / inspector")
+    src = ap.add_mutually_exclusive_group(required=False)
+    src.add_argument("--plan", help="path to plan.json")
+    src.add_argument("--stdin", action="store_true", help="read plan.json from stdin")
+    out = ap.add_mutually_exclusive_group(required=False)
+    out.add_argument("--out", help="output .npz path (single-file reduce)")
+    out.add_argument("--outdir", help="output DIRECTORY (folder/timeseries reduce)")
+    ap.add_argument("--inspect", metavar="PATH",
+                    help="metadata-only inspect: print schema meta and exit "
+                         "(no --plan/--out needed)")
+    args = ap.parse_args(argv)
+
+    if args.inspect:
+        return _inspect_report(args.inspect)
+    if not (args.plan or args.stdin) or not (args.out or args.outdir):
+        return _fail("need (--plan | --stdin) and (--out | --outdir), "
+                     "unless --inspect PATH")
+
+    try:
+        text = sys.stdin.read() if args.stdin else open(args.plan).read()
+    except OSError as e:
+        return _fail(f"cannot read plan: {e}")
+
+    return _run_folder(text, args.outdir) if args.outdir else _run_single(text, args.out)
 
 
 if __name__ == "__main__":

@@ -64,6 +64,17 @@ class ThresholdNode(Node):
     kind = "threshold"
 
 
+@dataclass(frozen=True)
+class TimestepsNode(Node):
+    # Time-axis selection for a FOLDER (timeseries) source: keep timesteps whose
+    # `#N` label is in [start, stop] (inclusive). Read by the planner before it
+    # maps the rest of the chain over the selected files; a no-op on a single file.
+    upstream: Node
+    start: int
+    stop: int
+    kind = "timesteps"
+
+
 # --- transform -------------------------------------------------------------
 @dataclass(frozen=True)
 class CompressNode(Node):

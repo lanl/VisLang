@@ -72,7 +72,7 @@ def transfer(connection, remote_path, local_path, size_warn_mb=500):
         if _have_cmd('rsync'):
             ok, err = _run_transfer([
                 'rsync', '-a', '--progress', '--partial',
-                '-e', 'ssh -o BatchMode=yes -o ConnectTimeout=15',
+                '-e', _ssh_transport(),
                 remote_source, local_path
             ])
             if ok:
@@ -81,7 +81,7 @@ def transfer(connection, remote_path, local_path, size_warn_mb=500):
                 raise RuntimeError(f"rsync failed:\n{err}")
         elif _have_cmd('scp'):
             ok, err = _run_transfer([
-                'scp', '-r', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+                'scp', '-r', *_ssh_opts(),
                 remote_source, local_path
             ])
             if ok:
@@ -102,6 +102,37 @@ def transfer(connection, remote_path, local_path, size_warn_mb=500):
         f"  ssh-copy-id {u + '@' if u else ''}{connection.host}   # type your password once\n\n"
         "After that, transfers will work without a password."
     )
+
+
+# Pull a whole remote DIRECTORY's contents into local_dir in one transfer.
+# Trailing slashes (`remote:dir/` -> `local/`) put the CONTENTS directly in
+# local_dir rather than nesting a `dir/` under it — so a remote timeseries save
+# lands as the user's save dir. Key auth only, no size prompt (non-interactive
+# batch). Returns local_dir on success, None on failure. Used by the one-shot
+# remote folder reduce (remote_folder_reduce).
+def transfer_dir(connection, remote_dir, local_dir):
+    if connection.method != "ssh-key":
+        return None
+    os.makedirs(local_dir, exist_ok=True)
+    src = f"{connection.target}:{remote_dir.rstrip('/')}/"
+    dst = local_dir.rstrip("/") + "/"
+    if _have_cmd('rsync'):
+        ok, err = _run_transfer(['rsync', '-a', '--partial',
+                                 '-e', _ssh_transport(), src, dst])
+        if ok:
+            return _report_success(local_dir)
+        if not _is_auth_error(err):
+            raise RuntimeError(f"rsync (dir) failed:\n{err}")
+    elif _have_cmd('scp'):
+        # scp -r needs `dir/.` to copy contents into an existing dst.
+        ok, err = _run_transfer(['scp', '-r', *_ssh_opts(),
+                                 f"{connection.target}:{remote_dir.rstrip('/')}/.",
+                                 dst])
+        if ok:
+            return _report_success(local_dir)
+        if not _is_auth_error(err):
+            raise RuntimeError(f"scp (dir) failed:\n{err}")
+    return None
 
 
 # Back-compat shim: establish a connection, then transfer one file.
@@ -127,11 +158,52 @@ def _have_cmd(name):
     return subprocess.run(['which', name], capture_output=True).returncode == 0
 
 
+# --- SSH connection multiplexing --------------------------------------------
+# Without a shared master, every ssh/rsync/scp subprocess pays a full TCP +
+# (on GSSAPI/Kerberos hosts like LANL darwin) auth handshake — a 20-file remote
+# folder run does ~144-184 of them, minutes of pure overhead. OpenSSH
+# multiplexing fixes this: the FIRST connection opens a master socket at
+# ControlPath; every later connection to the same host rides it as a cheap
+# channel (no TCP, no re-auth — GSSAPI is delegated once on the master). Every
+# ssh/rsync/scp site below funnels the SAME opts, so they all share one master.
+_MUX_PERSIST_DEFAULT = "120"
+
+
+def _mux_opts():
+    """OpenSSH multiplexing -o flags, or [] when disabled / uncreatable.
+    ControlPath uses %C (a hash of local-host/host/port/user — NOT the path), so
+    the folder probe and every `…#N` timestep to the same host share one master.
+    ~ is pre-expanded here because rsync's `-e ssh` gets no shell to expand it."""
+    if os.environ.get("VISLANG_SSH_MUX", "1") == "0":
+        return []
+    cm_dir = os.path.expanduser("~/.ssh")
+    try:
+        os.makedirs(cm_dir, exist_ok=True)      # best-effort; ~/.ssh usually exists
+    except OSError:
+        return []                               # can't stage a socket -> degrade
+    persist = os.environ.get("VISLANG_SSH_MUX_PERSIST", _MUX_PERSIST_DEFAULT)
+    path = os.path.join(cm_dir, "vislang-cm-%C")   # ~73 chars < the 104-byte limit
+    return ['-o', 'ControlMaster=auto',
+            '-o', f'ControlPath={path}',
+            '-o', f'ControlPersist={persist}']
+
+
+def _ssh_opts():
+    """The full `ssh -o` list shared by ssh/scp: base flags + mux."""
+    return ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', *_mux_opts()]
+
+
+def _ssh_transport():
+    """The `ssh …` string for rsync's -e — same opts, so rsync shares the
+    master too. shlex-quoted since it is one argv token passed to rsync."""
+    return "ssh " + " ".join(shlex.quote(o) for o in _ssh_opts())
+
+
 # Run a one-off ssh command in BatchMode (key auth only, never prompts).
 # Returns stdout on success, or None if it failed / auth unavailable.
 def _ssh_query(target, command):
     result = subprocess.run(
-        ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', target, command],
+        ['ssh', *_ssh_opts(), target, command],
         capture_output=True, text=True
     )
     return result.stdout if result.returncode == 0 else None
@@ -243,8 +315,10 @@ def _report_success(local_path):
 # All of these are key-auth only: with connection.method != 'ssh-key' they
 # return the documented "unavailable" value instead of prompting — the caller
 # (remote_reduce) treats that as RemoteUnavailable and falls back.
+#
+# All ssh/scp calls here go through _ssh_opts() (base + multiplexing), and rsync
+# through _ssh_transport(), so every probe rides the shared master.
 # ===========================================================================
-_SSH_OPTS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15']
 
 
 def remote_stat(connection, remote_path):
@@ -284,7 +358,7 @@ def measure_bandwidth(connection, mb=4):
     import time
     if connection.method != 'ssh-key':
         return None
-    cmd = ['ssh', *_SSH_OPTS, connection.target,
+    cmd = ['ssh', *_ssh_opts(), connection.target,
            f"dd if=/dev/zero bs=1M count={int(mb)} status=none"]
     t0 = time.monotonic()
     result = subprocess.run(cmd, capture_output=True)
@@ -300,7 +374,7 @@ def run_remote(connection, command, stdin_bytes=None, timeout=None):
     vislang_exec without landing a file first."""
     if connection.method != 'ssh-key':
         return 255, '', 'remote commands need ssh key auth'
-    cmd = ['ssh', *_SSH_OPTS, connection.target, command]
+    cmd = ['ssh', *_ssh_opts(), connection.target, command]
     try:
         result = subprocess.run(cmd, input=stdin_bytes, capture_output=True,
                                 timeout=timeout)
@@ -324,10 +398,9 @@ def push_file(connection, local_path, remote_path):
             return False
     tool = 'rsync' if _have_cmd('rsync') else 'scp'
     if tool == 'rsync':
-        cmd = ['rsync', '-a', '--partial', '-e',
-               'ssh -o BatchMode=yes -o ConnectTimeout=15',
+        cmd = ['rsync', '-a', '--partial', '-e', _ssh_transport(),
                local_path, f"{connection.target}:{remote_path}"]
     else:
-        cmd = ['scp', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15',
+        cmd = ['scp', *_ssh_opts(),
                local_path, f"{connection.target}:{remote_path}"]
     return subprocess.run(cmd, capture_output=True).returncode == 0

@@ -29,4 +29,9 @@ test_particles.npz
 INTERPRETER_PLAN.md
 REMOTE_COMPUTE_PLAN.md
 TODO.md
+# consolidated cache root (extent catalog, fetch downloads, frozen bindings)
+.vislang/
+# legacy cache dirs (pre-consolidation) — ignore the ones still on disk
 vislang_cache/
+binding_cache/
+.mcp.json

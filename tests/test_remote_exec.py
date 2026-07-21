@@ -27,7 +27,9 @@ from my_inspect import inspect_file
 from planner import plan_pipeline
 import planner
 
-PY = "/vast/home/ashrestha/.conda/envs/autoviz/bin/python"
+# vislang_exec runs here as a LOCAL subprocess (the fakes stand in for ssh), so
+# use the interpreter running the test; override with VISLANG_TEST_PYTHON.
+PY = os.environ.get("VISLANG_TEST_PYTHON", sys.executable)
 RAW = os.path.join(REPO, "csafe_heptane_302x302x302_uint8.raw")
 EXEC = os.path.join(REPO, "vislang_exec.py")
 TMP = tempfile.mkdtemp(prefix="vislang_rexec_")
@@ -49,6 +51,12 @@ def parse_meta(stdout):
 
 def main():
     var = inspect_file(RAW).variables[0]
+
+    # These tests all target single remote FILES. The planner now probes remote
+    # folder-ness before dispatch; stub it False so no real ssh is attempted (the
+    # probe itself is unit-tested in test_remote_helpers.py).
+    import my_inspect
+    my_inspect.remote_is_dir = lambda uri: False
 
     print("== vislang_exec: the reducer entry point, run locally ==")
     reset_sinks()

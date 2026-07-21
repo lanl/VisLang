@@ -1,9 +1,14 @@
-render(
+save(
     subsample(
         fields(
-            region(
-                source("ssh://cn623/projects/exasky/data/nyx/highz/512/NVB_C009_l10n512_S12345T692_z42.hdf5"),
-                x=(128, 384), y=(128, 384), z=(128, 384)),
-            ["baryon_density"]),
-        4),
-    cmap="viridis")
+            timesteps(
+                source("ssh://darwin/projects/autonomousvis/ashrestha/data"),
+                6,
+                8,
+            ),
+            ["x", "y", "z", "temperature", "density"],
+        ),
+        2,
+    ),
+    "/Users/ashrestha/Projects/VisLang/saved_results",
+)

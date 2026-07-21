@@ -1,32 +1,40 @@
-"""Tier-1 fallback: generate an adapter for a file no registered reader claims.
+"""Tier-1 fallback: derive a reader for a file no registered adapter claims.
 
-Flow (reached only after yt / HDF5 / FITS / GenericIO all decline):
-    1. gather evidence about the file (name, extension, size, hex header)
-    2. ask the LLM to identify the format and pick the appropriate *installed*
-       reader library (numpy, netCDF4, pyarrow, scipy, ...)
-    3. the LLM writes a small module with TWO functions only:
+Reached only after the built-in readers (yt / HDF5 / FITS / GenericIO) and any
+previously-frozen generated adapters all decline. Generation is a HANDSHAKE with
+the session model — the LLM already driving this MCP session — so there is no
+second API/model and no API key:
+
+    1. adapters.get_adapter() gathers evidence about the file (name, extension,
+       size, hex head/tail) and raises NeedsAdapterError(evidence) instead of
+       calling out to a model.
+    2. the MCP `inspect` tool surfaces that evidence to the session model, which
+       reads instructions/writing-adapters.md and writes a small module with two
+       functions only:
            inspect(filepath)              -> metadata dict
            read_array(filepath, location) -> one full numpy array
        It never writes load(): all selection/subsampling/orchestration is the
-       framework's universal load below, written once and shared by every
-       generated adapter. The DatasetInfo is the format boundary — once
-       inspect() fills it, downstream logic is format-blind.
-    4. conformance: run inspect() on the real file, validate the result, then
-       read_array() on the first variable and check it returns real data
-    5. on success, freeze the module to generated_adapters/<ext>.py and register
-       it so the next file of this format skips the LLM entirely (it's Tier 0)
+       framework's universal load below, shared by every generated adapter. The
+       DatasetInfo is the format boundary — once inspect() fills it, downstream
+       logic is format-blind.
+    3. the model calls the `submit_adapter` tool -> conform_and_freeze() here:
+       exec the module, run inspect() on the real file and validate the result,
+       then read_array() on the first variable and check it returns real data.
+    4. on success the module is frozen to generated_adapters/<ext>.py and
+       registered, so the next file of this format skips the model entirely (it
+       becomes Tier 0). On failure the violation is raised back so the model can
+       fix it and resubmit — the old retry loop is now the conversation itself.
 
-The LLM never hand-parses raw bytes — it only identifies the format and wires
-up a trusted reader. Trust comes from the conformance run in step 4, not from
-the model's say-so.
+The model never hand-parses raw bytes — it only identifies the format and wires
+up a trusted, installed reader library. Trust comes from the conformance run in
+step 3, not from the model's say-so.
 
-Security note: the generated module runs via exec() in this process. Only use
-on files/machines you trust.
+Security note: the submitted module runs via exec() in this process. Only use on
+files/machines you trust.
 """
 
 import os
 import types
-import traceback
 
 import numpy as np
 
@@ -37,7 +45,6 @@ from adapters import (
     apply_selection,
 )
 
-MAX_RETRIES = 4
 HEADER_BYTES = 1024
 TAIL_BYTES = 256
 GENERATED_ADAPTERS_DIR = os.path.join(
@@ -52,7 +59,7 @@ def _say(msg):
 # Wrapping a generated module as a FormatAdapter
 # ---------------------------------------------------------------------------
 class GeneratedModuleAdapter(FormatAdapter):
-    """Wraps an LLM-generated module (FILETYPE / EXTENSIONS / inspect /
+    """Wraps a session-model-generated module (FILETYPE / EXTENSIONS / inspect /
     read_array) so it plugs into the same registry as hand-written adapters.
 
     load() here is UNIVERSAL: the generated code only knows how to pull one
@@ -94,7 +101,7 @@ class GeneratedModuleAdapter(FormatAdapter):
 
 
 # ---------------------------------------------------------------------------
-# Conformance checks (hand-written, never generated)
+# Conformance checks (hand-written, never generated) — the trust boundary
 # ---------------------------------------------------------------------------
 def _validate_inspect(result):
     if not isinstance(result, dict):
@@ -138,9 +145,12 @@ def _check_read_array(mod, filepath, result):
 
 
 # ---------------------------------------------------------------------------
-# Evidence shown to the LLM
+# Evidence shown to the session model (via the inspect handshake)
 # ---------------------------------------------------------------------------
-def _gather_evidence(filepath):
+def gather_adapter_evidence(filepath):
+    """A text block of format clues for the session model: filename, extension,
+    size, and a hex dump of the head (and tail, for large files). Metadata only —
+    no bulk read. Surfaced by adapters.get_adapter through NeedsAdapterError."""
     size = os.path.getsize(filepath)
     with open(filepath, "rb") as f:
         head = f.read(HEADER_BYTES)
@@ -174,79 +184,8 @@ def _gather_evidence(filepath):
 
 
 # ---------------------------------------------------------------------------
-# DSPy generator
+# Module handling: strip fences, exec, cache path, register
 # ---------------------------------------------------------------------------
-_generator = None
-
-
-def _configure_generator():
-    global _generator
-    if _generator is not None:
-        return _generator
-
-    import dspy  # raises ImportError if not installed
-    from llm_config import get_lm
-
-    class WriteAdapter(dspy.Signature):
-        """Identify a scientific data file's format and write a reader module.
-
-        You are given evidence about a file (name, extension, size, hex dumps).
-        Infer the format and choose the appropriate ALREADY-INSTALLED Python
-        reader library for it (e.g. numpy, netCDF4, pyarrow, h5py, scipy.io,
-        astropy.io.fits, zarr, asdf, pygio). Do NOT hand-parse raw bytes — use
-        the library. Write a complete, self-contained Python module defining
-        EXACTLY this contract:
-
-            FILETYPE = "<short format name>"
-            EXTENSIONS = ["<.ext>", ...]   # extensions this format uses
-
-            def inspect(filepath):
-                return {
-                    "filetype": FILETYPE,
-                    "variables": [<field/column/dataset names>],   # non-empty
-                    "dimensions": {...},   # e.g. {"particles": N} or {"grid": (nx,ny,nz)}
-                    "attributes": {...},   # JSON-friendly metadata (scalars, units, ...)
-                    # optional, only when a variable's name differs from how the
-                    # library addresses it:
-                    # "variable_locations": {"<variable>": <location>},
-                }
-
-            def read_array(filepath, location):
-                # Return the ONE full numpy array for this variable/location.
-                # No slicing, no subsetting — the framework does all selection.
-                ...
-
-        Do NOT write a load() function. Do NOT do any subsampling or selection.
-        The framework owns all of that; your module only knows how to (a) list
-        what is in the file and (b) fetch one named array.
-
-        Rules:
-        - Use the standard reader library for the identified format; assume it
-          is installed. Import it inside the functions.
-        - 'variables' must be non-empty and contain the real data fields. A
-          scalar stored in the file (e.g. box_size) belongs in 'attributes',
-          not 'variables'.
-        - If the variables are particle-like 1-D columns of equal length N,
-          report {"particles": N} in dimensions.
-        - All metadata values must be JSON-serializable (use .item()/float()).
-        - Read real metadata from filepath; never invent values. If required
-          metadata is missing (e.g. no shape/dtype in a filename), raise a
-          clear ValueError — never fall back to a hardcoded guess.
-        - Output only the Python module source.
-        """
-        file_evidence: str = dspy.InputField(
-            desc="Filename, extension, size, hex dump of head/tail")
-        previous_attempt: str = dspy.InputField(
-            desc="Previous code and the error it produced; empty on first try. "
-                 "Fix the error; do not repeat it.")
-        module_code: str = dspy.OutputField(
-            desc="Complete Python module source (FILETYPE, EXTENSIONS, inspect, read_array)")
-
-    dspy.configure(lm=get_lm(max_tokens=16000))
-    _generator = dspy.ChainOfThought(WriteAdapter)
-    return _generator
-
-
 def _strip_fences(code):
     code = code.strip()
     if code.startswith("```"):
@@ -294,7 +233,7 @@ def _wrap_and_register(mod, fallback_ext=None):
 
 
 # ---------------------------------------------------------------------------
-# Public entry points (called by adapters.get_adapter)
+# Public entry points
 # ---------------------------------------------------------------------------
 def load_cached_adapters():
     """Register any previously-frozen generated adapters. No LLM/API needed."""
@@ -315,64 +254,46 @@ def load_cached_adapters():
             continue
 
 
-def try_generate_adapter(filepath):
-    """Generate, validate, freeze, and register an adapter for filepath.
+def conform_and_freeze(filepath, module_code):
+    """Validate a session-model-proposed adapter module against the real file,
+    then freeze + register it. This is the single trust step of the handshake
+    (called by the `submit_adapter` MCP tool):
 
-    Returns a FormatAdapter instance on success, or None if generation isn't
-    possible (deps/key missing) or never validated. get_adapter() turns None
-    into a clean UnsupportedFormatError.
+      1. exec the module (must define inspect + read_array),
+      2. run inspect() on the real file and structurally validate the result,
+      3. run read_array() on the first variable and check it returns real data,
+      4. freeze the source to generated_adapters/<ext>.py and register it.
+
+    Returns a report dict describing what was frozen. Raises (ValueError or the
+    generated code's own exception) with a clear message on ANY conformance
+    failure, so the caller can hand the violation back to the model for a fix —
+    nothing is frozen unless it passed against the real file.
     """
-    try:
-        generator = _configure_generator()
-    except Exception as e:
-        _say(f"LLM unavailable ({type(e).__name__}: {e}) — cannot generate an adapter.")
-        return None
+    code = _strip_fences(module_code)
+    mod = _exec_module(code, "vislang_gen_candidate")
 
-    size = os.path.getsize(filepath)
-    _say(f"Gathering evidence: {os.path.basename(filepath)} "
-         f"({size / 1e6:.1f} MB, ext {os.path.splitext(filepath)[1] or '(none)'!r})")
-    evidence = _gather_evidence(filepath)
+    # Conformance against the real file (the trust step).
+    result = mod.inspect(filepath)
+    _validate_inspect(result)
+    var, arr = _check_read_array(mod, filepath, result)
+
+    # Success — freeze the source and register the adapter (Tier 0 hereafter).
+    os.makedirs(GENERATED_ADAPTERS_DIR, exist_ok=True)
+    cache_path = _cache_path_for(filepath)
+    with open(cache_path, "w") as f:
+        f.write(code)
     fallback_ext = os.path.splitext(filepath)[1].lower() or None
-    previous_attempt = ""
+    adapter = _wrap_and_register(mod, fallback_ext=fallback_ext)
+    _say(f"✓ adapter {adapter.name!r} validated and frozen to {cache_path}.")
 
-    for attempt in range(1, MAX_RETRIES + 1):
-        _say(f"LLM attempt {attempt}/{MAX_RETRIES}: asking for "
-             f"inspect() + read_array() module...")
-        code = ""
-        try:
-            prediction = generator(file_evidence=evidence,
-                                   previous_attempt=previous_attempt)
-            code = _strip_fences(prediction.module_code)
-            mod = _exec_module(code, f"vislang_gen_attempt_{attempt}")
-            _say(f"  generated: FILETYPE={getattr(mod, 'FILETYPE', '?')!r}, "
-                 f"EXTENSIONS={getattr(mod, 'EXTENSIONS', [])!r} "
-                 f"({len(code.splitlines())} lines)")
-
-            # Conformance against the real file (the trust step):
-            result = mod.inspect(filepath)
-            _validate_inspect(result)
-            _say(f"  conformance: inspect() OK — {len(result['variables'])} variables "
-                 f"{result['variables'][:6]}, dimensions={result['dimensions']}")
-            var, arr = _check_read_array(mod, filepath, result)
-            _say(f"  conformance: read_array({var!r}) OK — shape {arr.shape}, dtype {arr.dtype}")
-        except Exception:
-            err = traceback.format_exc(limit=5)
-            _say(f"  attempt {attempt} failed: {err.strip().splitlines()[-1]}")
-            previous_attempt = (
-                f"--- Attempt {attempt} code ---\n{code}\n"
-                f"--- Error ---\n{err}"
-            )
-            continue
-
-        # Success — freeze and register
-        os.makedirs(GENERATED_ADAPTERS_DIR, exist_ok=True)
-        cache_path = _cache_path_for(filepath)
-        with open(cache_path, "w") as f:
-            f.write(code)
-        adapter = _wrap_and_register(mod, fallback_ext=fallback_ext)
-        _say(f"✓ adapter {adapter.name!r} validated and frozen to {cache_path} "
-             f"— future {fallback_ext or '(no-ext)'} files skip the LLM.")
-        return adapter
-
-    _say(f"✗ all {MAX_RETRIES} attempts failed; giving up on {filepath}.")
-    return None
+    return {
+        "adapter_name": adapter.name,
+        "filetype": getattr(mod, "FILETYPE", None),
+        "extensions": list(getattr(mod, "EXTENSIONS", []) or []),
+        "variables": list(result["variables"]),
+        "dimensions": dict(result.get("dimensions", {}) or {}),
+        "cache_path": cache_path,
+        "checked_variable": var,
+        "checked_shape": list(arr.shape),
+        "checked_dtype": str(arr.dtype),
+    }
