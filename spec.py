@@ -1,12 +1,8 @@
 save(
     subsample(
         fields(
-            timesteps(
-                source("ssh://darwin/projects/autonomousvis/ashrestha/data"),
-                6,
-                8,
-            ),
-            ["x", "y", "z", "temperature", "density"],
+            source("ssh://darwin/projects/autonomousvis/ashrestha/data/"),
+            ["x", "y", "z", "temperature"],
         ),
         2,
     ),

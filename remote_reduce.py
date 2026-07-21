@@ -120,7 +120,7 @@ def _remote_tmp():
     return "/tmp"
 
 
-def _executor_cmd(rout, plan_path=None, jobid=None, folder=False):
+def _executor_cmd(rout, plan_path=None, jobid=None, folder=False, manifest_path=None):
     """The remote command that runs vislang_exec -> rout.
 
     Direct `python vislang_exec.py` (no container): the deps are assumed present
@@ -141,14 +141,15 @@ def _executor_cmd(rout, plan_path=None, jobid=None, folder=False):
     repo = os.environ.get("VISLANG_REMOTE_REPO",
                           os.path.dirname(os.path.abspath(__file__)))
     flag = "--outdir" if folder else "--out"
+    man = f" --manifest {manifest_path}" if manifest_path else ""   # catalog delta
     if jobid is None:
         env = "VISLANG_NO_BINDING=1 " if os.environ.get("VISLANG_NO_BINDING") else ""
-        return f"{env}{py} {repo}/vislang_exec.py --stdin {flag} {rout}"
+        return f"{env}{py} {repo}/vislang_exec.py --stdin {flag} {rout}{man}"
     # srun mode: run as a step in the held allocation, plan from a staged file.
     srun_args = os.environ.get("VISLANG_SRUN_ARGS", "--overlap -n1")
     export = "ALL,VISLANG_NO_BINDING=1" if os.environ.get("VISLANG_NO_BINDING") else "ALL"
     return (f"srun --jobid={jobid} {srun_args} --export={export} "
-            f"{py} {repo}/vislang_exec.py --plan {plan_path} {flag} {rout}")
+            f"{py} {repo}/vislang_exec.py --plan {plan_path} {flag} {rout}{man}")
 
 
 def _normalize_remote(uri):
@@ -343,6 +344,14 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
         detail = (meta or {}).get("error") or err.strip()[-500:] or f"rc={rc}"
         raise RuntimeError(f"remote reduce failed: {detail}")
 
+    # The remote ran its OWN plan_pipeline (same tracing code) — surface what it
+    # actually did, not just that it ran (mirrors the folder path's local:/remote:
+    # split).
+    if meta.get("steps"):
+        steps.append("remote:  --- what ran on the remote ---")
+        for s in meta["steps"]:
+            steps.append(f"remote:  {s}")
+
     from vislang_paths import cache_root
     local = os.path.join(cache_root(), f"pull_{tag}.npz")
     pulled = transfer(conn, rout, local, size_warn_mb=10 ** 9)   # never prompt
@@ -402,24 +411,203 @@ def _rebuild_folder_chain(remote_dir, positions, middle, ts_nodes):
 
 
 def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
-    """Reduce an ENTIRE remote folder timeseries in one remote process next to
-    the data, then pull the saved directory once. This is O(1) in the number of
-    timesteps: one ssh session, one (srun) step, one remote Python cold-start,
-    one directory transfer — versus the per-timestep loop's ~7-9 handshakes +
-    Python start + step + transfer PER file. The catalog is bypassed (this is a
-    bulk save-to-disk export, not incremental in-memory extent assembly).
+    """Reduce a remote folder timeseries as ONE remote job, CATALOG-AWARE: the
+    local extent catalog is consulted per (timestep, variable), so only the delta
+    crosses the wire. Re-running with one more field fetches just that field, for
+    just the timesteps that lack it; a fully-cached timestep is never touched.
 
-    Returns (local_out_dir, steps, report). Raises RemoteUnavailable so the
-    planner can fall back to a whole-folder fetch, or RuntimeError for a real
-    failure (a broken spec / a timestep that failed remotely — no silent
-    partial: _plan_folder materializes every step before writing any)."""
+    Flow: one listing call gets each timestep's (size, mtime) -> per-file
+    source_id -> catalog.delta -> a manifest {label: [missing vars]}. The missing
+    work runs in ONE remote job (vislang_exec --manifest) that returns a single
+    npz bundle of just those (timestep, var) arrays; we merge them with the
+    cached extents locally, store the fresh ones, and write one file per timestep.
+
+    Needs an explicit fields() projection to know each file's variables without a
+    per-file inspect; without one it falls back to the non-catalog save-to-dir
+    batch. Returns (local_out_dir, steps, report). Raises RemoteUnavailable (the
+    planner falls back to a whole-folder fetch) or RuntimeError for a real
+    failure."""
+    from my_catalog import make_source_id
+    from vislang_paths import cache_root
+    from my_compress import compress as _compress
+
     steps = []
+    prefix, compresses = _split_middle(middle)          # narrowing (incl fields) + compress
+    project = _projection_of(prefix)                    # requested vars, or None
+    narrow_prefix = [n for n in prefix if n.kind != "fields"]   # region/subsample/threshold
+    narrow_key = _narrow_key(prefix)                    # ordered, fields-independent
+
     norm = _normalize_remote(src.uri)
     _, host, remote_dir = _parse_remote(norm)
     conn = establish_connection(norm)
     if conn.method != "ssh-key":
         raise RemoteUnavailable("remote reduce needs ssh key auth")
 
+    # No projection -> we can't know each file's variables from metadata; run the
+    # non-catalog whole-folder batch (still one remote job, one dir pull).
+    if project is None:
+        steps.append("no fields() projection — catalog needs an explicit variable "
+                     "set; running the non-catalog whole-folder batch")
+        return _folder_batch_savedir(conn, host, remote_dir, src, middle, ts_nodes,
+                                     out_local_dir, steps)
+
+    from my_inspect import remote_timestep_files_stat
+    files = remote_timestep_files_stat(src.uri)         # [(label, uri, size, mtime)]
+    if files is None:
+        raise RemoteUnavailable(f"cannot list remote folder {src.uri!r}")
+    if ts_nodes:
+        lo, hi = max(n.start for n in ts_nodes), min(n.stop for n in ts_nodes)
+        files = [f for f in files if lo <= f[0] <= hi]
+    if not files:
+        raise ValueError(f"no timesteps match in {src.uri}")
+
+    # --- catalog delta per timestep (local, no network) ----------------------
+    catalog = ExtentCatalog(cache_root())
+    per = {}                                            # label -> {uri, sid, have, missing}
+    manifest = {}                                       # label(str) -> [missing vars]  (fetch set)
+    for label, uri, size, mtime in files:
+        sid = make_source_id(uri, size, mtime)
+        have, missing = catalog.delta(sid, project, narrow_key)
+        per[label] = {"uri": uri, "sid": sid, "have": have, "missing": missing}
+        if missing:
+            manifest[str(label)] = missing
+
+    n = len(files)
+    union_missing = sorted({v for vs in manifest.values() for v in vs})
+    total_pairs = n * len(project)                      # (timestep, variable) extents needed
+    fetched_pairs = sum(len(vs) for vs in manifest.values())
+    reused_pairs = total_pairs - fetched_pairs
+    steps.append(f"catalog: reused {reused_pairs}/{total_pairs} (timestep,variable) "
+                 f"extent(s)"
+                 + (f"; fetching {union_missing} ({fetched_pairs} pair(s)) for "
+                    f"{len(manifest)} timestep(s)" if manifest
+                    else " — full hit, nothing crosses the wire"))
+
+    # --- fetch only the missing (timestep, variable) pairs, in ONE remote job -
+    fetched = {}                                        # (label, var) -> array
+    schema = None
+    jobid = None
+    if manifest:
+        terminal = _rebuild_delta_source(remote_dir, src.positions, narrow_prefix)
+        plan = to_plan_json(terminal)
+        tag = os.urandom(4).hex()
+        base = _remote_tmp()
+        routdir = f"{base}/vislang_reduce_{tag}"
+        rmanifest = f"{base}/vislang_manifest_{tag}.json"
+        requested = _srun_requested()
+        jobid = _discover_jobid(conn, steps) if requested == "auto" else requested
+        steps.append(f"remote folder {host}:{remote_dir} (catalog delta)")
+
+        # The manifest is a file on BOTH paths (--manifest takes a path).
+        stc, _, ste = run_remote(conn, f"mkdir -p {base} && cat > {rmanifest}",
+                                 stdin_bytes=json.dumps(manifest).encode())
+        if stc != 0:
+            raise RuntimeError(f"staging manifest failed: {ste.strip()[-300:]}")
+        steps.append(f"ship plan.json + manifest (delta {union_missing}) to the remote")
+
+        if jobid is None:
+            cmd = _executor_cmd(routdir, folder=True, manifest_path=rmanifest)
+            rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
+            rplan = None
+        else:
+            rplan = f"{base}/vislang_plan_{tag}.json"
+            steps.append(f"srun --jobid={jobid}: one step for the whole delta")
+            stc, _, ste = run_remote(conn, f"cat > {rplan}", stdin_bytes=plan.encode())
+            if stc != 0:
+                raise RuntimeError(f"staging plan failed: {ste.strip()[-300:]}")
+            cmd = _executor_cmd(routdir, plan_path=rplan, jobid=jobid,
+                                folder=True, manifest_path=rmanifest)
+            rc, out, err = run_remote(conn, cmd)
+
+        meta = _parse_meta(out)
+        if meta is None or not meta.get("ok", False):
+            detail = (meta or {}).get("error") or err.strip()[-500:] or f"rc={rc}"
+            raise RuntimeError(f"remote folder delta failed: {detail}")
+        schema = meta.get("schema")
+
+        pull_dir = os.path.join(cache_root(), f"folderpull_{tag}")
+        remote_out = meta.get("outdir", routdir)
+        pulled = transfer_dir(conn, remote_out, pull_dir)
+        cleanup = f"rm -rf {routdir} {rmanifest}" + (f" {rplan}" if jobid else "")
+        run_remote(conn, cleanup)                       # best-effort
+        if pulled is None:
+            raise RuntimeError("transfer of the delta bundle failed")
+
+        with np.load(os.path.join(pull_dir, "bundle.npz")) as z:
+            total = 0
+            for k in z.files:                           # keys are "<label>/<var>"
+                lab, var = k.split("/", 1)
+                arr = z[k]
+                fetched[(int(lab), var)] = arr
+                total += arr.nbytes
+                catalog.store(per[int(lab)]["sid"], var, narrow_key, arr)  # cache fresh
+        import shutil
+        shutil.rmtree(pull_dir, ignore_errors=True)
+        for label in (int(k) for k in manifest):
+            catalog.store_schema(per[label]["sid"], schema)
+        steps.append(f"pulled delta: {len(fetched)} (timestep,var) array(s), "
+                     f"{total / 1e6:.2f} MB over the wire")
+
+    # --- assemble each timestep from cached + fetched, then save -------------
+    if schema is None:                                  # fully cached: schema from catalog
+        for label in per:
+            schema = catalog.schema(per[label]["sid"])
+            if schema:
+                break
+    if schema is None:
+        raise RemoteUnavailable("no cached schema for a fully-cached folder")
+
+    per_step = []
+    for label, uri, *_ in files:
+        data = {}
+        for var in project:
+            if var in per[label]["have"]:
+                data[var] = per[label]["have"][var]
+            else:
+                data[var] = fetched[(label, var)]
+        loaded = DatasetInfo(f"{src.uri}#{label}", schema.get("filetype", "remote"),
+                             list(project), dimensions=schema.get("dimensions") or {},
+                             attributes={"remote_reduced": True})
+        loaded.positions = tuple(schema["positions"]) if schema.get("positions") else None
+        loaded.data = data
+        loaded.loaded = True
+        for c in compresses:                            # compress is a LOCAL suffix (lossy; keep extents raw)
+            loaded = _compress(loaded, list(c.variables), c.error_bound, c.mode)
+        per_step.append((label, loaded))
+
+    from my_save import save_timeseries
+    out = save_timeseries(per_step, out_local_dir, schema.get("filetype"))
+    steps.append(f"-> save timeseries -> {out}")
+    report = {"n": n, "host": host, "jobid": jobid, "cached": n - len(manifest),
+              "fetched_timesteps": len(manifest), "fetched_vars": union_missing,
+              "total_pairs": total_pairs, "reused_pairs": reused_pairs,
+              "fetched_pairs": fetched_pairs,
+              "timesteps": [lab for lab, *_ in files]}
+    return out, steps, report
+
+
+def _rebuild_delta_source(remote_dir, positions, narrow_prefix):
+    """source(remote-local DIR) -> region/subsample/threshold (NO fields, NO
+    timesteps): the shared narrowing the delta manifest re-roots onto each listed
+    timestep file (per-file projection comes from the manifest)."""
+    node = SourceNode(uri=remote_dir,
+                      positions=tuple(positions) if positions else None)
+    for nn in narrow_prefix:
+        if nn.kind == "region":
+            node = RegionNode(upstream=node, ranges=nn.ranges)
+        elif nn.kind == "subsample":
+            node = SubsampleNode(upstream=node, uniform=nn.uniform, per_axis=nn.per_axis)
+        elif nn.kind == "threshold":
+            node = ThresholdNode(upstream=node, var=nn.var, op=nn.op, value=nn.value)
+    return node
+
+
+def _folder_batch_savedir(conn, host, remote_dir, src, middle, ts_nodes,
+                          out_local_dir, steps):
+    """Non-catalog whole-folder batch (the fallback when there's no fields()
+    projection): the remote runs its own _plan_folder over every timestep and
+    saves one file per step; we pull the directory once. One remote job, one dir
+    transfer, but no per-variable delta reuse."""
     terminal = _rebuild_folder_chain(remote_dir, src.positions, middle, ts_nodes)
     plan = to_plan_json(terminal)
 
@@ -432,12 +620,10 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
     steps.append("ship plan.json (folder AST moved to the remote): " + plan)
 
     if jobid is None:
-        cmd = _executor_cmd(routdir, folder=True)          # plan piped via stdin
+        cmd = _executor_cmd(routdir, folder=True)
         rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
         rplan = None
     else:
-        # srun runs vislang_exec on a compute node; stage the plan to shared FS
-        # (its /tmp and the login node's differ) and read it via --plan.
         rplan = f"{base}/vislang_plan_{tag}.json"
         steps.append(f"srun --jobid={jobid}: one step for the whole folder "
                      f"(plan staged at {rplan})")
@@ -456,12 +642,13 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
     remote_out = meta.get("outdir", routdir)
     pulled = transfer_dir(conn, remote_out, out_local_dir)
     cleanup = f"rm -rf {routdir}" + (f" {rplan}" if rplan else "")
-    run_remote(conn, cleanup)                               # best-effort cleanup
+    run_remote(conn, cleanup)
     if pulled is None:
         raise RuntimeError("transfer of the reduced folder failed")
 
     labels = meta.get("timesteps", [])
     steps.append(f"pulled {len(labels)} timestep file(s) -> {out_local_dir}")
-    report = {"n": len(labels), "host": host, "jobid": jobid,
+    report = {"n": len(labels), "host": host, "jobid": jobid, "cached": 0,
+              "fetched_timesteps": len(labels), "fetched_vars": None,
               "timesteps": labels, "remote_steps": meta.get("steps", [])}
     return out_local_dir, steps, report

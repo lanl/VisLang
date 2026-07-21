@@ -242,6 +242,37 @@ def remote_timestep_files(uri):
     return [(label, f"{base}/{name}") for label, name in parsed]
 
 
+def remote_timestep_files_stat(uri):
+    """[(label, remote_uri, size, mtime)] for a REMOTE timestep folder in ONE
+    ssh round-trip — the stat-carrying analog of remote_timestep_files, so the
+    catalog can compute each timestep's identity (size+mtime) without a probe per
+    file. `find -printf` lists name/size/mtime for regular files at depth 1;
+    non-`#N` names are dropped. None if unreachable; raises if no `…#N` files."""
+    import shlex
+    from my_download import run_remote
+    conn, remote_path = _remote_conn(uri)
+    if conn is None:
+        return None
+    rc, out, _ = run_remote(
+        conn, f"find {shlex.quote(remote_path)} -maxdepth 1 -type f "
+              f"-printf '%f\\t%s\\t%T@\\n'")
+    if rc != 0:
+        return None
+    base = uri.rstrip("/")
+    rows = {}
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 3:
+            continue
+        name, size, mtime = parts
+        rows[name] = (int(size), int(float(mtime)))    # %T@ is a float epoch
+    parsed = _parse_timesteps(list(rows))
+    if not parsed:
+        raise _no_timesteps_error(uri)
+    return [(label, f"{base}/{name}", rows[name][0], rows[name][1])
+            for label, name in parsed]
+
+
 def folder_listing(dirpath):
     """Plain, deterministic summary of a timestep folder for authoring: the
     timestep count/labels and the shared schema read from the first file. No

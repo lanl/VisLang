@@ -174,6 +174,102 @@ def _run_folder(text, outdir):
     return 0
 
 
+def _reroot(narrowing_nodes, path, positions, keep):
+    """Re-root the folder's narrowing forms (region/subsample/threshold, already
+    validated) onto ONE timestep file, ending in a projection to `keep`. Used by
+    the catalog delta path to fetch just the missing variables of one timestep."""
+    from dsl_forms.nodes import (SourceNode, RegionNode, SubsampleNode,
+                                 ThresholdNode, FieldsNode)
+    node = SourceNode(uri=path, positions=positions)
+    for nn in narrowing_nodes:
+        if nn.kind == "region":
+            node = RegionNode(upstream=node, ranges=nn.ranges)
+        elif nn.kind == "subsample":
+            node = SubsampleNode(upstream=node, uniform=nn.uniform, per_axis=nn.per_axis)
+        elif nn.kind == "threshold":
+            node = ThresholdNode(upstream=node, var=nn.var, op=nn.op, value=nn.value)
+    return FieldsNode(upstream=node, keep=tuple(keep))
+
+
+def _run_folder_delta(text, manifest_path, outdir):
+    """Catalog DELTA reduce for a folder: fetch ONLY the (timestep, variable)
+    pairs the caller's catalog is missing. The plan carries source(dir) plus the
+    per-file narrowing (region/subsample/threshold — no fields); the manifest
+    {"<label>": [vars]} names exactly what each timestep still needs. We narrow
+    each listed file to its missing vars and bundle the results into one
+    outdir/bundle.npz keyed "<label>/<var>", so a single directory pull carries
+    only the delta. Fully-cached timesteps are absent from the manifest and never
+    touched here."""
+    import json as _json
+    import numpy as np
+    from dsl_forms import reset_sinks
+    from dsl_forms.forms import save
+    from dsl_forms.nodes import upstream_of
+    from planner import plan_pipeline
+    from my_inspect import timestep_files, inspect_file
+
+    terminal, err = _rebuild(text)
+    if err is not None:
+        return err
+    # Walk to the source; collect the narrowing forms (skip any timesteps node —
+    # the manifest enumerates exact labels).
+    chain, node = [], terminal
+    while node is not None:
+        chain.append(node)
+        node = upstream_of(node)
+    chain.reverse()
+    src_node = chain[0]
+    narrowing = [n for n in chain[1:]
+                 if n.kind in ("region", "subsample", "threshold")]
+
+    try:
+        manifest = _json.loads(open(manifest_path).read())
+    except (OSError, ValueError) as e:
+        return _fail(f"cannot read manifest: {e}")
+
+    try:
+        files = dict(timestep_files(src_node.uri))     # {label: path}
+    except Exception as e:
+        return _fail(f"{type(e).__name__}: {e}")
+
+    os.makedirs(outdir, exist_ok=True)
+    bundle, schema, fetched = {}, None, {}
+    tmp = os.path.join(outdir, "_scratch.npz")
+    try:
+        for label_str, keep in manifest.items():
+            label = int(label_str)
+            path = files.get(label)
+            if path is None:
+                return _fail(f"manifest names timestep #{label} not present in "
+                             f"{src_node.uri}")
+            if schema is None:
+                info = inspect_file(path, positions=src_node.positions)
+                schema = {"variables": list(info.variables),
+                          "dimensions": dict(info.dimensions or {}),
+                          "positions": list(info.positions) if info.positions else None,
+                          "filetype": info.filetype}
+            reset_sinks()
+            terminal_file = save(_reroot(narrowing, path, src_node.positions, keep), tmp)
+            try:
+                plan_pipeline(terminal_file, dry_run=False)
+                with np.load(tmp) as z:
+                    for var in z.files:
+                        bundle[f"{label}/{var}"] = z[var]
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            fetched[label_str] = list(keep)
+    except Exception as e:
+        return _fail(f"{type(e).__name__}: {e}")
+
+    np.savez(os.path.join(outdir, "bundle.npz"), **bundle)
+    meta = {"vislang_exec": PLAN_VERSION, "ok": True,
+            "outdir": outdir, "bundle": "bundle.npz",
+            "fetched": fetched, "schema": schema}
+    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="VisLang remote reducer / inspector")
     src = ap.add_mutually_exclusive_group(required=False)
@@ -182,6 +278,8 @@ def main(argv=None):
     out = ap.add_mutually_exclusive_group(required=False)
     out.add_argument("--out", help="output .npz path (single-file reduce)")
     out.add_argument("--outdir", help="output DIRECTORY (folder/timeseries reduce)")
+    ap.add_argument("--manifest", help="catalog delta manifest {label: [vars]} "
+                                       "(with --outdir: fetch only these per-file vars)")
     ap.add_argument("--inspect", metavar="PATH",
                     help="metadata-only inspect: print schema meta and exit "
                          "(no --plan/--out needed)")
@@ -198,6 +296,8 @@ def main(argv=None):
     except OSError as e:
         return _fail(f"cannot read plan: {e}")
 
+    if args.outdir and args.manifest:
+        return _run_folder_delta(text, args.manifest, args.outdir)
     return _run_folder(text, args.outdir) if args.outdir else _run_single(text, args.out)
 
 

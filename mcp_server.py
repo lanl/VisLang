@@ -277,13 +277,18 @@ def run_pipeline(spec_path: str) -> str:
     except Exception as e:
         return f"ERROR reading spec: {type(e).__name__}: {e}"
 
+    from vislang_trace import session_banner, log_run
+    session_banner()                       # delimit this MCP session in the log (once)
+
     reset_sinks()
     ctx = form_namespace()
     try:
         exec(compile(spec_code, spec_path, "exec"), ctx)
     except Exception:
-        return (f"Status: BUILD FAILED\nSpec: {spec_path}\n\n"
-                f"--- Error ---\n{traceback.format_exc().rstrip()}")
+        report = (f"Status: BUILD FAILED\nSpec: {spec_path}\n\n"
+                  f"--- Error ---\n{traceback.format_exc().rstrip()}")
+        log_run(spec_path, report)
+        return report
 
     sinks = collected_sinks()
     dry = not sinks
@@ -309,7 +314,9 @@ def run_pipeline(spec_path: str) -> str:
         parts.append("\n--- Pipelines ---\n" + "\n\n".join(results))
     if output:
         parts.append(f"\n--- Output ---\n{output}")
-    return "\n".join(parts)
+    report = "\n".join(parts)
+    log_run(spec_path, report)             # persist the full report (append) to the run log
+    return report
 
 
 if __name__ == "__main__":

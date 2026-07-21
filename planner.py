@@ -599,14 +599,33 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run):
         try:
             out, rsteps, report = remote_folder_reduce(src, middle, ts_nodes, sink.path)
             steps += rsteps
+            # The remote ran its OWN plan_pipeline (same tracing code, on darwin) —
+            # surface what it actually did when it reports it (non-catalog batch),
+            # prefixed so local vs remote is visible at a glance.
+            if report.get("remote_steps"):
+                steps.append(f"remote:  --- what ran on {report['host']} ---")
+                for s in report["remote_steps"]:
+                    steps.append(f"remote:  {s}")
+            n = report["n"]
+            cached, fetched = report.get("cached", 0), report.get("fetched_timesteps", n)
             job = f" (srun jobid={report['jobid']})" if report.get("jobid") else ""
-            steps.append(f"remote compute: {report['n']}/{report['n']} timestep(s) "
-                         f"reduced next to the data on {report['host']}{job}, "
-                         f"saved directory pulled once")
-            steps.append(f"-> save timeseries -> {out}")
+            if report.get("total_pairs") is not None:
+                # catalog-aware path: report reuse at the (timestep, variable) level
+                reused, tot = report["reused_pairs"], report["total_pairs"]
+                deltamsg = (f"fetched {report['fetched_vars']} — "
+                            f"{report['fetched_pairs']} (timestep,variable) pair(s) "
+                            f"crossed the wire"
+                            if report["fetched_pairs"] else
+                            "nothing crossed the wire (full catalog hit)")
+                steps.append(f"remote compute on {report['host']}{job}: reused "
+                             f"{reused}/{tot} extent(s) from the catalog; {deltamsg}")
+            else:
+                steps.append(f"remote compute: {n}/{n} timestep(s) reduced next to "
+                             f"the data on {report['host']}{job}, dir pulled once")
+            steps.append(f"local:   -> save timeseries -> {out}")
             return {"kind": "save", "uri": src.uri, "steps": steps, "output": out,
                     "materialized": True, "timesteps": report.get("timesteps", []),
-                    "sites": {"remote": report["n"], "fetch": 0}}
+                    "sites": {"remote": fetched, "cached": cached, "fetch": 0}}
         except RemoteUnavailable as e:
             if mode == "force":
                 raise RuntimeError(f"VISLANG_REMOTE=force but remote folder reduce "

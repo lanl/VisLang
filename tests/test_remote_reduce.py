@@ -43,6 +43,7 @@ TMP = tempfile.mkdtemp(prefix="vislang_rreduce_")
 PASS = []
 EXECS = []          # plan.json payloads the "remote" received
 CMDS = []           # vislang_exec command strings the "remote" received
+MANIFESTS = []      # catalog-delta manifests staged to the "remote"
 
 
 def check(name, cond, detail=""):
@@ -82,11 +83,13 @@ def fake_run_remote(conn, command, stdin_bytes=None, timeout=None):
     if command.startswith("squeue"):             # auto-discovery of a held alloc
         # newest (654322) is unnamed; the named "vislang" alloc is older (654321)
         return 0, "654322|skylake-gold|other\n654321|skylake-gold|vislang\n", ""
-    if "cat >" in command:                       # srun-mode: stage plan to shared FS
-        rplan = command.split("cat >", 1)[1].strip().split()[0]
-        os.makedirs(os.path.dirname(rplan) or ".", exist_ok=True)
-        with open(rplan, "wb") as f:
+    if "cat >" in command:                       # stage plan / manifest to shared FS
+        rpath = command.split("cat >", 1)[1].strip().split()[0]
+        os.makedirs(os.path.dirname(rpath) or ".", exist_ok=True)
+        with open(rpath, "wb") as f:
             f.write(stdin_bytes)
+        if "manifest" in rpath:                  # capture the catalog delta request
+            MANIFESTS.append(json.loads(stdin_bytes.decode()))
         return 0, "", ""
     if "vislang_exec.py" in command:
         CMDS.append(command)
@@ -94,14 +97,17 @@ def fake_run_remote(conn, command, stdin_bytes=None, timeout=None):
         # .npz (--out). Detect --outdir first (it contains the substring --out).
         flag = "--outdir" if "--outdir" in command else "--out"
         rout = command.split(flag, 1)[1].strip().split()[0]
+        extra = []
+        if "--manifest" in command:              # catalog delta: per-file var manifest
+            extra = ["--manifest", command.split("--manifest", 1)[1].strip().split()[0]]
         if "--plan" in command:                  # srun-mode: reducer reads a file
             rplan = command.split("--plan", 1)[1].strip().split()[0]
             with open(rplan, "rb") as f:
                 plan_bytes = f.read()
-            run_args, stdin = [PY, EXEC, "--plan", rplan, flag, rout], None
+            run_args, stdin = [PY, EXEC, "--plan", rplan, flag, rout, *extra], None
         else:                                     # direct-ssh: plan piped via stdin
             plan_bytes = stdin_bytes
-            run_args, stdin = [PY, EXEC, "--stdin", flag, rout], stdin_bytes
+            run_args, stdin = [PY, EXEC, "--stdin", flag, rout, *extra], stdin_bytes
         EXECS.append(json.loads(plan_bytes.decode()))
         r = subprocess.run(run_args, input=stdin, capture_output=True, cwd=REPO)
         return (r.returncode, r.stdout.decode(errors="replace"),
@@ -163,8 +169,22 @@ def main():
         out.sort(key=lambda t: t[0])
         return out
 
+    def fake_remote_timestep_files_stat(uri):
+        path, base = local_path(uri), uri.rstrip("/")
+        out = []
+        for name in os.listdir(path):
+            m = re.search(r"#(\d+)", name)
+            p = os.path.join(path, name)
+            if m and os.path.isfile(p):
+                st = os.stat(p)
+                out.append((int(m.group(1)), f"{base}/{name}",
+                            int(st.st_size), int(st.st_mtime)))
+        out.sort(key=lambda t: t[0])
+        return out
+
     my_inspect.remote_is_dir = fake_remote_is_dir
     my_inspect.remote_timestep_files = fake_remote_timestep_files
+    my_inspect.remote_timestep_files_stat = fake_remote_timestep_files_stat
 
     cache = os.path.join(TMP, "cache")
     os.environ["VISLANG_CACHE"] = cache
@@ -290,47 +310,80 @@ def main():
         series = os.path.join(TMP, "series")
         os.makedirs(series)
         labels = [1, 2, 3]
-        dens_by_t = {}
-        for t in labels:                            # density varies per timestep
+        dens_by_t, temp_by_t = {}, {}
+        for t in labels:                            # values vary per timestep
             dens_t = np.arange(n, dtype=np.float64) + t
-            dens_by_t[t] = dens_t
+            temp_t = (np.arange(n, dtype=np.float64) % 7) + t
+            dens_by_t[t], temp_by_t[t] = dens_t, temp_t
             with h5py.File(os.path.join(series, f"particles#{t}.hdf5"), "w") as f:
                 f["x"] = np.linspace(0.0, 99.9, n)
                 f["y"] = np.linspace(0.0, 99.9, n)
                 f["z"] = np.tile(np.arange(10.0), n // 10)
                 f["density"] = dens_t
+                f["temperature"] = temp_t
         folder_uri = f"u@fakehost:{series}"
 
-        def expect(t):                              # threshold >=500, then stride 3
+        def expect(vals, t):                        # threshold density>=500, then stride 3
             d = dens_by_t[t]
-            return d[d >= 500][::3]
+            return vals[t][d >= 500][::3]
 
         out_all = os.path.join(TMP, "series_out")
-        n_execs_before = len(EXECS)
+        n_execs0, n_man0 = len(EXECS), len(MANIFESTS)
         reset_sinks()
         res = plan_pipeline(save(subsample(threshold(fields(source(folder_uri),
                             ["density"]), "density >= 500"), 3), out_all))
-        check("folder reduced next to the data on the remote",
-              any("remote folder" in s for s in res["steps"]),
-              str(res["steps"]))
-        check("one remote exec for the WHOLE folder (batched, not per-file)",
-              len(EXECS) == n_execs_before + 1, f"{len(EXECS) - n_execs_before}")
-        check("observability: remote compute reported for all timesteps",
-              any("remote compute:" in s and f"{len(labels)}/{len(labels)}" in s
-                  for s in res["steps"]), str(res["steps"]))
-        check("sites: all remote, none fetched",
-              res.get("sites") == {"remote": len(labels), "fetch": 0},
-              str(res.get("sites")))
-        check("materialized folder result", res["materialized"] is True)
+        check("folder reduced next to the data on the remote (catalog delta)",
+              any("catalog:" in s for s in res["steps"]), str(res["steps"]))
+        check("cold run: one remote job for the whole folder",
+              len(EXECS) == n_execs0 + 1, f"{len(EXECS) - n_execs0}")
+        check("cold run: manifest asks density for every timestep",
+              MANIFESTS[-1] == {str(t): ["density"] for t in labels}, str(MANIFESTS[-1:]))
         check("one output file per timestep",
               sorted(os.listdir(out_all)) ==
               [f"timestep#{t}.hdf5" for t in labels], str(os.listdir(out_all)))
         for t in labels:
             with h5py.File(os.path.join(out_all, f"timestep#{t}.hdf5"), "r") as f:
-                check(f"timestep {t} reduced correctly",
-                      np.array_equal(f["density"][:], expect(t)))
+                check(f"timestep {t} density correct",
+                      np.array_equal(f["density"][:], expect(dens_by_t, t)))
+
+        print("== +1 field over the folder: ONLY the delta (temperature) crosses ==")
+        out_all2 = os.path.join(TMP, "series_out2")
+        n_execs1, n_man1 = len(EXECS), len(MANIFESTS)
+        reset_sinks()
+        res = plan_pipeline(save(subsample(threshold(fields(source(folder_uri),
+                            ["density", "temperature"]), "density >= 500"), 3), out_all2))
+        check("delta run: one remote job", len(EXECS) == n_execs1 + 1)
+        check("delta run: manifest asks ONLY temperature (density served from catalog)",
+              MANIFESTS[-1] == {str(t): ["temperature"] for t in labels},
+              str(MANIFESTS[-1:]))
+        check("delta run: steps report catalog reuse + temperature-only fetch",
+              any("catalog" in s and "temperature" in s for s in res["steps"]),
+              str(res["steps"]))
+        for t in labels:                            # merged: density from cache + temperature fetched
+            with h5py.File(os.path.join(out_all2, f"timestep#{t}.hdf5"), "r") as f:
+                check(f"timestep {t} density from cache",
+                      np.array_equal(f["density"][:], expect(dens_by_t, t)))
+                check(f"timestep {t} temperature fetched fresh",
+                      np.array_equal(f["temperature"][:], expect(temp_by_t, t)))
+
+        print("== identical re-run: full catalog hit, nothing crosses the wire ==")
+        out_all3 = os.path.join(TMP, "series_out3")
+        n_execs2, n_man2 = len(EXECS), len(MANIFESTS)
+        reset_sinks()
+        res = plan_pipeline(save(subsample(threshold(fields(source(folder_uri),
+                            ["density", "temperature"]), "density >= 500"), 3), out_all3))
+        check("full hit: NO remote job", len(EXECS) == n_execs2)
+        check("full hit: no manifest staged", len(MANIFESTS) == n_man2)
+        check("full hit: steps say nothing crossed the wire",
+              any("nothing crosses the wire" in s or "full catalog hit" in s
+                  for s in res["steps"]), str(res["steps"]))
+        for t in labels:
+            with h5py.File(os.path.join(out_all3, f"timestep#{t}.hdf5"), "r") as f:
+                check(f"timestep {t} reconstructed from cache",
+                      np.array_equal(f["temperature"][:], expect(temp_by_t, t)))
 
         print("== timesteps(...) selects an inclusive #N range of the folder ==")
+        os.environ["VISLANG_CACHE"] = os.path.join(TMP, "cache_folder_rng")   # fresh cache
         out_rng = os.path.join(TMP, "series_out_rng")
         reset_sinks()
         plan_pipeline(save(subsample(threshold(fields(timesteps(source(folder_uri),
@@ -338,8 +391,11 @@ def main():
         check("range selects only #2..#3",
               sorted(os.listdir(out_rng)) == ["timestep#2.hdf5", "timestep#3.hdf5"],
               str(os.listdir(out_rng)))
+        check("range manifest covers only #2,#3",
+              MANIFESTS[-1] == {"2": ["density"], "3": ["density"]}, str(MANIFESTS[-1:]))
         with h5py.File(os.path.join(out_rng, "timestep#2.hdf5"), "r") as f:
-            check("ranged timestep 2 correct", np.array_equal(f["density"][:], expect(2)))
+            check("ranged timestep 2 correct",
+                  np.array_equal(f["density"][:], expect(dens_by_t, 2)))
     finally:
         os.environ.pop("VISLANG_CACHE", None)
         os.environ.pop("VISLANG_REMOTE", None)
