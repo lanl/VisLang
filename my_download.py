@@ -53,15 +53,14 @@ def transfer(connection, remote_path, local_path, size_warn_mb=500):
             print(f"✓ {local_path} already matches remote (MD5) — skipping download.")
             return local_path
 
-    # Warn + confirm before pulling a large file.
-    # Best-effort: needs key auth for the remote stat; silently skipped otherwise.
+    # Warn before pulling a large file. NON-INTERACTIVE: the MCP/Jupyter flow has
+    # no TTY, and confirmation now lives in the planner's budget gate (the single
+    # place a run is held pending confirm). So we log the size and proceed rather
+    # than block on input(). Best-effort: needs key auth for the remote stat.
     size_bytes = _remote_size(target, remote_path)
     if size_bytes and size_bytes > size_warn_mb * 1e6:
-        resp = input(f"Remote file is {size_bytes / 1e6:.1f} MB "
-                     f"(> {size_warn_mb} MB). Download? [y/N]: ").strip().lower()
-        if resp not in ('y', 'yes'):
-            print("Download cancelled.")
-            return None
+        print(f"⚠ Remote file is {size_bytes / 1e6:.1f} MB (> {size_warn_mb} MB) — "
+              f"downloading (confirmed upstream by the budget gate).")
 
     print(f"Downloading from {connection.host}:")
     print(f"  remote: {remote_path}")

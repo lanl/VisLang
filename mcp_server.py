@@ -228,20 +228,32 @@ def estimate_render_cost(filepath: str) -> str:
         return f"ERROR estimating {filepath}: {type(e).__name__}: {e}"
 
 
-def _run_one(node, dry_run):
-    """Plan+execute one pipeline; return (ok, formatted_text)."""
+def _run_one(node, dry_run, confirm=False):
+    """Plan+execute one pipeline; return (ok, hold_kind, formatted_text) where
+    hold_kind is None, 'confirm' (over budget), or 'allocation' (no Slurm alloc)."""
     try:
-        return True, format_result(plan_pipeline(node, dry_run=dry_run))
+        result = plan_pipeline(node, dry_run=dry_run, confirm=confirm)
+        hold = ('allocation' if result.get("needs_allocation")
+                else 'confirm' if result.get("needs_confirm") else None)
+        return True, hold, format_result(result)
     except Exception as e:
-        return False, f"[{getattr(node, 'kind', '?')}] FAILED: {type(e).__name__}: {e}"
+        return False, None, f"[{getattr(node, 'kind', '?')}] FAILED: {type(e).__name__}: {e}"
 
 
 @mcp.tool()
-def run_pipeline(spec_path: str) -> str:
+def run_pipeline(spec_path: str, confirm: bool = False) -> str:
     """Execute a declarative DSL spec at spec_path and return an execution report.
 
     Convention: keep the spec in a single file named `spec.py`, edited in place —
     pass spec_path="spec.py". Do not create a new/uniquely-named file per request.
+
+    COST GATE: before any bulk read/transfer, the interpreter estimates the run's
+    cost (bytes; plus a measured time band for remote transfers). If a pipeline is
+    OVER BUDGET (env VISLANG_BUDGET_BYTES / VISLANG_BUDGET_SECONDS) the run is HELD
+    — nothing is materialized — and the report shows `Status: NEEDS CONFIRM` with
+    the estimate. Do NOT silently re-run with confirm=True: surface the estimate to
+    the user and let them choose to (a) commit as-is, or (b) tell you how to narrow
+    the spec further. Pass confirm=True only once the user has approved running as-is.
 
     A spec is built from FORMS (no imports needed). Each form is a declarative
     GOAL that builds a node; nothing reads data until a sink runs:
@@ -298,15 +310,34 @@ def run_pipeline(spec_path: str) -> str:
     buf = io.StringIO()
     results = []
     any_failed = False
-    
+    any_budget_hold = False
+    any_alloc_hold = False
+
     with redirect_stdout(buf), redirect_stderr(buf):
         for t in targets:
-            passed, text = _run_one(t, dry_run=dry)
+            passed, hold, text = _run_one(t, dry_run=dry, confirm=confirm)
             any_failed = any_failed or not passed
+            any_budget_hold = any_budget_hold or (hold == 'confirm')
+            any_alloc_hold = any_alloc_hold or (hold == 'allocation')
             results.append(text)
     output = buf.getvalue().rstrip()
 
-    parts = [f"Status: {'FAILED' if any_failed else 'OK'}", f"Spec: {spec_path}"]
+    status = ("FAILED" if any_failed else
+              "NEEDS ALLOCATION" if any_alloc_hold else
+              "NEEDS CONFIRM" if any_budget_hold else "OK")
+    parts = [f"Status: {status}", f"Spec: {spec_path}"]
+    if any_alloc_hold:
+        parts.append("\n(NO SLURM ALLOCATION — one or more pipelines were HELD before "
+                     "shipping the server-side reduce; nothing was materialized. Tell "
+                     "the user there is no allocation and ASK PERMISSION to create the "
+                     "proposed one (the salloc line above); on approval, run it — the "
+                     "harness will still prompt for that specific command. Once it is "
+                     "RUNNING, re-run the spec. Never run salloc without approval.)")
+    if any_budget_hold:
+        parts.append("\n(OVER BUDGET — one or more pipelines were HELD; nothing was "
+                     "materialized for them. Show the estimate to the user and let "
+                     "them choose: commit as-is (re-run with confirm=True) or narrow "
+                     "the spec. Do not auto-confirm.)")
     if dry:
         parts.append("\n(no render()/save() sink — dry run: inferred plan only, "
                      "nothing materialized)")

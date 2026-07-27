@@ -53,7 +53,8 @@ import numpy as np
 from datasetInfo import DatasetInfo
 from my_catalog import ExtentCatalog, make_source_id
 from my_download import (establish_connection, transfer, transfer_dir,
-                         _parse_remote, remote_stat, remote_header_hash, run_remote)
+                         _parse_remote, remote_stat, remote_header_hash, run_remote,
+                         measure_bandwidth)
 from ast_serialize import to_plan_json
 from dsl_forms.nodes import (SourceNode, FieldsNode, RegionNode, SubsampleNode,
                              ThresholdNode, CompressNode, TimestepsNode)
@@ -68,6 +69,48 @@ class RemoteUnavailable(Exception):
     The planner catches this and falls back to the whole-file fetch."""
 
 
+class BudgetHold(Exception):
+    """The estimated remote transfer is over budget and the run was not
+    confirmed. Carries the CostEstimate and the steps gathered so far so the
+    planner can report the HELD plan without shipping the read."""
+
+    def __init__(self, estimate, steps):
+        super().__init__("over budget — remote transfer held pending confirm")
+        self.estimate = estimate
+        self.steps = steps
+
+
+class AllocationHold(Exception):
+    """srun-step mode is requested but no held Slurm allocation was found, so the
+    server-side lowering/reduce can't run. Carries a human note, the RECOMMENDED
+    salloc command (never run here — the user approves and Claude runs it), and
+    the steps so far, so the planner can report NEEDS ALLOCATION without shipping
+    anything."""
+
+    def __init__(self, reason, salloc_cmd, steps):
+        super().__init__("no held allocation — reduce held pending salloc")
+        self.reason = reason
+        self.salloc_cmd = salloc_cmd
+        self.steps = steps
+
+
+_DEFAULT_WALLTIME = "00:30:00"        # 30 min — the default for a proposed salloc
+_DEFAULT_PARTITION = "skylake-gold"   # recommended; never guess `general`
+
+
+def recommended_salloc(host):
+    """The salloc command we PROPOSE when no allocation exists. `--no-shell` holds
+    the allocation for reuse; `-J` must match VISLANG_SRUN_NAME so auto-discovery
+    finds it; the partition follows VISLANG_SRUN_PARTITION when set, else the
+    recommended skylake-gold; walltime defaults to 30 min. Never run silently —
+    an allocation spends shared HPC time and requires the user's approval."""
+    name, part = _alloc_filters()
+    name = name or "vislang"
+    part = part or _DEFAULT_PARTITION
+    return (f"ssh {host} 'salloc --no-shell -J {name} -N 1 -p {part} "
+            f"-t {_DEFAULT_WALLTIME}'")
+
+
 def _srun_requested():
     """Raw VISLANG_SRUN_JOBID: a numeric allocation id, the literal 'auto'
     (discover the held allocation via squeue at reduce time), or None (direct
@@ -78,25 +121,42 @@ def _srun_requested():
     return v or None
 
 
+def _alloc_filters():
+    """(name, partition) auto-discovery filters from the env (empty = no filter)."""
+    return (os.environ.get("VISLANG_SRUN_NAME", "").strip(),
+            os.environ.get("VISLANG_SRUN_PARTITION", "").strip())
+
+
+def _squeue_candidates(conn):
+    """(rc, err, candidates) for the user's RUNNING Slurm allocations, filtered by
+    VISLANG_SRUN_NAME / VISLANG_SRUN_PARTITION. candidates is a list of
+    (jobid, partition, name) tuples. Shared by _discover_jobid (the run path) and
+    allocation_status (the inspect-time probe), so both read the same Slurm state
+    the same way."""
+    name, part = _alloc_filters()
+    rc, out, err = run_remote(conn, 'squeue -h -u $(whoami) -t RUNNING -o "%A|%P|%j"')
+    cand = []
+    if rc == 0:
+        for line in out.splitlines():
+            row = line.strip().split("|")
+            if (len(row) >= 3 and row[0].strip().isdigit()
+                    and (not part or row[1].strip() == part)
+                    and (not name or row[2].strip() == name)):
+                cand.append((row[0].strip(), row[1].strip(), row[2].strip()))
+    return rc, err, cand
+
+
 def _discover_jobid(conn, steps):
     """Resolve VISLANG_SRUN_JOBID=auto to the user's held allocation on the
     remote via `squeue`. Filters to VISLANG_SRUN_NAME (job name, e.g. from
     `salloc -J vislang`) and/or VISLANG_SRUN_PARTITION if set; on several, picks
     the newest (highest id). Raises RemoteUnavailable if none — the user must
     `salloc` first (the planner then falls back to a whole-file fetch)."""
-    part = os.environ.get("VISLANG_SRUN_PARTITION", "").strip()
-    name = os.environ.get("VISLANG_SRUN_NAME", "").strip()
-    rc, out, err = run_remote(conn, 'squeue -h -u $(whoami) -t RUNNING -o "%A|%P|%j"')
+    name, part = _alloc_filters()
+    rc, err, cand = _squeue_candidates(conn)
     if rc != 0:
         raise RemoteUnavailable("could not query Slurm for a held allocation: "
                                 + (err.strip()[-200:] or f"rc={rc}"))
-    cand = []
-    for line in out.splitlines():
-        row = line.strip().split("|")
-        if (len(row) >= 3 and row[0].strip().isdigit()
-                and (not part or row[1].strip() == part)
-                and (not name or row[2].strip() == name)):
-            cand.append(row[0].strip())
     if not cand:
         where = ", ".join(f"{k} {v}" for k, v in
                           (("name", name), ("partition", part)) if v)
@@ -104,10 +164,58 @@ def _discover_jobid(conn, steps):
             f"VISLANG_SRUN_JOBID=auto but no RUNNING allocation"
             + (f" matching {where}" if where else "")
             + f" for you on {conn.host}; run `salloc --no-shell ...` first")
-    jid = max(cand, key=int)
+    jid = max(cand, key=lambda c: int(c[0]))[0]
     steps.append(f"srun: discovered held allocation jobid={jid}"
                  + (f" ({len(cand)} found, using newest)" if len(cand) > 1 else ""))
     return jid
+
+
+def allocation_status(conn):
+    """Non-raising detection of a held Slurm allocation, for surfacing at inspect
+    time. Returns a dict {mode, present, jobid, candidates, host, reason}:
+
+      mode     'direct' (VISLANG_SRUN_JOBID unset — no allocation needed),
+               'auto' (discover the newest held one), or a fixed jobid string.
+      present  True / False, or None when it can't be determined (Slurm query
+               failed) or is not applicable (direct mode).
+      jobid    the allocation that a reduce would step into, when present.
+
+    Mirrors _discover_jobid's discovery, but reports instead of raising."""
+    requested = _srun_requested()
+    host = getattr(conn, "host", "the remote")
+    if requested is None:
+        return {"mode": "direct", "present": None, "jobid": None, "candidates": [],
+                "host": host,
+                "reason": "direct-ssh mode (VISLANG_SRUN_JOBID unset) — the reducer "
+                          "runs on whatever node ssh lands on; no held allocation "
+                          "needed."}
+    rc, err, cand = _squeue_candidates(conn)
+    if rc != 0:
+        return {"mode": requested, "present": None, "jobid": None, "candidates": cand,
+                "host": host,
+                "reason": "could not query Slurm: " + (err.strip()[-200:] or f"rc={rc}")}
+    if requested != "auto":                       # a fixed jobid: is it RUNNING?
+        present = any(c[0] == requested for c in cand)
+        return {"mode": requested, "present": present,
+                "jobid": requested if present else None, "candidates": cand,
+                "host": host,
+                "reason": (f"requested allocation jobid={requested} is RUNNING"
+                           if present else
+                           f"requested jobid={requested} is not RUNNING for you "
+                           f"on {host}")}
+    if not cand:
+        name, part = _alloc_filters()
+        where = ", ".join(f"{k} {v}" for k, v in
+                          (("name", name), ("partition", part)) if v)
+        return {"mode": "auto", "present": False, "jobid": None, "candidates": [],
+                "host": host,
+                "reason": "no RUNNING allocation" + (f" matching {where}" if where else "")
+                          + f" for you on {host}"}
+    jid = max(cand, key=lambda c: int(c[0]))[0]
+    extra = f", {len(cand)} found — using newest" if len(cand) > 1 else ""
+    return {"mode": "auto", "present": True, "jobid": jid, "candidates": cand,
+            "host": host,
+            "reason": f"held allocation RUNNING (jobid={jid}{extra})"}
 
 
 def _remote_tmp():
@@ -229,10 +337,63 @@ def _projection_of(prefix):
 
 
 # ---------------------------------------------------------------------------
-def remote_reduce(src, middle):
+def _reduce_estimate(src, key, schema, missing, conn, steps):
+    """Estimate a single-file remote reduce's wire transfer and append a readable
+    line to `steps`. Returns a CostEstimate; when the reduced size can't be known
+    locally (no cached schema, or a value-dependent / particle narrowing) the
+    estimate carries read_mb=None (over_budget False), so the caller does not gate.
+
+    Reuses the catalog's own form-fuse (_grid_ranges_of) so the estimated shape
+    matches what the reduce actually reads. itemsize is not persisted to the
+    catalog, so grid bytes fall back to 4 B/element (noted)."""
+    from my_estimate import estimate_plan_cost, format_plan_estimate
+    from datasetInfo import DatasetInfo
+
+    try:
+        net_bw = measure_bandwidth(conn)
+    except Exception:
+        net_bw = None
+
+    wire_mb, note = None, None
+    dims = (schema or {}).get("dimensions") or {}
+    grid = dims.get("grid")
+    n_missing = len(missing) if missing else len((schema or {}).get("variables") or [])
+    if schema is None:
+        note = ("reduced size unknown on first run (schema not yet cached) — not "
+                "gated; it will be estimated once the schema is cached.")
+    elif isinstance(grid, (tuple, list)) and len(grid) == 3:
+        from my_catalog import _grid_ranges_of
+        ranges = _grid_ranges_of(key, tuple(grid))
+        if ranges is None:
+            note = ("value-dependent narrowing (threshold) — reduced size not "
+                    "knowable before the read; not gated.")
+        else:
+            cells = 1
+            for (a, b, s), dim in zip(ranges, grid):
+                a = a or 0
+                b = dim if b is None else min(b, dim)
+                s = s or 1
+                cells *= max(0, -(-(b - a) // s))
+            wire_mb = cells * max(1, n_missing) * 4 / (1024 ** 2)   # 4 B fallback
+            note = "grid bytes assume 4 B/element (dtype not persisted to catalog)."
+    else:
+        note = "particle/unknown modality — reduced size not estimated; not gated."
+
+    stub = DatasetInfo(src.uri, "remote", [])
+    est = estimate_plan_cost(info=stub, narrowing=None, site="remote",
+                             read_mb_override=wire_mb, net_bw_bps=net_bw)
+    if note:
+        est.notes.append(note)
+    steps.append(format_plan_estimate(est))
+    return est
+
+
+def remote_reduce(src, middle, confirm=False):
     """Run the narrowing prefix of `middle` on the remote host of src.uri.
-    Returns (loaded DatasetInfo, steps list). Raises RemoteUnavailable to make
-    the planner fall back, or a real error for a broken spec."""
+    Returns (loaded DatasetInfo, steps, CostEstimate|None). Raises
+    RemoteUnavailable to make the planner fall back, BudgetHold when the
+    estimated wire transfer is over budget and `confirm` is False, or a real
+    error for a broken spec."""
     steps = []
     prefix, compresses = _split_middle(middle)
     if not prefix:
@@ -266,6 +427,30 @@ def remote_reduce(src, middle):
         if have:
             steps.append(f"catalog: cached {sorted(have)} for this narrowing")
 
+    # --- allocation gate: the server-side lowering/reduce srun-steps into a HELD
+    # Slurm allocation. In AUTO discovery mode, if none exists we HOLD and PROPOSE
+    # salloc (never run it here) rather than silently shipping / falling back to a
+    # whole-file fetch. Only when there is compute to ship — a full cache hit needs
+    # no allocation. A FIXED VISLANG_SRUN_JOBID is trusted as-is (the run path uses
+    # it directly, so we don't second-guess it here). confirm=True proceeds anyway
+    # (auto-mode then falls back to a whole-file fetch downstream).
+    if (want is None or missing) and _srun_requested() == "auto" and not confirm:
+        alloc = allocation_status(conn)
+        if alloc.get("present") is False:      # definitively absent (not unknown)
+            steps.append(f"allocation: {alloc['reason']}")
+            raise AllocationHold(alloc["reason"], recommended_salloc(host), steps)
+
+    # --- cost gate: estimate the wire transfer BEFORE shipping the read -------
+    # Remote cost is bytes over ssh; we measure the link with a synthetic probe
+    # and gate on size + measured time. On a full cache hit nothing crosses, so
+    # there is nothing to gate.
+    if want is None or missing:
+        estimate = _reduce_estimate(src, key, schema, missing, conn, steps)
+        if estimate is not None and estimate.over_budget and not confirm:
+            raise BudgetHold(estimate, steps)
+    else:
+        estimate = None
+
     fetched = {}
     if want is None or missing:
         meta, fetched = _run_remote_prefix(conn, remote_path, src, prefix, missing, steps)
@@ -296,7 +481,7 @@ def remote_reduce(src, middle):
     total = sum(a.nbytes for a in data.values())
     steps.append(f"assembled {len(data)} var(s), {total / 1e6:.1f} MB "
                  f"({len(have)} cached, {len(fetched)} fetched)")
-    return info, steps
+    return info, steps, estimate
 
 
 def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):

@@ -13,8 +13,11 @@ The numbers below mirror my_render.py so the estimate matches what render ships:
              grid_size**3 float32 density volume (~8 MB at 128).
 """
 
+from __future__ import annotations
+
 import glob
 import os
+from dataclasses import dataclass, field
 
 from my_inspect import inspect_source, is_remote
 
@@ -159,4 +162,242 @@ def format_estimate(report):
         lines.append(f"  recommended: render({report['recommended_subset']})")
     else:
         lines.append("  recommended: render(info)  # whole dataset fits the budget")
+    return "\n".join(lines)
+
+
+# ===========================================================================
+# Plan cost estimate + budget gate
+# ===========================================================================
+# Unlike estimate_render_cost (whole-file, pre-spec), this consumes the LOWERED
+# plan — a DatasetInfo (metadata only) plus the fused Narrowing — so it knows the
+# actually-selected shape, project set, timestep count, and site. It reads NO
+# bulk data. Local and remote are asymmetric (see the plan file):
+#   - LOCAL: cost is disk -> memory. We can't know disk speed without fabricating
+#     a number, so we report BYTES ONLY and gate on the size budget.
+#   - REMOTE: cost is bytes over ssh. The caller measures the link with a live
+#     synthetic probe (my_download.measure_bandwidth) and passes net_bw_bps here,
+#     so we report a measured time band and gate on size AND time.
+# Budgets are env-configurable test placeholders (later ~1 hr / ~100 GB+).
+
+
+def _budget_bytes():
+    return int(float(os.environ.get("VISLANG_BUDGET_BYTES", 1 * 1024 ** 3)))
+
+
+def _budget_seconds():
+    return float(os.environ.get("VISLANG_BUDGET_SECONDS", 3))
+
+
+@dataclass
+class CostEstimate:
+    """What executing one lowered plan is predicted to cost. `read_mb` is disk
+    read (local) or bytes over the wire (remote). Time is remote-only and only
+    when a link speed was measured (else None)."""
+    site: str                              # 'local' | 'remote'
+    read_mb: float | None = None
+    output_mb: float | None = None
+    browser_payload_mb: float | None = None
+    n_timesteps: int = 1
+    time_lo_s: float | None = None
+    time_hi_s: float | None = None
+    confidence: str | None = None          # 'measured' | None
+    over_budget: bool = False
+    budget_reason: str | None = None       # 'size' | 'time' | 'size+time' | None
+    notes: list = field(default_factory=list)
+
+
+def _ceil_div(a, b):
+    return -(-a // b)
+
+
+def _grid_axis_count(r, dim):
+    """Elements an AxisRange selects on an axis of length `dim`."""
+    start = r.start or 0
+    stop = dim if r.stop is None else min(r.stop, dim)
+    step = r.step or 1
+    span = max(0, stop - start)
+    return _ceil_div(span, step) if span else 0
+
+
+def _selected_grid_cells(narrowing, grid):
+    if narrowing is not None and narrowing.grid_ranges:
+        prod = 1
+        for r, dim in zip(narrowing.grid_ranges, grid):
+            prod *= _grid_axis_count(r, dim)
+        return prod
+    prod = 1
+    for d in grid:
+        prod *= d
+    return prod
+
+
+def _selected_particles(narrowing, total):
+    if narrowing is None or narrowing.particle_index is None:
+        return total
+    idx = narrowing.particle_index
+    if isinstance(idx, slice):
+        return len(range(*idx.indices(total)))
+    try:
+        import numpy as np
+        arr = np.asarray(idx)
+        return int(arr.sum()) if arr.dtype == bool else int(arr.size)
+    except Exception:
+        return total
+
+
+def _read_set(info, narrowing):
+    """Variables actually read: the projection (or all), plus any vars the
+    post-read ops need present at mask time."""
+    if narrowing is not None and narrowing.project is not None:
+        vars_ = list(narrowing.project)
+        try:
+            from narrowing import post_op_read_vars
+            for v in post_op_read_vars(narrowing.post_ops, narrowing.positions):
+                if v not in vars_:
+                    vars_.append(v)
+        except Exception:
+            pass
+        return vars_
+    return list(info.variables)
+
+
+def _bytes_mb(info, vars_, count):
+    """Σ over vars of count × itemsize, in MB. Missing itemsize -> 4 B (float32)."""
+    total = sum(count * info.itemsizes.get(v, _VOL_BYTES_PER_VOXEL) for v in vars_)
+    return total / _MB
+
+
+def _fmt_time(s):
+    if s is None:
+        return "?"
+    if s < 90:
+        return f"{s:.0f} s"
+    if s < 5400:
+        return f"{s / 60:.1f} min"
+    return f"{s / 3600:.1f} h"
+
+
+def estimate_plan_cost(*, info, narrowing, site, n_timesteps=1, sink_kind=None,
+                       net_bw_bps=None, wire_vars=None, read_mb_override=None):
+    """Estimate the cost of one lowered plan (per-timestep quantities × n_timesteps).
+
+    site='local'  -> read_mb is disk read; no time; gate on size.
+    site='remote' -> read_mb is bytes over the wire. Pass the reduced set via
+                     wire_vars (reduce path) or read_mb_override (whole-file
+                     fetch, per timestep). net_bw_bps (from measure_bandwidth)
+                     enables a time band; without it, bytes only.
+    """
+    notes = []
+    dims = info.dimensions or {}
+    grid = dims.get('grid')
+    read_set = _read_set(info, narrowing)
+
+    if isinstance(grid, (tuple, list)) and len(grid) == 3:
+        grid = tuple(grid)
+        modality = 'volume'
+        selected = _selected_grid_cells(narrowing, grid)
+        full = grid[0] * grid[1] * grid[2]
+    elif 'particles' in dims:
+        modality = 'points'
+        full = dims['particles']
+        selected = _selected_particles(narrowing, full)
+    else:
+        modality, selected, full = 'unknown', None, None
+
+    caps = {}
+    try:
+        from adapters import adapter_capabilities
+        caps = adapter_capabilities(info)
+    except Exception:
+        pass
+    strided = caps.get('strided_read', False)
+    col_pushdown = caps.get('column_pushdown', False)
+
+    output_mb = read_mb = None
+    if selected is not None:
+        output_mb = _bytes_mb(info, read_set, selected)
+        if site == 'remote':
+            if read_mb_override is not None:
+                read_mb = read_mb_override
+            else:
+                read_mb = _bytes_mb(info, wire_vars if wire_vars is not None
+                                    else read_set, selected)
+        elif strided:
+            read_mb = output_mb                      # stride pushed into the read
+        elif col_pushdown:
+            read_mb = _bytes_mb(info, read_set, full)
+            notes.append(f"{info.filetype} reads full columns then slices — disk "
+                         f"read is the full length, not the subsample.")
+        else:
+            read_mb = _bytes_mb(info, list(info.variables), full)
+            notes.append(f"{info.filetype} reads the whole file then slices in memory.")
+    elif read_mb_override is not None:
+        read_mb = read_mb_override
+    elif site == 'local':
+        fmb = _on_disk_mb(info.filepath)
+        if fmb is not None:
+            read_mb = fmb
+            notes.append("modality unknown — using on-disk file size for the gate.")
+
+    browser_payload_mb = None
+    if sink_kind == 'render' and selected is not None:
+        if modality == 'volume':
+            n_fields = max(1, len(read_set))
+            browser_payload_mb = selected * _VOL_BYTES_PER_VOXEL * n_fields / _MB
+        elif modality == 'points':
+            density = (_DEFAULT_DENSITY_GRID ** 3) * _VOL_BYTES_PER_VOXEL / _MB
+            browser_payload_mb = density + selected * _PT_BYTES_PER_POINT / _MB
+
+    n = max(1, int(n_timesteps))
+    if read_mb is not None:
+        read_mb *= n
+    if output_mb is not None:
+        output_mb *= n
+    if browser_payload_mb is not None:
+        browser_payload_mb *= n
+
+    time_lo_s = time_hi_s = confidence = None
+    if site == 'remote' and read_mb is not None:
+        if net_bw_bps:
+            mid = (read_mb * _MB) / net_bw_bps
+            time_lo_s, time_hi_s, confidence = mid / 2.0, mid * 2.0, 'measured'
+        else:
+            notes.append("network speed unavailable (no ssh-key probe) — "
+                         "time not estimated.")
+
+    over_size = read_mb is not None and (read_mb * _MB) > _budget_bytes()
+    over_time = time_hi_s is not None and time_hi_s > _budget_seconds()
+    reason = ('size+time' if over_size and over_time else
+              'size' if over_size else 'time' if over_time else None)
+
+    if any(v not in info.itemsizes for v in read_set):
+        notes.append("dtype not fully known — bytes assume 4 B/element where missing.")
+
+    return CostEstimate(site=site, read_mb=read_mb, output_mb=output_mb,
+                        browser_payload_mb=browser_payload_mb, n_timesteps=n,
+                        time_lo_s=time_lo_s, time_hi_s=time_hi_s, confidence=confidence,
+                        over_budget=bool(over_size or over_time), budget_reason=reason,
+                        notes=notes)
+
+
+def format_plan_estimate(est):
+    """Readable block for a CostEstimate (shown in the run report)."""
+    lines = [f"Cost estimate ({est.site}):"]
+    if est.n_timesteps > 1:
+        lines.append(f"  timesteps: {est.n_timesteps}")
+    if est.read_mb is not None:
+        label = "over the wire" if est.site == 'remote' else "read from disk"
+        lines.append(f"  {label}: ~{est.read_mb:.0f} MB")
+    if est.output_mb is not None:
+        lines.append(f"  result size: ~{est.output_mb:.0f} MB")
+    if est.browser_payload_mb is not None:
+        lines.append(f"  browser payload: ~{est.browser_payload_mb:.0f} MB")
+    if est.time_lo_s is not None:
+        lines.append(f"  est. time: ~{_fmt_time(est.time_lo_s)}–{_fmt_time(est.time_hi_s)} "
+                     f"({est.confidence})")
+    for note in est.notes:
+        lines.append(f"  note: {note}")
+    if est.over_budget:
+        lines.append(f"  ⚠ OVER BUDGET ({est.budget_reason}) — confirm to run "
+                     f"as-is, or narrow the spec.")
     return "\n".join(lines)

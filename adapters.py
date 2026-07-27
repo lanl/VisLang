@@ -242,12 +242,14 @@ class HDF5Adapter(FormatAdapter):
         attributes = {}
         dimensions = {}
         dataset_shapes = {}
+        itemsizes = {}
 
         with h5py.File(filepath, 'r') as f:
             def collect_datasets(name, obj):
                 if isinstance(obj, h5py.Dataset):
                     variables.append(name)
                     dataset_shapes[name] = obj.shape
+                    itemsizes[name] = obj.dtype.itemsize   # header metadata, no read
 
             f.visititems(collect_datasets)
             for key in f.attrs:
@@ -273,7 +275,8 @@ class HDF5Adapter(FormatAdapter):
                 dimensions['grid'] = nd_shapes.pop()
 
         return DatasetInfo(filepath, self.name, variables,
-                           dimensions=dimensions, attributes=attributes)
+                           dimensions=dimensions, attributes=attributes,
+                           itemsizes=itemsizes)
 
     def read_array(self, filepath, location, selection):
         # `location` is either a dataset-path string (generic inspect, where the
@@ -442,6 +445,7 @@ class AstropyAdapter(FormatAdapter):
         variables = []
         dimensions = {}
         attributes = {}
+        itemsizes = {}
 
         with fits.open(filepath, memmap=True) as hdul:
             fmap = _fits_field_map(hdul)
@@ -451,6 +455,11 @@ class AstropyAdapter(FormatAdapter):
                 if col is None:  # image
                     shape = tuple(hdu.shape)
                     attributes[f"{var}_shape"] = shape
+                    # BITPIX is the per-pixel bit width (header metadata, no read);
+                    # |BITPIX|/8 is the element size in bytes.
+                    bitpix = hdu.header.get('BITPIX')
+                    if bitpix:
+                        itemsizes[var] = abs(int(bitpix)) // 8
                     if len(shape) == 3:
                         dimensions['grid'] = shape
                 else:  # table column
@@ -467,7 +476,8 @@ class AstropyAdapter(FormatAdapter):
                     attributes[k] = hdul[0].header[k]
 
         info = DatasetInfo(filepath, self.name, variables,
-                           dimensions=dimensions, attributes=attributes)
+                           dimensions=dimensions, attributes=attributes,
+                           itemsizes=itemsizes)
         # Token per variable: (hdu_index, column_or_None) — how read_array
         # addresses it. Survives my_load's deepcopy.
         info.variable_locations = {var: fmap[var] for var in variables}

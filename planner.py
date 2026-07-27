@@ -105,6 +105,37 @@ def _normalize_remote(uri):
     return uri
 
 
+def _remote_fetch_gate(uri, sink, terminal, steps, confirm):
+    """Estimate + gate a whole-file remote FETCH before pulling. The whole file
+    crosses the wire, so wire bytes == file size (known from one stat). Returns a
+    HELD result dict when over budget and unconfirmed, else None (proceed). Any
+    probe failure is non-fatal — the fetch proceeds and its own path reports."""
+    try:
+        from my_download import (establish_connection, remote_stat,
+                                  measure_bandwidth, _parse_remote)
+        from datasetInfo import DatasetInfo
+        from my_estimate import estimate_plan_cost
+        norm = _normalize_remote(uri)
+        _, _, remote_path = _parse_remote(norm)
+        conn = establish_connection(norm)
+        st = remote_stat(conn, remote_path)
+        if st is None:
+            return None
+        size_mb = st[0] / (1024 ** 2)
+        net_bw = measure_bandwidth(conn)
+        stub = DatasetInfo(uri, "remote", [])
+        est = estimate_plan_cost(info=stub, narrowing=None, site="remote",
+                                 read_mb_override=size_mb, net_bw_bps=net_bw,
+                                 sink_kind=(sink.kind if sink is not None else None))
+        result = {"kind": (sink.kind if sink is not None else terminal.kind),
+                  "uri": uri, "steps": steps, "output": None, "materialized": False}
+        if _gate(result, est, confirm, steps):
+            return result
+    except Exception as e:
+        steps.append(f"(fetch estimate skipped: {type(e).__name__}: {e})")
+    return None
+
+
 def _fetch_remote(uri):
     """Establish a connection and transfer a remote source to a local cache,
     returning the local path."""
@@ -200,7 +231,7 @@ def _bbox_of(region_node):
     return BBox(lo=tuple(lo), hi=tuple(hi))
 
 
-def plan_pipeline(terminal, dry_run=False):
+def plan_pipeline(terminal, dry_run=False, confirm=False):
     """Plan (and unless dry_run, execute) one pipeline ending at `terminal`.
 
     `terminal` is normally a sink (render/save). For the no-sink dry run it may
@@ -244,21 +275,21 @@ def plan_pipeline(terminal, dry_run=False):
 
     if is_folder:
         plan_folder = _plan_remote_folder if remote_src else _plan_folder
-        result = plan_folder(src, middle, ts_nodes, sink, terminal, dry_run)
+        result = plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm)
     elif ts_nodes:
         raise ValueError("timesteps() applies only to a folder (timeseries) "
                          f"source; {src.uri!r} is a single file.")
     elif remote_src:
-        result = _plan_remote(src, middle, sink, terminal, dry_run)
+        result = _plan_remote(src, middle, sink, terminal, dry_run, confirm)
     else:
-        result = _plan_local(src, middle, sink, terminal, dry_run, src.uri, [])
+        result = _plan_local(src, middle, sink, terminal, dry_run, src.uri, [], confirm)
 
     if _tracing() and isinstance(result, dict) and "steps" in result:
         result["steps"].insert(0, _describe_ast(chain))    # spec as authored, on top
     return result
 
 
-def _plan_remote(src, middle, sink, terminal, dry_run):
+def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
     """Site dispatch for a remote source. v1 cost gate: any narrowing present +
     a reachable remote -> reduce remotely (a threshold can't run locally
     without the whole file anyway; a geometric cut ships fewer bytes by
@@ -286,18 +317,34 @@ def _plan_remote(src, middle, sink, terminal, dry_run):
                 "uri": src.uri, "steps": steps, "output": None, "materialized": False}
 
     if mode != "off" and has_narrowing:
-        from remote_reduce import remote_reduce, RemoteUnavailable
+        from remote_reduce import (remote_reduce, RemoteUnavailable, BudgetHold,
+                                   AllocationHold)
         try:
-            loaded, rsteps = remote_reduce(src, middle)
+            loaded, rsteps, estimate = remote_reduce(src, middle, confirm)
             steps += rsteps
             pending_compress = [n for n in middle if n.kind == "compress"]
             for c in pending_compress:
                 steps.append(f"compress {list(c.variables)} "
                              f"(error_bound={c.error_bound}, local)")
             result = {"kind": sink.kind, "uri": src.uri, "steps": steps,
-                      "output": None, "materialized": True}
+                      "output": None, "materialized": True, "estimate": estimate}
             steps.append(f"-> {sink.kind} (local)")
             return _finish(loaded, pending_compress, sink, result)
+        except AllocationHold as h:
+            steps += h.steps
+            steps.append("HELD: no Slurm allocation — nothing shipped. Ask the "
+                         "user to approve creating one (Claude runs it on approval):")
+            steps.append(f"  {h.salloc_cmd}")
+            steps.append("Once it is RUNNING, re-run the spec; or re-run with "
+                         "confirm=True to proceed without one (whole-file fetch).")
+            return {"kind": sink.kind, "uri": src.uri, "steps": steps,
+                    "output": None, "materialized": False, "needs_allocation": True,
+                    "salloc_cmd": h.salloc_cmd}
+        except BudgetHold as h:
+            steps += h.steps
+            return {"kind": sink.kind, "uri": src.uri, "steps": steps,
+                    "output": None, "materialized": False, "needs_confirm": True,
+                    "estimate": h.estimate}
         except RemoteUnavailable as e:
             if mode == "force":
                 raise RuntimeError(f"VISLANG_REMOTE=force but remote reduce is "
@@ -308,9 +355,32 @@ def _plan_remote(src, middle, sink, terminal, dry_run):
         steps.append("no narrowing forms — the whole file crosses the wire "
                      "either way (cost gate: fetch)")
 
+    # Whole-file FETCH path: the entire file crosses the wire. Estimate + gate on
+    # the measured transfer cost before pulling.
+    held = _remote_fetch_gate(src.uri, sink, terminal, steps, confirm)
+    if held is not None:
+        return held
     local = _fetch_remote(src.uri)               # establish_connection + transfer
     steps.append(f"fetch {src.uri} -> {local}")
-    return _plan_local(src, middle, sink, terminal, dry_run, local, steps)
+    return _plan_local(src, middle, sink, terminal, dry_run, local, steps, confirm)
+
+
+def _gate(result, estimate, confirm, steps):
+    """Attach a CostEstimate to the result and decide whether to HOLD.
+
+    Always records the estimate (so a run report shows the cost). When the plan
+    is over budget and the caller has not passed confirm=True, flags
+    needs_confirm and returns True — the caller must return WITHOUT materializing.
+    """
+    from my_estimate import format_plan_estimate
+    result["estimate"] = estimate
+    steps.append(format_plan_estimate(estimate))
+    if estimate.over_budget and not confirm:
+        result["needs_confirm"] = True
+        steps.append("HELD: over budget — nothing materialized. Re-run with "
+                     "confirm=True to commit, or narrow the spec.")
+        return True
+    return False
 
 
 def _finish(loaded, pending_compress, sink, result):
@@ -448,7 +518,7 @@ def _lower(info, middle, steps):
     return narrowing, pending_compress
 
 
-def _plan_local(src, middle, sink, terminal, dry_run, source_uri, steps):
+def _plan_local(src, middle, sink, terminal, dry_run, source_uri, steps, confirm=False):
     """Plan (and unless dry_run, execute) a SINGLE-file chain: inspect, lower the
     middle forms into one fused Narrowing, then materialize + compress + sink."""
     # Inspect (metadata only) — static checks in _lower run before any bulk read.
@@ -467,8 +537,19 @@ def _plan_local(src, middle, sink, terminal, dry_run, source_uri, steps):
     result = {"kind": (sink.kind if sink is not None else terminal.kind),
               "uri": src.uri, "steps": steps, "output": None, "materialized": False,
               "narrowing": narrowing}   # the lowered plan, for introspection (explain.py)
+
+    # Cost estimate at the seam: the plan is known, nothing bulky has been read.
+    # Local cost is disk->memory, so we report bytes and gate on size only.
+    from my_estimate import estimate_plan_cost, format_plan_estimate
+    sink_kind = sink.kind if sink is not None else None
+    estimate = estimate_plan_cost(info=info, narrowing=narrowing, site='local',
+                                  n_timesteps=1, sink_kind=sink_kind)
     if dry_run or sink is None:
+        result["estimate"] = estimate                # show the cost, never gate
+        steps.append(format_plan_estimate(estimate))
         return result
+    if _gate(result, estimate, confirm, steps):
+        return result                                # over budget, unconfirmed: HOLD
 
     # Execute: materialize under the fused narrowing, compress, then the sink.
     loaded = materialize(info, narrowing)
@@ -484,13 +565,14 @@ def _plan_local(src, middle, sink, terminal, dry_run, source_uri, steps):
     return result
 
 
-def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run):
+def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
     """A FOLDER source is a TIMESERIES: map the single-file chain over the
     timestep files (named `…#N`) and combine. timesteps() nodes (already split
     out of `middle`) pick the inclusive #N range; the rest of the chain lowers
     per file exactly as for one file. render over a series isn't supported — pick
     one timestep, or save the range (one file per timestep, original format)."""
     from my_inspect import timestep_files
+    from my_estimate import estimate_plan_cost, format_plan_estimate
     files = timestep_files(src.uri)                     # [(label, path)]; raises if none
     rng = None
     if ts_nodes:
@@ -509,16 +591,30 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run):
             "render over a timeseries folder isn't supported — select one timestep "
             "with timesteps(node, N, N), or use save() to write the range.")
 
+    # Plan + estimate off timestep 0 (metadata only); folder cost scales × N steps.
+    info0 = inspect_file(files[0][1], positions=src.positions)
+    narrowing0, _ = _lower(info0, middle, [])
+    estimate = estimate_plan_cost(info=info0, narrowing=narrowing0, site='local',
+                                  n_timesteps=len(files),
+                                  sink_kind=(sink.kind if sink is not None else None))
+
     if dry_run or sink is None:
         steps.append("per timestep: "
                      + (" -> ".join(n.kind for n in middle) if middle else "(no narrowing)"))
-        info0 = inspect_file(files[0][1], positions=src.positions)   # plan off timestep 0
         _trace(steps, _describe_schema(info0, files[0][1]))
         _lower(info0, middle, steps)
         steps.append("(no sink — nothing materialized)" if sink is None
                      else f"-> save timeseries -> {sink.path}")
+        steps.append(format_plan_estimate(estimate))
         return {"kind": (sink.kind if sink is not None else terminal.kind),
-                "uri": src.uri, "steps": steps, "output": None, "materialized": False}
+                "uri": src.uri, "steps": steps, "output": None, "materialized": False,
+                "estimate": estimate}
+
+    # Gate on the whole-series cost BEFORE materializing any timestep.
+    held = {"kind": "save", "uri": src.uri, "steps": steps, "output": None,
+            "materialized": False}
+    if _gate(held, estimate, confirm, steps):
+        return held
 
     per_step = []
     for i, (label, path) in enumerate(files):
@@ -558,7 +654,7 @@ def _fetch_remote_folder(uri):
     return out
 
 
-def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run):
+def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
     """A REMOTE folder is a TIMESERIES. The whole timeseries runs in ONE remote
     job next to the data (remote_folder_reduce): the remote's own plan_pipeline
     dispatches the folder to _plan_folder, writes one file per timestep, and we
@@ -599,6 +695,9 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run):
     steps = []
     if mode != "off" and has_narrowing:
         from remote_reduce import remote_folder_reduce, RemoteUnavailable
+        steps.append("(note: the folder reduce runs as one batched remote job — "
+                     "the per-run budget gate is applied on the single-file and "
+                     "whole-folder-fetch paths, not to this batch)")
         try:
             out, rsteps, report = remote_folder_reduce(src, middle, ts_nodes, sink.path)
             steps += rsteps
@@ -639,11 +738,13 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run):
         steps.append("no narrowing forms — the whole folder crosses the wire "
                      "either way (cost gate: fetch)")
 
-    # Fallback: fetch the whole folder, then plan it locally as a timeseries.
+    # Fallback: fetch the whole folder, then plan it locally as a timeseries
+    # (the local _plan_folder applies the budget gate on the materialize/save).
     local = _fetch_remote_folder(src.uri)
     steps.append(f"fetch folder {src.uri} -> {local}")
     local_src = SourceNode(uri=local, positions=src.positions)
-    res = _plan_folder(local_src, middle, ts_nodes, sink, terminal, dry_run=False)
+    res = _plan_folder(local_src, middle, ts_nodes, sink, terminal, dry_run=False,
+                       confirm=confirm)
     res["uri"] = src.uri                                 # report the original remote uri
     res["steps"] = steps + res["steps"]
     res["sites"] = {"remote": 0, "fetch": len(res.get("timesteps", []))}
@@ -660,7 +761,17 @@ def _save(loaded, path):
 
 def format_result(result):
     head = f"[{result['kind']}] {result['uri']}"
-    body = "\n".join(f"    {s}" for s in result["steps"])
+    # Indent every line of each step (some steps — e.g. the cost estimate — are
+    # multi-line blocks, so a single leading indent would leave their tails flush).
+    body = "\n".join("\n".join(f"    {ln}" for ln in str(s).split("\n"))
+                     for s in result["steps"])
     tail = f"\n  output: {result['output']}" if result["output"] else ""
-    mode = "" if result["materialized"] else "  (dry run — nothing materialized)"
+    if result.get("needs_allocation"):
+        mode = "  (HELD — no Slurm allocation, nothing materialized)"
+    elif result.get("needs_confirm"):
+        mode = "  (HELD — over budget, nothing materialized)"
+    elif not result["materialized"]:
+        mode = "  (dry run — nothing materialized)"
+    else:
+        mode = ""
     return f"{head}{mode}\n{body}{tail}"

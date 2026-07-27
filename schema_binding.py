@@ -231,8 +231,22 @@ def build_info(filepath, schema, binding):
         for k, val in attr_values.get(g, {}).items():
             attributes[k] = val
 
+    # Per-variable element size (bytes) from the schema's recorded dtype strings —
+    # metadata only; used by the cost estimator. Unresolvable dtypes are skipped
+    # (the estimator falls back to a 4-byte assumption).
+    import numpy as np
+    itemsizes = {}
+    for v in binding["variables"]:
+        dt = datasets.get(v["source"], {}).get("dtype")
+        if dt:
+            try:
+                itemsizes[v["name"]] = np.dtype(dt).itemsize
+            except TypeError:
+                pass
+
     info = DatasetInfo(filepath, "HDF5", variables,
-                       dimensions=dimensions, attributes=attributes)
+                       dimensions=dimensions, attributes=attributes,
+                       itemsizes=itemsizes)
     # Per-variable read token consumed by HDF5Adapter.read_array. This is the
     # single location mechanism the universal load() uses (generic HDF5 has no
     # entry and defaults to the variable name = dataset path).

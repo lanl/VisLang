@@ -3,13 +3,21 @@ import numpy as np
 class DatasetInfo:
     """Container for dataset metadata and optionally loaded data."""
     
-    def __init__(self, filepath, filetype, variables, dimensions=None, attributes=None):
+    def __init__(self, filepath, filetype, variables, dimensions=None, attributes=None,
+                 itemsizes=None):
         # Metadata (always populated by inspect)
         self.filepath = filepath
         self.filetype = filetype
         self.variables = variables
         self.dimensions = dimensions or {}
         self.attributes = attributes or {}
+
+        # Per-variable element size in bytes (var -> itemsize), captured by inspect
+        # from the same header it already reads for shapes — no bulk read. Used by
+        # the cost estimator for honest byte math; absent means "unknown", and the
+        # estimator falls back to a 4-byte (float32) assumption. This is live
+        # metadata only: it is NEVER persisted to the extent catalog.
+        self.itemsizes = itemsizes or {}
 
         # Semantic role binding resolved by inspect: which variables are the
         # spatial coordinates, as ('x','y','z'). None when the data has no

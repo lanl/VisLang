@@ -103,6 +103,9 @@ def _inspect_remote(uri, positions=None):
         # adapter without a model). Fetch the whole file so the LOCAL inspect can
         # bind/enrich or raise NeedsAdapterError against a real local copy.
         return _inspect_via_fetch(uri, positions)
+    # Inspect runs on the LOGIN NODE over plain ssh — cheap, and it needs no
+    # Slurm allocation. The allocation check belongs at the reduce seam (where the
+    # lowering ships to a compute node), not here.
     return _build_remote_info(uri, meta, positions)
 
 
