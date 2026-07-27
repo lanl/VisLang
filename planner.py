@@ -154,13 +154,15 @@ def _step_from_factor(factor):
     return max(1, int(round(1 / factor)))
 
 
-def _grid_ranges(region_nodes, subsample_nodes, info):
+def _grid_ranges(region_nodes, subsample_nodes, grid):
     """Fuse grid region crops + subsample strides into one [a:b:k] per axis.
     Both are structural index-space directives on the ORIGINAL grid, so they
-    compose order-free by convention (the stride anchors at the crop start)."""
+    compose order-free by convention (the stride anchors at the crop start).
+    `grid` is the grid shape (info.dimensions['grid']); the extent catalog reuses
+    this same routine to key cached grid extents, so a cached slice is identical
+    to a fresh remote reduce (my_catalog._fuse_forms)."""
     if not (region_nodes or subsample_nodes):
         return None
-    grid = (info.dimensions or {}).get("grid")
     if not grid:
         raise ValueError("region/subsample needs grid dimensions, but none were "
                          "detected for this dataset (the HDF5 binding may have "
@@ -402,7 +404,8 @@ def _lower(info, middle, steps):
 
     # --- fuse the structural layer into one Narrowing ------------------------
     if modality == "grid":
-        ranges = _grid_ranges(grid_region_nodes, grid_subsample_nodes, info)
+        ranges = _grid_ranges(grid_region_nodes, grid_subsample_nodes,
+                              (info.dimensions or {}).get("grid"))
         echo = {}
         if ranges:
             echo["grid_ranges"] = [(r.start, r.stop, r.step) for r in ranges]

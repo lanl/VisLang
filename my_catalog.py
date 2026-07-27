@@ -12,11 +12,16 @@ Layout under a cache root (default ``vislang_cache``):
     catalog.json          manifest: schemas + extent index (atomic rewrite)
     extents/<hex>.npy     one numpy array per cached extent
 
-Keys are (source_id, variable, canonical narrow_key). Beyond exact-key hits,
-`lookup` reuses a cached *superset* slab when both keys are pure grid crops
-(`grid_ranges` only) and the cached ranges contain and phase-align with the
-request — slicing a bigger local array beats refetching. Reuse is deliberately
-conservative: a false miss only costs a slower fetch, a false hit is wrong data.
+Keys are (source_id, variable, canonical narrow_key). A narrow_key is either the
+``{'forms': [...]}`` description the remote reducer emits (``_narrow_key``) or a
+pre-fused ``{'grid_ranges': [...]}``. Beyond exact-key hits, `lookup` reuses a
+cached *superset* slab when both the request and a cached extent are pure grid
+crops/strides and the cached ranges contain and phase-align with the request —
+slicing a bigger local array beats refetching. A forms key is fused to per-axis
+ranges via the source's cached schema, reusing planner._grid_ranges (the same
+routine the read path uses, so a cached slice matches a fresh reduce). Reuse is
+deliberately conservative: a false miss only costs a slower fetch, a false hit is
+wrong data.
 """
 
 import hashlib
@@ -40,10 +45,50 @@ def _canon(narrow_key):
     return json.dumps(narrow_key, sort_keys=True, separators=(",", ":"))
 
 
-def _grid_only(narrow_key):
-    """The narrow_key describes a pure grid crop/stride: reuse-eligible."""
-    return (isinstance(narrow_key, dict) and set(narrow_key) == {"grid_ranges"}
-            and isinstance(narrow_key["grid_ranges"], (list, tuple)))
+def _fuse_forms(forms, grid_dims):
+    """Per-axis [start, stop, step] for a pure grid crop/stride `forms` list over
+    a grid of shape `grid_dims`, or None when it is not grid-sliceable: a
+    `threshold` makes the result value-dependent, particle data has no grid, and
+    an unknown axis can't be placed. Delegates the fuse to planner._grid_ranges —
+    the SAME routine the read path uses — so a cached slice is bit-identical to a
+    fresh remote reduce (no drift between "what we key" and "what we read")."""
+    if not grid_dims or forms is None:
+        return None
+    if any(f[0] not in ("region", "subsample") for f in forms):
+        return None                              # threshold / non-geometric form
+    from planner import _grid_ranges              # lazy: avoid an import cycle
+    from dsl_forms.nodes import RegionNode, SubsampleNode
+    regions, subs = [], []
+    for f in forms:
+        if f[0] == "region":
+            regions.append(RegionNode(upstream=None,
+                                      ranges=tuple((a, lo, hi) for a, lo, hi in f[1])))
+        else:                                    # subsample
+            subs.append(SubsampleNode(upstream=None, uniform=f[1],
+                                      per_axis=tuple((a, fac) for a, fac in f[2])))
+    if not (regions or subs):
+        return None
+    try:
+        ranges = _grid_ranges(regions, subs, grid_dims)
+    except (ValueError, KeyError, TypeError):
+        return None                              # unknown axis etc. — not reusable
+    return None if ranges is None else [[r.start, r.stop, r.step] for r in ranges]
+
+
+def _grid_ranges_of(narrow_key, grid_dims):
+    """The per-axis [start,stop,step] this narrow_key selects on a grid, or None
+    (→ exact-match-only reuse). Accepts either a pre-fused ``{'grid_ranges': [...]}``
+    key or the ``{'forms': [...]}`` key the remote reducer emits (fused here with
+    `grid_dims`). Any other shape — a `post_ops`/`particles` key, or a `forms`
+    list containing a threshold — is not a sliceable grid extent and yields None."""
+    if not isinstance(narrow_key, dict):
+        return None
+    keys = set(narrow_key)
+    if keys == {"grid_ranges"} and isinstance(narrow_key["grid_ranges"], (list, tuple)):
+        return list(narrow_key["grid_ranges"])
+    if keys == {"forms"}:
+        return _fuse_forms(narrow_key["forms"], grid_dims)
+    return None
 
 
 def _axis_slice(req, had):
@@ -145,20 +190,24 @@ class ExtentCatalog:
 
     def lookup(self, source_id, var, narrow_key):
         """Cached array for this exact request, or a slice of a containing
-        pure-grid extent. None on any doubt — a miss is never wrong data."""
+        pure-grid extent. None on any doubt — a miss is never wrong data.
+
+        Grid superset reuse fuses each key's forms to per-axis ranges using the
+        source's cached schema (grid shape); a key we can't fuse — a threshold,
+        particle data, or a source with no cached schema — falls back to
+        exact-match only."""
         entries = self._manifest["extents"].get(source_id, {}).get(var, [])
         key = _canon(narrow_key)
         for e in entries:
             if e["key"] == key:
                 return self._read(e)
-        if not _grid_only(narrow_key):
+        grid = ((self.schema(source_id) or {}).get("dimensions") or {}).get("grid")
+        req = _grid_ranges_of(narrow_key, grid)
+        if req is None:
             return None
-        req = narrow_key["grid_ranges"]
         for e in entries:
-            if not _grid_only(e["narrow"]):
-                continue
-            had = e["narrow"]["grid_ranges"]
-            if len(had) != len(req):
+            had = _grid_ranges_of(e["narrow"], grid)
+            if had is None or len(had) != len(req):
                 continue
             slices = [_axis_slice(r, h) for r, h in zip(req, had)]
             if any(s is None for s in slices):

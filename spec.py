@@ -1,5 +1,6 @@
 save(
     subsample(
+        
         fields(
             source("ssh://darwin/projects/autonomousvis/ashrestha/data/"),
             ["x", "y", "z", "temperature"],

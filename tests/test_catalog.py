@@ -138,6 +138,55 @@ def main():
     have2, missing2 = cat.delta(sid, ["d", "x"], req)
     check("delta_via_containment", list(have2) == ["d"] and missing2 == ["x"])
 
+    # -- forms-key containment (the shape _narrow_key actually emits) ----------
+    # The remote reducer keys extents as {"forms": [...]}, not pre-fused
+    # grid_ranges. lookup fuses them via the source's cached schema, so the same
+    # superset reuse applies. (Regression guard: this key shape used to always
+    # miss — see the _grid_only vs {"forms":...} mismatch.)
+    tf_crop = {"forms": [["region", [["x", 0, 100]]]]}
+    cat.store(sid, "tf", tf_crop, orig[0:100])
+    check("forms_exact_hit", np.array_equal(cat.lookup(sid, "tf", tf_crop), orig[0:100]))
+    # refine the SAME crop by adding a subsample -> sliced from the cached crop
+    tf_sub = {"forms": [["region", [["x", 0, 100]]], ["subsample", 2, []]]}
+    got_f = cat.lookup(sid, "tf", tf_sub)
+    check("forms_containment_subsample",
+          got_f is not None and np.array_equal(got_f, orig[0:100:2, ::2, ::2]))
+    # a narrower sub-crop of the cached crop
+    tf_subcrop = {"forms": [["region", [["x", 0, 50]]]]}
+    check("forms_containment_subcrop",
+          np.array_equal(cat.lookup(sid, "tf", tf_subcrop), orig[0:50]))
+    # a threshold makes the result value-dependent -> not sliceable (exact-only)
+    tf_thr = {"forms": [["region", [["x", 0, 100]]], ["threshold", "tf", ">", 0.5]]}
+    check("forms_threshold_not_sliceable", cat.lookup(sid, "tf", tf_thr) is None)
+    # forms delta: cached crop's subsample reused, unknown var still fetched
+    have3, missing3 = cat.delta(sid, ["tf", "novar"], tf_sub)
+    check("forms_delta_via_containment", list(have3) == ["tf"] and missing3 == ["novar"])
+
+    # no cached schema for the source -> a forms key can't be fused (exact only)
+    sid_ns = make_source_id("ssh://host/noschema.h5", 5, 2.0)
+    cat.store(sid_ns, "q", tf_crop, orig[0:100])
+    check("forms_exact_hit_no_schema",
+          np.array_equal(cat.lookup(sid_ns, "q", tf_crop), orig[0:100]))
+    check("forms_no_schema_no_containment", cat.lookup(sid_ns, "q", tf_subcrop) is None)
+
+    # drift guard: _fuse_forms must agree with planner._grid_ranges (it delegates
+    # to it, so this checks the forms->node rebuild is faithful: axes, per-axis).
+    from my_catalog import _fuse_forms
+    from planner import _grid_ranges as _pgr
+    from dsl_forms.nodes import RegionNode as _RN, SubsampleNode as _SN
+    gshape = [200, 60, 30]
+    xcheck = True
+    for forms, rns, sns in [
+        ([["region", [["x", 0, 100], ["y", 10, 50]]], ["subsample", 2, []]],
+         [_RN(upstream=None, ranges=(("x", 0, 100), ("y", 10, 50)))],
+         [_SN(upstream=None, uniform=2, per_axis=())]),
+        ([["subsample", None, [["x", 2], ["z", 4]]]],
+         [], [_SN(upstream=None, uniform=None, per_axis=(("x", 2), ("z", 4)))]),
+    ]:
+        want = [[r.start, r.stop, r.step] for r in _pgr(rns, sns, gshape)]
+        xcheck = xcheck and (_fuse_forms(forms, gshape) == want)
+    check("fuse_forms_matches_planner", xcheck)
+
     # -- persistence across instances ------------------------------------------
     cat2 = ExtentCatalog(root=root)
     check("reopen_schema", cat2.schema(sid) == schema)
