@@ -15,6 +15,7 @@ alloc-node.sh
 .venv
 
 output/
+saved_results/
 .ipynb_checkpoints/
 unorg.ipynb
 possibledownloadImplementation.py
