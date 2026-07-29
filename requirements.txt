@@ -1,0 +1,3 @@
+# Sandboxed DSL execution (mcp_server run_pipeline -> sandbox.execute)
+# 0.0.19 removed pm.MontyRepl, which sandbox.execute() is built on.
+pydantic-monty>=0.0.18,<0.0.19
