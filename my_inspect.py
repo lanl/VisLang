@@ -131,7 +131,8 @@ def _build_remote_info(uri, meta, positions):
     info = DatasetInfo(uri, schema.get("filetype", "remote"),
                        list(schema.get("variables", [])),
                        dimensions=_dims_from_json(schema.get("dimensions", {})),
-                       attributes=dict(schema.get("attributes", {}) or {}))
+                       attributes=dict(schema.get("attributes", {}) or {}),
+                       itemsizes=dict(schema.get("itemsizes", {}) or {}))
 
     tree = meta.get("schema_tree")
     if info.filetype == "HDF5" and tree:

@@ -337,51 +337,86 @@ def _projection_of(prefix):
 
 
 # ---------------------------------------------------------------------------
+def _catalog_schema(schema):
+    """The persistable part of a schema. `itemsizes` is live inspect metadata and
+    is deliberately NOT stored in the catalog (see DatasetInfo.itemsizes)."""
+    return {k: v for k, v in (schema or {}).items() if k != "itemsizes"}
+
+
+def _prime_schema(conn, remote_path, catalog, sid, steps):
+    """Fetch the schema from the LOGIN NODE (metadata only, no allocation, no
+    bulk read) and store it, so the very first run of a file can size its own
+    transfer. Without this the cost gate is fed by the catalog, which is only
+    written AFTER a reduce — i.e. the first run, the one you cannot predict,
+    would ship ungated. Returns the schema dict (with live `itemsizes`) or None;
+    any failure is non-fatal — the caller proceeds as before."""
+    try:
+        from my_inspect import _run_remote_inspect
+        meta = _run_remote_inspect(conn, remote_path)
+        if not meta or not meta.get("ok") or meta.get("needs_adapter"):
+            return None
+        schema = meta.get("schema")
+        if not schema:
+            return None
+        catalog.store_schema(sid, _catalog_schema(schema))
+        steps.append(f"login-node inspect: schema cached "
+                     f"({len(schema.get('variables') or [])} vars, "
+                     f"dims={schema.get('dimensions')})")
+        return schema
+    except Exception as e:
+        steps.append(f"(login-node inspect skipped: {type(e).__name__}: {e})")
+        return None
+
+
 def _reduce_estimate(src, key, schema, missing, conn, steps):
     """Estimate a single-file remote reduce's wire transfer and append a readable
     line to `steps`. Returns a CostEstimate; when the reduced size can't be known
-    locally (no cached schema, or a value-dependent / particle narrowing) the
-    estimate carries read_mb=None (over_budget False), so the caller does not gate.
+    locally (no schema, or a value-dependent / particle narrowing) the estimate
+    carries read_mb=None (over_budget False), so the caller does not gate.
 
-    Reuses the catalog's own form-fuse (_grid_ranges_of) so the estimated shape
-    matches what the reduce actually reads. itemsize is not persisted to the
-    catalog, so grid bytes fall back to 4 B/element (noted)."""
+    The byte math is `my_estimate.estimate_plan_cost` — the same estimator the
+    local paths use — fed a DatasetInfo + a Narrowing built from the catalog's
+    own form-fuse (_grid_ranges_of), so the estimated shape matches what the
+    reduce actually reads and real dtypes are used when the schema carries them."""
     from my_estimate import estimate_plan_cost, format_plan_estimate
-    from datasetInfo import DatasetInfo
+    from my_inspect import _dims_from_json
+    from narrowing import Narrowing, AxisRange
 
     try:
         net_bw = measure_bandwidth(conn)
     except Exception:
         net_bw = None
 
-    wire_mb, note = None, None
-    dims = (schema or {}).get("dimensions") or {}
+    dims = _dims_from_json((schema or {}).get("dimensions") or {})
     grid = dims.get("grid")
-    n_missing = len(missing) if missing else len((schema or {}).get("variables") or [])
+    variables = list((schema or {}).get("variables") or [])
+    wire_vars = list(missing) if missing else variables
+
+    info, narrowing, note = None, None, None
     if schema is None:
-        note = ("reduced size unknown on first run (schema not yet cached) — not "
-                "gated; it will be estimated once the schema is cached.")
-    elif isinstance(grid, (tuple, list)) and len(grid) == 3:
+        note = ("schema unavailable (login-node inspect failed) — reduced size "
+                "not estimated; not gated.")
+    elif isinstance(grid, tuple) and len(grid) == 3:
         from my_catalog import _grid_ranges_of
-        ranges = _grid_ranges_of(key, tuple(grid))
+        ranges = _grid_ranges_of(key, grid)
         if ranges is None:
             note = ("value-dependent narrowing (threshold) — reduced size not "
                     "knowable before the read; not gated.")
         else:
-            cells = 1
-            for (a, b, s), dim in zip(ranges, grid):
-                a = a or 0
-                b = dim if b is None else min(b, dim)
-                s = s or 1
-                cells *= max(0, -(-(b - a) // s))
-            wire_mb = cells * max(1, n_missing) * 4 / (1024 ** 2)   # 4 B fallback
-            note = "grid bytes assume 4 B/element (dtype not persisted to catalog)."
+            narrowing = Narrowing(
+                grid_ranges=[AxisRange(a, b, s or 1) for a, b, s in ranges],
+                project=tuple(wire_vars))
+            info = DatasetInfo(src.uri, schema.get("filetype", "remote"), variables,
+                               dimensions=dims,
+                               itemsizes=dict(schema.get("itemsizes") or {}))
     else:
         note = "particle/unknown modality — reduced size not estimated; not gated."
 
-    stub = DatasetInfo(src.uri, "remote", [])
-    est = estimate_plan_cost(info=stub, narrowing=None, site="remote",
-                             read_mb_override=wire_mb, net_bw_bps=net_bw)
+    # No estimable shape -> a bare stub, so estimate_plan_cost reports read_mb
+    # None (modality unknown) rather than pricing the whole grid.
+    est = estimate_plan_cost(info=info or DatasetInfo(src.uri, "remote", []),
+                             narrowing=narrowing, site="remote",
+                             wire_vars=wire_vars, net_bw_bps=net_bw)
     if note:
         est.notes.append(note)
     steps.append(format_plan_estimate(est))
@@ -418,6 +453,11 @@ def remote_reduce(src, middle, confirm=False):
     key = _narrow_key(prefix)
     project = _projection_of(prefix)
     schema = catalog.schema(sid)
+    if schema is None:
+        # First sighting of this file: read its schema on the LOGIN NODE before
+        # anything ships. Feeds both the cost gate (below) and `want` — without
+        # it an unprojected spec can't be diffed against the catalog either.
+        schema = _prime_schema(conn, remote_path, catalog, sid, steps)
     want = project if project is not None else (
         list(schema["variables"]) if schema else None)
 
@@ -426,6 +466,19 @@ def remote_reduce(src, middle, confirm=False):
         have, missing = catalog.delta(sid, want, key)
         if have:
             steps.append(f"catalog: cached {sorted(have)} for this narrowing")
+
+    # --- cost gate: estimate the wire transfer BEFORE shipping the read -------
+    # Remote cost is bytes over ssh; we measure the link with a synthetic probe
+    # and gate on size + measured time. On a full cache hit nothing crosses, so
+    # there is nothing to gate. Runs BEFORE the allocation gate: it is login-node
+    # only (schema + a bandwidth probe), so even a run that stops for a missing
+    # allocation reports what it would have cost.
+    if want is None or missing:
+        estimate = _reduce_estimate(src, key, schema, missing, conn, steps)
+        if estimate is not None and estimate.over_budget and not confirm:
+            raise BudgetHold(estimate, steps)
+    else:
+        estimate = None
 
     # --- allocation gate: the server-side lowering/reduce srun-steps into a HELD
     # Slurm allocation. In AUTO discovery mode, if none exists we HOLD and PROPOSE
@@ -440,21 +493,10 @@ def remote_reduce(src, middle, confirm=False):
             steps.append(f"allocation: {alloc['reason']}")
             raise AllocationHold(alloc["reason"], recommended_salloc(host), steps)
 
-    # --- cost gate: estimate the wire transfer BEFORE shipping the read -------
-    # Remote cost is bytes over ssh; we measure the link with a synthetic probe
-    # and gate on size + measured time. On a full cache hit nothing crosses, so
-    # there is nothing to gate.
-    if want is None or missing:
-        estimate = _reduce_estimate(src, key, schema, missing, conn, steps)
-        if estimate is not None and estimate.over_budget and not confirm:
-            raise BudgetHold(estimate, steps)
-    else:
-        estimate = None
-
     fetched = {}
     if want is None or missing:
         meta, fetched = _run_remote_prefix(conn, remote_path, src, prefix, missing, steps)
-        catalog.store_schema(sid, meta["schema"])
+        catalog.store_schema(sid, _catalog_schema(meta["schema"]))
         schema = meta["schema"]
         for var, arr in fetched.items():
             catalog.store(sid, var, key, arr)

@@ -77,6 +77,10 @@ def _inspect_report(path):
             "dimensions": dict(info.dimensions or {}),
             "positions": list(info.positions) if info.positions else None,
             "attributes": dict(info.attributes or {}),
+            # Live metadata for the caller's cost estimate (honest byte math
+            # instead of a 4 B/element guess). NOT persisted to the catalog —
+            # remote_reduce._catalog_schema strips it before store_schema.
+            "itemsizes": {k: int(v) for k, v in (info.itemsizes or {}).items()},
             "filetype": info.filetype,
         },
         "schema_tree": schema_tree,
