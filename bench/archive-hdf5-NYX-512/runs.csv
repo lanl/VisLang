@@ -1,0 +1,12 @@
+started,site,route,forms,n_timesteps,source_mib,wire_mib,reduction_x,total_s,inspect_s,remote_exec_s,pull_s,materialize_s,sink_s,ssh_exec,remote_jobs,status
+2026-07-31T11:29:36,remote,held_budget,fields+subsample,,6656.02,0.0,,39.3013,,,,,,1,,NEEDS CONFIRM
+2026-07-31T11:30:16,remote,remote_reduce,fields+subsample,,6656.02,128.0,52.0,84.4314,,14.8391,24.2343,,0.0596,4,1,OK
+2026-07-31T11:31:40,remote,remote_folder_reduce,fields+subsample,3,19968.06,24.0,832.0,83.2068,,12.5051,8.5154,,0.0084,7,1,OK
+2026-07-31T11:33:03,remote,remote_folder_reduce,fields+subsample,3,19968.06,24.0,832.0,77.2964,,13.4304,10.1056,,0.0151,6,1,OK
+2026-07-31T11:34:21,remote,remote_folder_reduce,fields+subsample,1,6656.02,0.0,,22.4919,,,,,0.0063,1,,OK
+2026-07-31T11:34:43,remote,remote_folder_reduce,fields+subsample,3,19968.06,0.0,,22.1665,,,,,0.0232,1,,OK
+2026-07-31T11:35:05,remote,remote_folder_reduce,fields+region+subsample,3,19968.06,0.0,,23.6169,,,,,0.0092,1,,OK
+2026-07-31T11:35:29,remote,,fields,,6656.02,0.0,,15.0231,,,,,,,,FAILED
+2026-07-31T11:35:44,remote,,fields+region,,6656.02,0.0,,14.7873,,,,,,,,FAILED
+2026-07-31T11:35:59,remote,,fields+subsample,,6656.02,0.0,,15.5199,,,,,,,,FAILED
+2026-07-31T11:36:14,remote,,fields+subsample,,,0.0,,13.9087,,,,,,,,FAILED

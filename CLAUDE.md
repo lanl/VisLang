@@ -106,6 +106,11 @@ via `inspect`; the **run path is cache-only** and errors if one is missing.
   (ship the narrowing prefix next to the data), `vislang_exec.py` (the remote
   executor), `my_catalog.py` (local extent cache: `need − have = fetch`).
 - **Estimate**: `my_estimate.py`.
+- **Run records**: `vislang_trace.py` (human narration → `.vislang/trace.log`) and
+  `vislang_timing.py` (the same runs as data → `.vislang/timings.jsonl`: per-phase
+  seconds/bytes, ssh round trips, remote job launches, predicted-vs-actual,
+  catalog reuse). `VISLANG_TIMING=0` disables it; `bench/summarize.py` turns the
+  JSONL into tables/CSV (`--csv DIR`).
 
 ## Non-negotiable principles
 

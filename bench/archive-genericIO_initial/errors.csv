@@ -1,0 +1,5 @@
+started,status,site,forms,total_s,wire_mib,materialized,error
+2026-07-31T13:36:43,NEEDS CONFIRM,remote,fields+subsample,41.4935,0.0,no,HELD (budget) — nothing materialized
+2026-07-31T13:40:17,FAILED,remote,fields,14.7666,0.0,no,"ValueError: fields: ['zmett'] not available here; have ['hh', 'id', 'mask', 'mass', 'mu', 'phi', 'rho', 'status', 'uu', 'vx', 'vy', 'vz', 'x', 'y',..."
+2026-07-31T13:40:32,FAILED,remote,fields+threshold,14.8862,0.0,no,"ValueError: threshold variable 'temperature' not in ['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', ..."
+2026-07-31T13:40:47,FAILED,remote,fields+subsample,14.7981,0.0,no,"ValueError: per-axis subsample doesn't apply to point data; use a single factor, e.g. subsample(d, 0.1)"

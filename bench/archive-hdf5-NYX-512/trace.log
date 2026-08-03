@@ -1,0 +1,213 @@
+
+==============================================================================
+=== VisLang session  pid=51045  2026-07-31 11:29:36
+==============================================================================
+
+----- run 11:30:16  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E1a.py -----
+Status: NEEDS CONFIRM
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E1a.py
+
+(OVER BUDGET — one or more pipelines were HELD; nothing was materialized for them. Show the estimate to the user and let them choose: commit as-is (re-run with confirm=True) or narrow the spec. Do not auto-confirm.)
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5  (HELD — over budget, nothing materialized)
+    spec (as written): source(nyx512#1.hdf5) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(2) → save
+    remote source darwin:/projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5 (6979.3 MB, id=686dca5e)
+    login-node inspect: schema cached (13 vars, dims={'grid': [512, 512, 512]})
+    static check: request valid against the cached schema (13 vars, dims={'grid': (512, 512, 512)})
+    Cost estimate (remote):
+      over the wire: ~128 MB
+      result size: ~128 MB
+      est. time: ~2.0 min–8.1 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (time) — confirm to run as-is, or narrow the spec.
+
+----- run 11:31:40  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E1b.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E1b.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5
+    spec (as written): source(nyx512#1.hdf5) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(2) → save
+    remote source darwin:/projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5 (6979.3 MB, id=686dca5e)
+    static check: request valid against the cached schema (13 vars, dims={'grid': (512, 512, 512)})
+    Cost estimate (remote):
+      over the wire: ~128 MB
+      result size: ~128 MB
+      est. time: ~2.1 min–8.5 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158153
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5", "positions": null}, {"kind": "fields", "keep": ["native_fields/temperature", "native_fields/baryon_density"]}, {"kind": "subsample", "uniform": 2, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_9aeaf812.npz (vars ['native_fields/temperature', 'native_fields/baryon_density'])
+    srun --jobid=17158153: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_9aeaf812.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(nyx512#1.hdf5) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(2) → save
+    remote:  inspect /projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5 → HDF5: vars=['derived_fields/HI_number_density', 'derived_fields/HeIII_number_density', 'derived_fields/tau_local', 'derived_fields/tau_real', 'derived_fields/tau_red', 'derived_fields/tau_red_heii', 'derived_fields/taubeta_red', 'native_fields/baryon_density', 'native_fields/dark_matter_density', 'native_fields/temperature', 'native_fields/velocity_x', 'native_fields/velocity_y', 'native_fields/velocity_z'], dims={'grid': (512, 512, 512)}
+    remote:  project fields=['native_fields/temperature', 'native_fields/baryon_density']
+    remote:  subsample uniform=2 (pushdown)
+    remote:  fuse -> grid_ranges=[(None, None, 2), (None, None, 2), (None, None, 2)], project=['native_fields/temperature', 'native_fields/baryon_density']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_9aeaf812.npz
+    pulled 2 var(s), 134.2 MB over the wire
+    assembled 2 var(s), 134.2 MB (0 cached, 2 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e1_sub2.hdf5
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_9aeaf812.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_9aeaf812.npz
+  pull_9aeaf812.npz
+          8945664   7%   17.06MB/s   00:00:07
+         16777216  12%   14.92MB/s   00:00:07
+         22740992  17%   11.36MB/s   00:00:09
+         28540928  21%   10.95MB/s   00:00:09
+         34013184  25%   10.40MB/s   00:00:09
+         39190528  29%    9.80MB/s   00:00:09
+         44793856  33%   10.61MB/s   00:00:08
+         51871744  39%   13.46MB/s   00:00:05
+         58785792  44%   13.15MB/s   00:00:05
+         65634304  49%   12.98MB/s   00:00:05
+         72679424  54%   13.33MB/s   00:00:04
+         81428480  61%   16.66MB/s   00:00:03
+         91684864  68%   19.47MB/s   00:00:02
+        103546880  77%   22.61MB/s   00:00:01
+        115867648  86%   23.46MB/s   00:00:00
+        127303680  95%   21.73MB/s   00:00:00
+        134218320 100%   15.38MB/s   00:00:08 (xfer#1, to-check=0/1)
+
+✓ Downloaded 134.2 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_9aeaf812.npz
+[save] wrote 2 array(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e1_sub2.hdf5
+
+----- run 11:33:03  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q1.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q1.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series
+    spec (as written): source(nyx_series) → timesteps(0,2) → fields[native_fields/temperature] → subsample(4) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 0/3 (timestep,variable) extent(s); fetching ['native_fields/temperature'] (3 pair(s)) for 3 timestep(s)
+    login-node inspect: schema cached (13 vars, dims={'grid': [512, 512, 512]})
+    static check: request valid against the cached schema (13 vars, dims={'grid': (512, 512, 512)})
+    srun: discovered held allocation jobid=17158153
+    remote folder darwin:/projects/autonomousvis/ashrestha/nyx_series (catalog delta)
+    ship plan.json + manifest (delta ['native_fields/temperature']) to the remote
+    srun --jobid=17158153: one step for the whole delta
+    pulled delta: 3 (timestep,var) array(s), 25.17 MB over the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1
+    remote compute on darwin (srun jobid=17158153): reused 0/3 extent(s) from the catalog; fetched ['native_fields/temperature'] — 3 (timestep,variable) pair(s) crossed the wire
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1
+
+--- Output ---
+
+✓ Downloaded 25.2 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/folderpull_4f268ab3
+[save] wrote 3 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1/
+
+----- run 11:34:21  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q2.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q2.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series
+    spec (as written): source(nyx_series) → timesteps(0,2) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(4) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 3/6 (timestep,variable) extent(s); fetching ['native_fields/baryon_density'] (3 pair(s)) for 3 timestep(s)
+    static check: request valid against the cached schema (13 vars, dims={'grid': (512, 512, 512)})
+    srun: discovered held allocation jobid=17158153
+    remote folder darwin:/projects/autonomousvis/ashrestha/nyx_series (catalog delta)
+    ship plan.json + manifest (delta ['native_fields/baryon_density']) to the remote
+    srun --jobid=17158153: one step for the whole delta
+    pulled delta: 3 (timestep,var) array(s), 25.17 MB over the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2
+    remote compute on darwin (srun jobid=17158153): reused 3/6 extent(s) from the catalog; fetched ['native_fields/baryon_density'] — 3 (timestep,variable) pair(s) crossed the wire
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2
+
+--- Output ---
+
+✓ Downloaded 25.2 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/folderpull_f6e464e3
+[save] wrote 3 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2/
+
+----- run 11:34:43  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q3.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q3.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series
+    spec (as written): source(nyx_series) → timesteps(1,1) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(4) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 2/2 (timestep,variable) extent(s) — full hit, nothing crosses the wire
+    static check: request valid against the cached schema (13 vars, dims={'grid': (512, 512, 512)})
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3
+    remote compute on darwin: reused 2/2 extent(s) from the catalog; nothing crossed the wire (full catalog hit)
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3
+
+--- Output ---
+[save] wrote 1 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3/
+
+----- run 11:35:05  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q4.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q4.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series
+    spec (as written): source(nyx_series) → timesteps(0,2) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(4) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 6/6 (timestep,variable) extent(s) — full hit, nothing crosses the wire
+    static check: request valid against the cached schema (13 vars, dims={'grid': (512, 512, 512)})
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4
+    remote compute on darwin: reused 6/6 extent(s) from the catalog; nothing crossed the wire (full catalog hit)
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4
+
+--- Output ---
+[save] wrote 3 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4/
+
+----- run 11:35:29  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q5.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q5.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series
+    spec (as written): source(nyx_series) → timesteps(0,2) → fields[native_fields/temperature,native_fields/baryon_density] → region{x:(0,256)} → subsample(4) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 6/6 (timestep,variable) extent(s) — full hit, nothing crosses the wire
+    static check: request valid against the cached schema (13 vars, dims={'grid': (512, 512, 512)})
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5
+    remote compute on darwin: reused 6/6 extent(s) from the catalog; nothing crossed the wire (full catalog hit)
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5
+
+--- Output ---
+[save] wrote 3 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5/
+
+----- run 11:35:44  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3a.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3a.py
+
+--- Pipelines ---
+[save] FAILED: ValueError: fields: ['native_fields/temperatur'] not available here; have ['derived_fields/HI_number_density', 'derived_fields/HeIII_number_density', 'derived_fields/tau_local', 'derived_fields/tau_real', 'derived_fields/tau_red', 'derived_fields/tau_red_heii', 'derived_fields/taubeta_red', 'native_fields/baryon_density', 'native_fields/dark_matter_density', 'native_fields/temperature', 'native_fields/velocity_x', 'native_fields/velocity_y', 'native_fields/velocity_z']
+
+----- run 11:35:59  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3b.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3b.py
+
+--- Pipelines ---
+[save] FAILED: ValueError: region axis 0: [0:99999] out of bounds 0..512
+
+----- run 11:36:14  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3c.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3c.py
+
+--- Pipelines ---
+[save] FAILED: ValueError: unknown axis 'w'; this grid has 3 axes (x, y, z)
+
+----- run 11:36:28  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3d.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3d.py
+
+--- Pipelines ---
+[render] FAILED: NotImplementedError: render over a timeseries folder isn't supported — select one timestep with timesteps(node, N, N), or use save() to write the range.

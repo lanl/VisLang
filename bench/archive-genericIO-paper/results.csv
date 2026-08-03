@@ -1,0 +1,21 @@
+E1 — Single-snapshot remote reduction
+Quantity,Value
+Source,"8,512.32 MiB GenericIO"
+Request,fields(4/17) → subsample(3) → save
+Output transferred,"1,365.33 MiB"
+Network bandwidth,11.15–17.28 MiB/s
+Remote reduction time,14.13 s
+Pull time,79.02 s
+End-to-end Sieve time,141.66 s
+
+E2 — Eight-question investigation of one 8.31 GiB HACC snapshot
+Query,Request,Reuse,Hit (%),Wire,srun,Pull (s),Total (s)
+q1,add uu — is any gas hot?,4/5,80,341.33 MiB,1,30.61,87.90
+q2,add zmet — baseline enrichment (control),5/6,83,341.33 MiB,1,30.14,85.30
+q3,filter hot + diffuse (wind lineage),0/6,0,34.56 MiB,1,17.52,86.81
+q4,"add vx,vy,vz — outflowing?",6/9,67,17.28 MiB,1,17.06,82.62
+q5,"figure: x,y,z,zmet only (fewer vars)",4/4,100,0,0,–,15.11
+q6,retune to a strictly tighter uu cut,0/6,0,1.72 MiB,1,15.65,74.26
+q7,"add vx,vy,vz in the retuned lineage",6/9,67,0.86 MiB,1,15.26,74.24
+q8,contrast: cold + dense (halo lineage),0/6,0,149.41 MiB,1,22.85,88.99
+Session total,,,,886.49 MiB,7,149.09,595.22

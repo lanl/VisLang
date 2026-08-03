@@ -1,0 +1,594 @@
+
+==============================================================================
+=== VisLang session  pid=34656  2026-07-31 15:41:25
+==============================================================================
+
+----- run 15:42:06  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E1a.py -----
+Status: NEEDS CONFIRM
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E1a.py
+
+(OVER BUDGET — one or more pipelines were HELD; nothing was materialized for them. Show the estimate to the user and let them choose: commit as-is (re-run with confirm=True) or narrow the spec. Do not auto-confirm.)
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624  (HELD — over budget, nothing materialized)
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho] → subsample(3) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    login-node inspect: schema cached (17 vars, dims={'particles': 268435456})
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~1365 MB
+      result size: ~1365 MB
+      est. time: ~22.4 min–89.6 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (size+time) — confirm to run as-is, or narrow the spec.
+
+----- run 15:44:28  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E1b.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E1b.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho] → subsample(3) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~1365 MB
+      result size: ~1365 MB
+      est. time: ~22.4 min–89.4 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (size+time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["x", "y", "z", "rho"]}, {"kind": "subsample", "uniform": 3, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_dfdbdff1.npz (vars ['x', 'y', 'z', 'rho'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_dfdbdff1.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho] → subsample(3) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['x', 'y', 'z', 'rho']
+    remote:  subsample uniform=3 (pushdown)
+    remote:  fuse -> particles=slice(None, None, 3), project=['x', 'y', 'z', 'rho']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_dfdbdff1.npz
+    pulled 4 var(s), 1431.7 MB over the wire
+    assembled 4 var(s), 1431.7 MB (0 cached, 4 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e1_survey.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_dfdbdff1.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_dfdbdff1.npz
+  pull_dfdbdff1.npz
+         10092544   1%   19.24MB/s   00:01:10
+         20152320   1%   19.13MB/s   00:01:10
+         29589504   2%   17.99MB/s   00:01:14
+         36995072   3%   14.06MB/s   00:01:34
+         46170112   3%   17.50MB/s   00:01:15
+         55181312   4%   17.15MB/s   00:01:16
+         64978944   5%   18.67MB/s   00:01:09
+         73662464   5%   16.51MB/s   00:01:18
+         83525632   6%   18.78MB/s   00:01:08
+         94830592   7%   21.53MB/s   00:00:59
+        106332160   7%   21.90MB/s   00:00:57
+        113573888   8%   13.79MB/s   00:01:31
+        120979456   8%   14.02MB/s   00:01:29
+        126877696   9%   11.20MB/s   00:01:51
+        136052736  10%   17.32MB/s   00:01:11
+        144736256  10%   16.51MB/s   00:01:14
+        153288704  11%   16.29MB/s   00:01:14
+        161939456  11%   16.43MB/s   00:01:13
+        174817280  12%   24.51MB/s   00:00:48
+        187367424  13%   23.84MB/s   00:00:49
+        198967296  14%   22.01MB/s   00:00:53
+        210894848  15%   22.70MB/s   00:00:51
+        223543296  16%   24.03MB/s   00:00:47
+        238518272  17%   28.46MB/s   00:00:39
+        252575744  18%   26.74MB/s   00:00:42
+        261554176  18%   17.06MB/s   00:01:05
+        271745024  19%   19.44MB/s   00:00:56
+        278691840  19%   13.25MB/s   00:01:23
+        287571968  20%   16.93MB/s   00:01:04
+        299630592  21%   22.96MB/s   00:00:47
+        312705024  22%   24.91MB/s   00:00:42
+        324042752  23%   21.56MB/s   00:00:48
+        335118336  23%   21.12MB/s   00:00:49
+        344358912  24%   17.59MB/s   00:00:58
+        356319232  25%   22.73MB/s   00:00:45
+        368967680  26%   24.07MB/s   00:00:42
+        378109952  26%   17.37MB/s   00:00:57
+        390365184  27%   23.28MB/s   00:00:42
+        401801216  28%   21.75MB/s   00:00:45
+        411500544  29%   18.44MB/s   00:00:52
+        422805504  30%   21.45MB/s   00:00:44
+        432046080  30%   17.57MB/s   00:00:54
+        443351040  31%   21.48MB/s   00:00:43
+        457965568  32%   27.82MB/s   00:00:33
+        474054656  33%   30.63MB/s   00:00:29
+        489881600  34%   30.17MB/s   00:00:29
+        505544704  35%   29.78MB/s   00:00:29
+        519995392  36%   27.50MB/s   00:00:31
+        532611072  37%   24.01MB/s   00:00:35
+        540672000  38%   15.36MB/s   00:00:55
+        552730624  39%   22.82MB/s   00:00:36
+        561676288  39%   17.02MB/s   00:00:48
+        570228736  40%   16.31MB/s   00:00:50
+        581369856  41%   21.25MB/s   00:00:38
+        590544896  41%   17.47MB/s   00:00:45
+        599261184  42%   16.58MB/s   00:00:47
+        608206848  42%   16.97MB/s   00:00:46
+        616169472  43%   15.18MB/s   00:00:51
+        626262016  44%   19.24MB/s   00:00:39
+        635699200  44%   17.93MB/s   00:00:42
+        645070848  45%   17.85MB/s   00:00:42
+        654999552  46%   18.89MB/s   00:00:39
+        666927104  47%   22.69MB/s   00:00:32
+        678854656  47%   22.68MB/s   00:00:31
+        690421760  48%   21.93MB/s   00:00:32
+        700973056  49%   20.05MB/s   00:00:34
+        712540160  50%   22.02MB/s   00:00:31
+        726335488  51%   26.28MB/s   00:00:25
+        738230272  52%   22.66MB/s   00:00:29
+        750714880  52%   23.79MB/s   00:00:27
+        765198336  53%   27.60MB/s   00:00:23
+        779911168  54%   28.02MB/s   00:00:22
+        790233088  55%   19.65MB/s   00:00:31
+        800325632  56%   19.20MB/s   00:00:31
+        810516480  57%   19.40MB/s   00:00:30
+        820936704  57%   19.85MB/s   00:00:29
+        832012288  58%   21.07MB/s   00:00:27
+        840663040  59%   16.42MB/s   00:00:34
+        851214336  59%   20.12MB/s   00:00:27
+        862486528  60%   21.44MB/s   00:00:25
+        874774528  61%   23.40MB/s   00:00:22
+        885030912  62%   19.53MB/s   00:00:26
+        895385600  63%   19.62MB/s   00:00:26
+        901775360  63%   12.11MB/s   00:00:41
+        909672448  64%   15.01MB/s   00:00:33
+        917864448  64%   15.59MB/s   00:00:31
+        926973952  65%   17.32MB/s   00:00:27
+        935493632  65%   16.22MB/s   00:00:29
+        945946624  66%   19.89MB/s   00:00:23
+        957251584  67%   21.42MB/s   00:00:21
+        968458240  68%   21.30MB/s   00:00:20
+        979992576  68%   21.92MB/s   00:00:19
+        990314496  69%   19.60MB/s   00:00:21
+        998998016  70%   16.55MB/s   00:00:24
+       1009614848  71%   20.21MB/s   00:00:19
+       1021968384  71%   23.41MB/s   00:00:16
+       1032388608  72%   19.83MB/s   00:00:19
+       1044021248  73%   22.18MB/s   00:00:16
+       1056276480  74%   23.36MB/s   00:00:15
+       1070596096  75%   27.30MB/s   00:00:12
+       1086095360  76%   29.52MB/s   00:00:11
+       1099628544  77%   25.76MB/s   00:00:12
+       1114243072  78%   27.76MB/s   00:00:10
+       1129250816  79%   28.19MB/s   00:00:10
+       1144553472  80%   29.14MB/s   00:00:09
+       1158610944  81%   26.54MB/s   00:00:09
+       1168506880  82%   18.54MB/s   00:00:13
+       1178173440  82%   18.42MB/s   00:00:13
+       1188626432  83%   19.93MB/s   00:00:11
+       1199374336  84%   20.45MB/s   00:00:10
+       1213890560  85%   27.64MB/s   00:00:07
+       1227587584  86%   26.12MB/s   00:00:07
+       1240104960  87%   23.77MB/s   00:00:07
+       1255112704  88%   28.59MB/s   00:00:05
+       1269170176  89%   26.80MB/s   00:00:05
+       1279557632  89%   19.73MB/s   00:00:07
+       1290928128  90%   21.66MB/s   00:00:06
+       1301086208  91%   19.37MB/s   00:00:06
+       1314029568  92%   24.67MB/s   00:00:04
+       1328283648  93%   27.16MB/s   00:00:03
+       1345519616  94%   32.75MB/s   00:00:02
+       1359478784  95%   26.47MB/s   00:00:02
+       1371013120  96%   21.98MB/s   00:00:02
+       1385660416  97%   27.85MB/s   00:00:01
+       1401421824  98%   29.98MB/s   00:00:00
+       1416167424  99%   28.09MB/s   00:00:00
+       1428848640 100%   24.13MB/s   00:00:00
+       1431656738 100%   21.40MB/s   00:01:03 (xfer#1, to-check=0/1)
+
+✓ Downloaded 1431.7 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_dfdbdff1.npz
+[save] wrote 4 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e1_survey.npz (no writer for GenericIO; wrote npz)
+
+----- run 15:45:56  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q1.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q1.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu] → subsample(3) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    catalog: cached ['rho', 'x', 'y', 'z'] for this narrowing
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~341 MB
+      result size: ~1707 MB
+      est. time: ~5.6 min–22.3 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["uu"]}, {"kind": "subsample", "uniform": 3, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_b39663e9.npz (vars ['uu'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_b39663e9.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[uu] → subsample(3) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['uu']
+    remote:  subsample uniform=3 (pushdown)
+    remote:  fuse -> particles=slice(None, None, 3), project=['uu']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_b39663e9.npz
+    pulled 1 var(s), 357.9 MB over the wire
+    assembled 5 var(s), 1789.6 MB (4 cached, 1 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_b39663e9.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_b39663e9.npz
+  pull_b39663e9.npz
+         13238272   4%   25.16MB/s   00:00:13
+         26279936   7%   24.83MB/s   00:00:12
+         36732928  10%   19.91MB/s   00:00:15
+         46694400  13%   18.94MB/s   00:00:15
+         57016320  16%   19.60MB/s   00:00:14
+         67600384  19%   20.16MB/s   00:00:13
+         79724544  22%   23.10MB/s   00:00:11
+         94208000  26%   27.53MB/s   00:00:09
+        109150208  30%   28.30MB/s   00:00:08
+        121798656  34%   24.08MB/s   00:00:09
+        133365760  37%   22.02MB/s   00:00:09
+        142966784  40%   18.29MB/s   00:00:11
+        152240128  43%   17.65MB/s   00:00:11
+        164626432  46%   23.58MB/s   00:00:07
+        179208192  50%   27.78MB/s   00:00:06
+        193527808  54%   27.23MB/s   00:00:05
+        210501632  59%   32.34MB/s   00:00:04
+        225673216  63%   28.87MB/s   00:00:04
+        237797376  66%   23.07MB/s   00:00:04
+        251559936  70%   26.15MB/s   00:00:03
+        263192576  74%   22.17MB/s   00:00:04
+        277315584  77%   26.86MB/s   00:00:02
+        291176448  81%   26.36MB/s   00:00:02
+        303595520  85%   23.64MB/s   00:00:02
+        314703872  88%   21.12MB/s   00:00:01
+        322863104  90%   15.45MB/s   00:00:02
+        333414400  93%   20.08MB/s   00:00:01
+        346554368  97%   25.04MB/s   00:00:00
+        356974592 100%   19.79MB/s   00:00:00
+        357914202 100%   23.41MB/s   00:00:14 (xfer#1, to-check=0/1)
+
+✓ Downloaded 357.9 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_b39663e9.npz
+[save] wrote 5 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1.npz (no writer for GenericIO; wrote npz)
+
+----- run 15:47:21  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q2.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q2.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet] → subsample(3) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    catalog: cached ['rho', 'uu', 'x', 'y', 'z'] for this narrowing
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~341 MB
+      result size: ~2048 MB
+      est. time: ~5.4 min–21.4 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["zmet"]}, {"kind": "subsample", "uniform": 3, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_837255f8.npz (vars ['zmet'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_837255f8.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[zmet] → subsample(3) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['zmet']
+    remote:  subsample uniform=3 (pushdown)
+    remote:  fuse -> particles=slice(None, None, 3), project=['zmet']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_837255f8.npz
+    pulled 1 var(s), 357.9 MB over the wire
+    assembled 6 var(s), 2147.5 MB (5 cached, 1 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_837255f8.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_837255f8.npz
+  pull_837255f8.npz
+         11960320   3%   22.79MB/s   00:00:14
+         22642688   6%   20.31MB/s   00:00:15
+         32276480   9%   18.35MB/s   00:00:16
+         43941888  12%   22.19MB/s   00:00:13
+         53968896  15%   19.12MB/s   00:00:15
+         64159744  18%   19.43MB/s   00:00:14
+         72548352  20%   16.00MB/s   00:00:17
+         82214912  23%   18.43MB/s   00:00:14
+         93224960  26%   20.90MB/s   00:00:12
+        101974016  28%   16.62MB/s   00:00:14
+        110952448  31%   17.06MB/s   00:00:13
+        123109376  34%   23.17MB/s   00:00:09
+        135921664  38%   24.36MB/s   00:00:08
+        148242432  41%   23.47MB/s   00:00:08
+        162594816  45%   27.33MB/s   00:00:06
+        177799168  50%   28.99MB/s   00:00:05
+        194510848  54%   31.73MB/s   00:00:04
+        212402176  59%   34.07MB/s   00:00:04
+        227278848  64%   28.35MB/s   00:00:04
+        237928448  66%   20.28MB/s   00:00:05
+        248446976  69%   20.00MB/s   00:00:05
+        258768896  72%   19.61MB/s   00:00:04
+        268337152  75%   18.21MB/s   00:00:04
+        278724608  78%   19.75MB/s   00:00:03
+        289865728  81%   21.07MB/s   00:00:03
+        302252032  84%   23.62MB/s   00:00:02
+        314998784  88%   24.28MB/s   00:00:01
+        327483392  91%   23.80MB/s   00:00:01
+        341835776  96%   27.35MB/s   00:00:00
+        353992704  99%   23.16MB/s   00:00:00
+        357914206 100%   22.42MB/s   00:00:15 (xfer#1, to-check=0/1)
+
+✓ Downloaded 357.9 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_837255f8.npz
+[save] wrote 6 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2.npz (no writer for GenericIO; wrote npz)
+
+==============================================================================
+=== VisLang session  pid=35385  2026-07-31 15:50:05
+==============================================================================
+
+----- run 15:51:32  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q3.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q3.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet] → threshold(uu>68000.0) → threshold(rho<33000000000.0) → subsample(3) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~6144 MB
+      result size: ~6144 MB
+      est. time: ~1.7 h–6.7 h (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      note: value-dependent row cut — the count survives only after the read, so this prices the pre-cut selection: an UPPER bound.
+      ⚠ OVER BUDGET (size+time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["x", "y", "z", "rho", "uu", "zmet"]}, {"kind": "threshold", "var": "uu", "op": ">", "value": 68000.0}, {"kind": "threshold", "var": "rho", "op": "<", "value": 33000000000.0}, {"kind": "subsample", "uniform": 3, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_8f691179.npz (vars ['x', 'y', 'z', 'rho', 'uu', 'zmet'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_8f691179.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet] → threshold(uu>68000.0) → threshold(rho<33000000000.0) → subsample(3) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['x', 'y', 'z', 'rho', 'uu', 'zmet']
+    remote:  threshold uu > 68000.0 (row mask)
+    remote:  threshold rho < 33000000000.0 (row mask)
+    remote:  subsample uniform=3 (post-read: follows a computed cut)
+    remote:  fuse -> project=['x', 'y', 'z', 'rho', 'uu', 'zmet'], post_ops=['RowMask', 'RowMask', 'RowSample']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_8f691179.npz
+    pulled 6 var(s), 36.2 MB over the wire
+    assembled 6 var(s), 36.2 MB (0 cached, 6 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_8f691179.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_8f691179.npz
+  pull_8f691179.npz
+         10780672  30%   20.56MB/s   00:00:01
+         25264128  70%   27.53MB/s   00:00:00
+         36243142 100%   23.16MB/s   00:00:01 (xfer#1, to-check=0/1)
+
+✓ Downloaded 36.2 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_8f691179.npz
+[save] wrote 6 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3.npz (no writer for GenericIO; wrote npz)
+
+----- run 15:52:55  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q4.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q4.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet,vx,vy,vz] → threshold(uu>68000.0) → threshold(rho<33000000000.0) → subsample(3) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    catalog: cached ['rho', 'uu', 'x', 'y', 'z', 'zmet'] for this narrowing
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~3072 MB
+      result size: ~9216 MB
+      est. time: ~49.9 min–3.3 h (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      note: value-dependent row cut — the count survives only after the read, so this prices the pre-cut selection: an UPPER bound.
+      ⚠ OVER BUDGET (size+time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["vx", "vy", "vz"]}, {"kind": "threshold", "var": "uu", "op": ">", "value": 68000.0}, {"kind": "threshold", "var": "rho", "op": "<", "value": 33000000000.0}, {"kind": "subsample", "uniform": 3, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_d7e81ecc.npz (vars ['vx', 'vy', 'vz'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_d7e81ecc.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[vx,vy,vz] → threshold(uu>68000.0) → threshold(rho<33000000000.0) → subsample(3) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['vx', 'vy', 'vz']
+    remote:  threshold uu > 68000.0 (row mask)
+    remote:  threshold rho < 33000000000.0 (row mask)
+    remote:  subsample uniform=3 (post-read: follows a computed cut)
+    remote:  fuse -> project=['vx', 'vy', 'vz'], post_ops=['RowMask', 'RowMask', 'RowSample']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_d7e81ecc.npz
+    pulled 3 var(s), 18.1 MB over the wire
+    assembled 9 var(s), 54.4 MB (6 cached, 3 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_d7e81ecc.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_d7e81ecc.npz
+  pull_d7e81ecc.npz
+         10682368  59%   20.32MB/s   00:00:00
+         18121582 100%   20.90MB/s   00:00:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 18.1 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_d7e81ecc.npz
+[save] wrote 9 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4.npz (no writer for GenericIO; wrote npz)
+
+----- run 15:53:10  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q5.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q5.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,zmet] → threshold(uu>68000.0) → threshold(rho<33000000000.0) → subsample(3) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    catalog: cached ['x', 'y', 'z', 'zmet'] for this narrowing
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    catalog: full hit — nothing crossed the wire
+    assembled 4 var(s), 24.2 MB (4 cached, 0 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5.npz
+
+--- Output ---
+[save] wrote 4 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5.npz (no writer for GenericIO; wrote npz)
+
+----- run 15:54:24  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q6.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q6.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet] → threshold(uu>250000.0) → threshold(rho<33000000000.0) → subsample(3) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~6144 MB
+      result size: ~6144 MB
+      est. time: ~1.6 h–6.6 h (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      note: value-dependent row cut — the count survives only after the read, so this prices the pre-cut selection: an UPPER bound.
+      ⚠ OVER BUDGET (size+time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["x", "y", "z", "rho", "uu", "zmet"]}, {"kind": "threshold", "var": "uu", "op": ">", "value": 250000.0}, {"kind": "threshold", "var": "rho", "op": "<", "value": 33000000000.0}, {"kind": "subsample", "uniform": 3, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_3336814c.npz (vars ['x', 'y', 'z', 'rho', 'uu', 'zmet'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_3336814c.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet] → threshold(uu>250000.0) → threshold(rho<33000000000.0) → subsample(3) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['x', 'y', 'z', 'rho', 'uu', 'zmet']
+    remote:  threshold uu > 250000.0 (row mask)
+    remote:  threshold rho < 33000000000.0 (row mask)
+    remote:  subsample uniform=3 (post-read: follows a computed cut)
+    remote:  fuse -> project=['x', 'y', 'z', 'rho', 'uu', 'zmet'], post_ops=['RowMask', 'RowMask', 'RowSample']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_3336814c.npz
+    pulled 6 var(s), 1.8 MB over the wire
+    assembled 6 var(s), 1.8 MB (0 cached, 6 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q6.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_3336814c.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_3336814c.npz
+  pull_3336814c.npz
+          1807894 100%   24.36MB/s   00:00:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 1.8 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_3336814c.npz
+[save] wrote 6 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q6.npz (no writer for GenericIO; wrote npz)
+
+----- run 15:55:38  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q7.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q7.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet,vx,vy,vz] → threshold(uu>250000.0) → threshold(rho<33000000000.0) → subsample(3) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    catalog: cached ['rho', 'uu', 'x', 'y', 'z', 'zmet'] for this narrowing
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~3072 MB
+      result size: ~9216 MB
+      est. time: ~55.0 min–3.7 h (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      note: value-dependent row cut — the count survives only after the read, so this prices the pre-cut selection: an UPPER bound.
+      ⚠ OVER BUDGET (size+time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["vx", "vy", "vz"]}, {"kind": "threshold", "var": "uu", "op": ">", "value": 250000.0}, {"kind": "threshold", "var": "rho", "op": "<", "value": 33000000000.0}, {"kind": "subsample", "uniform": 3, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_33b7b10b.npz (vars ['vx', 'vy', 'vz'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_33b7b10b.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[vx,vy,vz] → threshold(uu>250000.0) → threshold(rho<33000000000.0) → subsample(3) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['vx', 'vy', 'vz']
+    remote:  threshold uu > 250000.0 (row mask)
+    remote:  threshold rho < 33000000000.0 (row mask)
+    remote:  subsample uniform=3 (post-read: follows a computed cut)
+    remote:  fuse -> project=['vx', 'vy', 'vz'], post_ops=['RowMask', 'RowMask', 'RowSample']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_33b7b10b.npz
+    pulled 3 var(s), 0.9 MB over the wire
+    assembled 9 var(s), 2.7 MB (6 cached, 3 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q7.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_33b7b10b.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_33b7b10b.npz
+  pull_33b7b10b.npz
+           903958 100%   17.17MB/s   00:00:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 0.9 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_33b7b10b.npz
+[save] wrote 9 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q7.npz (no writer for GenericIO; wrote npz)
+
+----- run 15:57:07  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q8.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q8.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet] → threshold(uu<68000.0) → threshold(rho>86000000000.0) → subsample(3) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~6144 MB
+      result size: ~6144 MB
+      est. time: ~1.7 h–6.9 h (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      note: value-dependent row cut — the count survives only after the read, so this prices the pre-cut selection: an UPPER bound.
+      ⚠ OVER BUDGET (size+time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["x", "y", "z", "rho", "uu", "zmet"]}, {"kind": "threshold", "var": "uu", "op": "<", "value": 68000.0}, {"kind": "threshold", "var": "rho", "op": ">", "value": 86000000000.0}, {"kind": "subsample", "uniform": 3, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_51e78cd2.npz (vars ['x', 'y', 'z', 'rho', 'uu', 'zmet'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_51e78cd2.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet] → threshold(uu<68000.0) → threshold(rho>86000000000.0) → subsample(3) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['x', 'y', 'z', 'rho', 'uu', 'zmet']
+    remote:  threshold uu < 68000.0 (row mask)
+    remote:  threshold rho > 86000000000.0 (row mask)
+    remote:  subsample uniform=3 (post-read: follows a computed cut)
+    remote:  fuse -> project=['x', 'y', 'z', 'rho', 'uu', 'zmet'], post_ops=['RowMask', 'RowMask', 'RowSample']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_51e78cd2.npz
+    pulled 6 var(s), 156.7 MB over the wire
+    assembled 6 var(s), 156.7 MB (0 cached, 6 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q8.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_51e78cd2.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_51e78cd2.npz
+  pull_51e78cd2.npz
+         16973824  11%   32.27MB/s   00:00:04
+         32702464  21%   29.85MB/s   00:00:03
+         45023232  29%   23.47MB/s   00:00:04
+         60555264  39%   29.52MB/s   00:00:03
+         76021760  49%   29.48MB/s   00:00:02
+         90832896  58%   28.23MB/s   00:00:02
+         98861056  63%   15.25MB/s   00:00:03
+        108363776  69%   18.11MB/s   00:00:02
+        115113984  73%   12.84MB/s   00:00:03
+        124256256  79%   17.39MB/s   00:00:01
+        131760128  84%   14.21MB/s   00:00:01
+        142934016  91%   21.23MB/s   00:00:00
+        155451392  99%   23.78MB/s   00:00:00
+        156664966 100%   22.75MB/s   00:00:06 (xfer#1, to-check=0/1)
+
+✓ Downloaded 156.7 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_51e78cd2.npz
+[save] wrote 6 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q8.npz (no writer for GenericIO; wrote npz)

@@ -1,0 +1,6 @@
+started,status,site,forms,total_s,wire_mib,materialized,error
+2026-07-31T11:29:36,NEEDS CONFIRM,remote,fields+subsample,39.3013,0.0,no,HELD (budget) — nothing materialized
+2026-07-31T11:35:29,FAILED,remote,fields,15.0231,0.0,no,"ValueError: fields: ['native_fields/temperatur'] not available here; have ['derived_fields/HI_number_density', 'derived_fields/HeIII_number_density..."
+2026-07-31T11:35:44,FAILED,remote,fields+region,14.7873,0.0,no,ValueError: region axis 0: [0:99999] out of bounds 0..512
+2026-07-31T11:35:59,FAILED,remote,fields+subsample,15.5199,0.0,no,"ValueError: unknown axis 'w'; this grid has 3 axes (x, y, z)"
+2026-07-31T11:36:14,FAILED,remote,fields+subsample,13.9087,0.0,no,"NotImplementedError: render over a timeseries folder isn't supported — select one timestep with timesteps(node, N, N), or use save() to write the r..."

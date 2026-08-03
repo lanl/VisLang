@@ -111,30 +111,67 @@ def main():
 
     print("== remote_is_dir / remote_timestep_files (folder detection) ==")
     import my_inspect
+    from my_download import clear_remote_caches, remote_probe, remote_stat as _rstat
+    from my_download import remote_header_hash as _rhash
 
     def folder_script(cmd, kw):
-        """Fake ssh: the establish probe (`true`), then stat / ls for a folder."""
+        """Fake ssh: the establish probe (`true`), then the combined probe / ls.
+        `remote_is_dir` goes through remote_probe, which asks for type, size,
+        mtime and the header hash in ONE command."""
         last = cmd[-1]
         if last == "true":                       # establish_connection -> ssh-key
             return Result(0, b"")
-        if last.startswith("stat -c %F"):
-            return Result(0, b"directory\n")
+        if last.startswith("stat -Lc '%F|%s|%Y'"):   # -L: a symlink TO a dir is a folder
+            return Result(0, b"directory|4096|1750000000\nd41d8cd98f00b204e9800998ecf8427e  -\n")
         if last.startswith("ls -1p"):
             # a subdir and a dotfile mixed in; both must be dropped
             return Result(0, b"run#1.hdf5\nrun#2.hdf5\nrun#10.hdf5\n"
                              b"README\nsub/\n.hidden#3.hdf5\n")
         return Result(1, b"", b"unexpected: " + last.encode())
 
+    clear_remote_caches()
     is_dir = with_fake(folder_script,
                        lambda: my_inspect.remote_is_dir("u@h:/data/series"))
     check("remote_is_dir True on a directory", is_dir is True)
-    check("is_dir uses stat -c %F",
-          any("stat -c %F" in c[0][-1] for c in CALLS), str(CALLS))
+    check("is_dir dereferences symlinks (-L)",
+          any("stat -Lc" in c[0][-1] for c in CALLS), str(CALLS))
+    check("is_dir asks for type+size+mtime+hash in ONE command",
+          sum(1 for c in CALLS if "stat -Lc" in c[0][-1]) == 1
+          and "md5sum" in CALLS[-1][0][-1], str(CALLS))
 
+    clear_remote_caches()
     check("remote_is_dir False on a regular file",
           with_fake(lambda c, k: Result(0, b"") if c[-1] == "true"
-                    else Result(0, b"regular file\n"),
+                    else Result(0, b"regular file|27543608|1750000000\nabc  -\n"),
                     lambda: my_inspect.remote_is_dir("u@h:/data/f.raw")) is False)
+
+    print("== probe cache: identity is free after the folder check ==")
+    # The folder check is the first thing to touch a remote source. Warming the
+    # probe there must make the catalog's later size/mtime/hash lookup cost NO
+    # further round trips — that is the whole point of the combined probe.
+    clear_remote_caches()
+    with_fake(lambda c, k: Result(0, b"") if c[-1] == "true"
+              else Result(0, b"regular file|27543608|1750000000\n"
+                             b"d41d8cd98f00b204e9800998ecf8427e  -\n"),
+              lambda: my_inspect.remote_is_dir("u@h:/data/f.raw"))
+    n_after_probe = len(CALLS)
+
+    def explode(cmd, kw):
+        raise AssertionError(f"extra round trip: {cmd[-1]}")
+    with_fake(explode, lambda: (
+        check("remote_stat served from the probe cache",
+              _rstat(KEY, "/data/f.raw") == (27543608, 1750000000)),
+        check("remote_header_hash served from the probe cache",
+              _rhash(KEY, "/data/f.raw") == "d41d8cd98f00b204e9800998ecf8427e")))
+    check("warming the probe cost exactly one probe", n_after_probe == 2,
+          f"calls={n_after_probe}")
+
+    # A different header window is a different question — it must NOT be answered
+    # from a cache holding the 64 KiB hash.
+    check("a different nbytes falls through to its own command",
+          with_fake(lambda c, k: Result(0, b"deadbeef  -\n"),
+                    lambda: _rhash(KEY, "/data/f.raw", nbytes=1024)) == "deadbeef")
+    clear_remote_caches()
 
     files = with_fake(folder_script,
                       lambda: my_inspect.remote_timestep_files("u@h:/data/series"))

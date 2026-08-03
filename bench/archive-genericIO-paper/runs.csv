@@ -1,0 +1,11 @@
+started,site,route,forms,n_timesteps,source_mib,wire_mib,reduction_x,total_s,inspect_s,remote_exec_s,pull_s,materialize_s,sink_s,ssh_exec,remote_jobs,status
+2026-07-31T15:41:25,remote,held_budget,fields+subsample,,8512.32,0.0,,41.5871,,,,,,1,,NEEDS CONFIRM
+2026-07-31T15:42:06,remote,remote_reduce,fields+subsample,,8512.32,1365.33,6.2,141.6559,,14.131,79.0159,,0.187,4,1,OK
+2026-07-31T15:44:28,remote,remote_reduce,fields+subsample,,8512.32,341.33,24.9,87.8953,,9.61,30.6148,,0.2553,4,1,OK
+2026-07-31T15:45:56,remote,remote_reduce,fields+subsample,,8512.32,341.33,24.9,85.2998,,9.2297,30.1387,,0.2866,4,1,OK
+2026-07-31T15:50:05,remote,remote_reduce,fields+threshold+threshold+subsample,,8512.32,34.56,246.3,86.8074,,13.3236,17.5192,,0.0139,4,1,OK
+2026-07-31T15:51:32,remote,remote_reduce,fields+threshold+threshold+subsample,,8512.32,17.28,492.6,82.6171,,18.9416,17.0556,,0.018,4,1,OK
+2026-07-31T15:52:55,remote,remote_reduce,fields+threshold+threshold+subsample,,8512.32,0.0,,15.1115,,,,,0.0116,,,OK
+2026-07-31T15:53:10,remote,remote_reduce,fields+threshold+threshold+subsample,,8512.32,1.72,4937.1,74.2571,,12.1078,15.655,,0.0012,4,1,OK
+2026-07-31T15:54:24,remote,remote_reduce,fields+threshold+threshold+subsample,,8512.32,0.86,9874.1,74.2377,,12.2331,15.2568,,0.0021,4,1,OK
+2026-07-31T15:55:38,remote,remote_reduce,fields+threshold+threshold+subsample,,8512.32,149.41,57.0,88.9915,,16.6686,22.8452,,0.0477,4,1,OK

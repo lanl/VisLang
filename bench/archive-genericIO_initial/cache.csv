@@ -1,0 +1,8 @@
+started,route,n_timesteps,reused_pairs,total_pairs,reuse_pct,cached_vars,want_vars,wire_mib,total_s,ssh_exec,remote_jobs
+2026-07-31T13:37:25,remote_reduce,,,,0.0,0,4,40.96,84.6288,4,1
+2026-07-31T13:38:49,remote_reduce,,,,80.0,4,5,10.24,72.8392,4,1
+2026-07-31T13:40:02,remote_reduce,,,,100.0,5,5,0.0,15.1461,,
+2026-07-31T13:41:02,remote_reduce,,,,0.0,0,4,0.0,77.7881,4,1
+2026-07-31T13:43:36,remote_reduce,,,,0.0,0,5,0.87,75.5113,4,1
+2026-07-31T13:44:52,remote_reduce,,,,83.3,5,6,0.17,72.992,4,1
+2026-07-31T13:46:05,remote_reduce,,,,0.0,0,6,0.05,72.5325,4,1

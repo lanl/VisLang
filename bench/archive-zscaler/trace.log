@@ -1,0 +1,714 @@
+
+==============================================================================
+=== VisLang session  pid=17075  2026-07-30 01:59:49
+==============================================================================
+
+----- run 02:01:04  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E1a.py -----
+Status: NEEDS CONFIRM
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E1a.py
+
+(OVER BUDGET — one or more pipelines were HELD; nothing was materialized for them. Show the estimate to the user and let them choose: commit as-is (re-run with confirm=True) or narrow the spec. Do not auto-confirm.)
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5  (HELD — over budget, nothing materialized)
+    spec (as written): source(nyx512#1.hdf5) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(2) → save
+    remote source darwin:/projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5 (6979.3 MB, id=686dca5e)
+    login-node inspect: schema cached (13 vars, dims={'grid': [512, 512, 512]})
+    Cost estimate (remote):
+      over the wire: ~128 MB
+      result size: ~128 MB
+      est. time: ~4.9 min–19.5 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (time) — confirm to run as-is, or narrow the spec.
+
+----- run 02:08:04  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E1b.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E1b.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5
+    spec (as written): source(nyx512#1.hdf5) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(2) → save
+    remote source darwin:/projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5 (6979.3 MB, id=686dca5e)
+    Cost estimate (remote):
+      over the wire: ~128 MB
+      result size: ~128 MB
+      est. time: ~6.5 min–26.0 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17155334
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5", "positions": null}, {"kind": "fields", "keep": ["native_fields/temperature", "native_fields/baryon_density"]}, {"kind": "subsample", "uniform": 2, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_83714407.npz (vars ['native_fields/temperature', 'native_fields/baryon_density'])
+    srun --jobid=17155334: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_83714407.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(nyx512#1.hdf5) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(2) → save
+    remote:  inspect /projects/autonomousvis/ashrestha/nyx_series/nyx512#1.hdf5 → HDF5: vars=['derived_fields/HI_number_density', 'derived_fields/HeIII_number_density', 'derived_fields/tau_local', 'derived_fields/tau_real', 'derived_fields/tau_red', 'derived_fields/tau_red_heii', 'derived_fields/taubeta_red', 'native_fields/baryon_density', 'native_fields/dark_matter_density', 'native_fields/temperature', 'native_fields/velocity_x', 'native_fields/velocity_y', 'native_fields/velocity_z'], dims={'grid': (512, 512, 512)}
+    remote:  project fields=['native_fields/temperature', 'native_fields/baryon_density']
+    remote:  subsample uniform=2 (pushdown)
+    remote:  fuse -> grid_ranges=[(None, None, 2), (None, None, 2), (None, None, 2)], project=['native_fields/temperature', 'native_fields/baryon_density']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_83714407.npz
+    pulled 2 var(s), 134.2 MB over the wire
+    assembled 2 var(s), 134.2 MB (0 cached, 2 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e1_sub2.hdf5
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_83714407.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_83714407.npz
+  pull_83714407.npz
+            32768   0%   30.33KB/s   01:11:59
+           131072   0%  190.87KB/s   00:11:26
+           196608   0%  101.28KB/s   00:21:32
+           425984   0%  408.10KB/s   00:05:20
+           622592   0%  361.70KB/s   00:06:00
+           753664   1%  156.09KB/s   00:13:54
+           983040   1%  411.39KB/s   00:05:16
+          1212416   1%  420.39KB/s   00:05:08
+          1540096   1%  622.03KB/s   00:03:28
+          1671168   1%   73.01KB/s   00:29:32
+          1835008   1%  209.47KB/s   00:10:17
+          1900544   1%   59.71KB/s   00:36:04
+          2293760   2%  739.04KB/s   00:02:54
+          2686976   2%  758.41KB/s   00:02:49
+          3112960   2%  697.86KB/s   00:03:03
+          3407872   3%  539.17KB/s   00:03:56
+          3702784   3%  467.28KB/s   00:04:32
+          3833856   3%  231.69KB/s   00:09:09
+          3866624   3%   22.42KB/s   01:34:37
+          4063232   3%  329.90KB/s   00:06:25
+          4292608   3%  364.65KB/s   00:05:47
+          4423680   3%  107.46KB/s   00:19:39
+          4456448   3%   13.84KB/s   02:32:35
+          4489216   3%   38.46KB/s   00:54:54
+          4718592   4%  389.02KB/s   00:05:25
+          4980736   4%  465.63KB/s   00:04:31
+          5046272   4%  109.18KB/s   00:19:15
+          5177344   4%  130.59KB/s   00:16:04
+          5505024   4%  584.77KB/s   00:03:34
+          5799936   4%  515.70KB/s   00:04:03
+          6193152   5%  171.45KB/s   00:12:09
+          6225920   5%   24.99KB/s   01:23:22
+          6258688   5%   60.48KB/s   00:34:26
+          6651904   5%  759.25KB/s   00:02:44
+          6848512   5%  278.91KB/s   00:07:25
+          7208960   5%  430.09KB/s   00:04:48
+          7634944   6%  780.80KB/s   00:02:38
+          8126464   6%  848.54KB/s   00:02:25
+          8454144   6%  621.03KB/s   00:03:17
+          9011200   7%    1.04MB/s   00:01:54
+          9469952   7%  886.69KB/s   00:02:17
+         10059776   7%    1.09MB/s   00:01:48
+         10551296   8%  829.26KB/s   00:02:25
+         11010048   8%  890.06KB/s   00:02:15
+         11370496   8%  677.94KB/s   00:02:56
+         12025856   9%    1.22MB/s   00:01:35
+         12386304   9%  702.58KB/s   00:02:49
+         12943360  10%    1.03MB/s   00:01:52
+         13434880  10%  899.33KB/s   00:02:11
+         13664256  10%  110.42KB/s   00:17:46
+         13860864  10%  191.82KB/s   00:10:12
+         14319616  11%  884.58KB/s   00:02:12
+         14778368  11%  797.18KB/s   00:02:26
+         15204352  11%  775.90KB/s   00:02:29
+         15597568  12%  715.28KB/s   00:02:41
+         16187392  12%    1.05MB/s   00:01:47
+         16646144  12%  878.92KB/s   00:02:10
+         17104896  13%  878.66KB/s   00:02:10
+         17629184  13%  969.02KB/s   00:01:57
+         18186240  14%  992.90KB/s   00:01:54
+         18448384  14%  507.70KB/s   00:03:42
+         18776064  14%  632.89KB/s   00:02:58
+         18874368  14%  149.41KB/s   00:12:33
+         19431424  14% 1021.42KB/s   00:01:49
+         19955712  15% 1010.73KB/s   00:01:50
+         20611072  15%    1.16MB/s   00:01:33
+         21200896  16%    1.09MB/s   00:01:39
+         21856256  16%    1.14MB/s   00:01:34
+         22315008  17%  587.34KB/s   00:03:06
+         22446080  17%   34.57KB/s   00:52:37
+         22609920  17%  209.26KB/s   00:08:40
+         23068672  17%  879.18KB/s   00:02:03
+         23461888  17%  750.78KB/s   00:02:24
+         23887872  18%  816.32KB/s   00:02:11
+         24412160  18%  989.39KB/s   00:01:48
+         24936448  19% 1000.18KB/s   00:01:46
+         25427968  19%  944.99KB/s   00:01:52
+         25788416  19%  317.26KB/s   00:05:33
+         26116096  19%  601.03KB/s   00:02:55
+         26312704  20%  369.90KB/s   00:04:44
+         26476544  20%  316.30KB/s   00:05:32
+         26902528  20%  359.14KB/s   00:04:51
+         27492352  20%    1.12MB/s   00:01:31
+         27852800  21%  689.25KB/s   00:02:30
+         28278784  21%  801.36KB/s   00:02:09
+         28835840  21%    1.03MB/s   00:01:37
+         29097984  22%  459.74KB/s   00:03:43
+         29655040  22%  965.37KB/s   00:01:45
+         30113792  22%  764.86KB/s   00:02:12
+         30605312  23%  703.57KB/s   00:02:23
+         30769152  23%  212.48KB/s   00:07:55
+         31031296  23%  362.07KB/s   00:04:38
+         31162368  23%   88.41KB/s   00:18:58
+         31686656  24% 1021.07KB/s   00:01:38
+         32210944  24%  990.84KB/s   00:01:40
+         32505856  24%  559.45KB/s   00:02:57
+         32997376  25%  945.98KB/s   00:01:44
+         33619968  25%    1.15MB/s   00:01:23
+         34308096  26%    1.27MB/s   00:01:14
+         34832384  26% 1014.42KB/s   00:01:35
+         35225600  26%  622.71KB/s   00:02:35
+         35422208  26%  230.09KB/s   00:06:59
+         35454976  26%   53.04KB/s   00:30:18
+         35717120  27%  359.72KB/s   00:04:27
+         36470784  27%    1.42MB/s   00:01:05
+         37060608  28%    1.09MB/s   00:01:25
+         37781504  28%    1.28MB/s   00:01:12
+         38502400  29%    1.36MB/s   00:01:06
+         39387136  29%    1.63MB/s   00:00:55
+         40108032  30%    1.34MB/s   00:01:06
+         40730624  30%    1.15MB/s   00:01:17
+         41287680  31%  941.07KB/s   00:01:36
+         41877504  31%    1.09MB/s   00:01:20
+         42500096  32%  997.53KB/s   00:01:29
+         43155456  32%    1.20MB/s   00:01:12
+         43450368  32%  386.92KB/s   00:03:49
+         43483136  32%   17.22KB/s   01:25:46
+         43909120  33%  779.35KB/s   00:01:53
+         44367872  33%  860.97KB/s   00:01:41
+         44957696  33%    1.04MB/s   00:01:21
+         45678592  34%    1.35MB/s   00:01:02
+         46104576  34%  795.51KB/s   00:01:48
+         46727168  35%    1.17MB/s   00:01:11
+         47022080  35%  502.88KB/s   00:02:49
+         47087616  35%   74.60KB/s   00:19:00
+         47579136  35%  935.68KB/s   00:01:30
+         47841280  36%  411.18KB/s   00:03:25
+         47939584  36%   37.37KB/s   00:37:34
+         47972352  36%   30.91KB/s   00:45:24
+         48300032  36%  402.61KB/s   00:03:28
+         48463872  36%  313.93KB/s   00:04:26
+         48857088  36%  750.91KB/s   00:01:51
+         49184768  37%  626.39KB/s   00:02:12
+         49512448  37%  583.51KB/s   00:02:21
+         49971200  37%  783.43KB/s   00:01:45
+         50528256  38%    1.04MB/s   00:01:17
+         50954240  38%  804.39KB/s   00:01:41
+         51478528  38% 1001.03KB/s   00:01:20
+         51871744  39%  564.13KB/s   00:02:22
+         52428800  39%    1.03MB/s   00:01:15
+         53084160  40%    1.15MB/s   00:01:07
+         53706752  40%    1.15MB/s   00:01:06
+         54263808  40%    1.04MB/s   00:01:13
+         54820864  41%    1.04MB/s   00:01:12
+         55148544  41%  615.87KB/s   00:02:05
+         55541760  41%  762.92KB/s   00:01:40
+         55705600  42%  292.40KB/s   00:04:22
+         56131584  42%  127.20KB/s   00:09:59
+         56590336  42%  890.94KB/s   00:01:25
+         57049088  43%  809.48KB/s   00:01:33
+         57409536  43%  636.96KB/s   00:01:57
+         57507840  43%  113.44KB/s   00:11:00
+         57704448  43%  375.09KB/s   00:03:19
+         58032128  43%  291.04KB/s   00:04:15
+         58458112  44%  811.34KB/s   00:01:31
+         58654720  44%  299.49KB/s   00:04:06
+         58687488  44%   41.30KB/s   00:29:45
+         58818560  44%   11.18KB/s   01:49:44
+         58949632  44%   67.87KB/s   00:18:02
+         59244544  44%  156.86KB/s   00:07:46
+         59506688  44%  496.13KB/s   00:02:27
+         59801600  45%  401.54KB/s   00:03:00
+         60063744  45%  471.77KB/s   00:02:33
+         60358656  45%  469.52KB/s   00:02:33
+         60456960  45%   61.15KB/s   00:19:37
+         60850176  45%  707.56KB/s   00:01:41
+         60981248  45%  245.34KB/s   00:04:51
+         61276160  46%  562.44KB/s   00:02:06
+         61669376  46%  668.17KB/s   00:01:46
+         61702144  46%   26.72KB/s   00:44:09
+         61931520  46%  368.70KB/s   00:03:11
+         62291968  46%  642.07KB/s   00:01:49
+         62685184  47%  678.02KB/s   00:01:43
+         63078400  47%  729.52KB/s   00:01:35
+         63438848  47%  698.29KB/s   00:01:38
+         63504384  47%   35.35KB/s   00:32:33
+         63897600  48%  731.99KB/s   00:01:33
+         64159744  48%  498.27KB/s   00:02:17
+         64389120  48%   79.81KB/s   00:14:14
+         64421888  48%   50.60KB/s   00:22:27
+         64684032  48%  466.84KB/s   00:02:25
+         64978944  48%  527.27KB/s   00:02:08
+         65273856  49%  466.78KB/s   00:02:24
+         65568768  49%  229.82KB/s   00:04:51
+         65765376  49%  288.69KB/s   00:03:51
+         65863680  49%  171.45KB/s   00:06:29
+         66158592  49%  489.06KB/s   00:02:15
+         66453504  50%  563.83KB/s   00:01:57
+         66781184  50%  629.89KB/s   00:01:44
+         67141632  50%  640.65KB/s   00:01:42
+         67436544  50%  488.93KB/s   00:02:13
+         67665920  50%  441.99KB/s   00:02:27
+         67928064  51%  449.62KB/s   00:02:23
+         68288512  51%  552.29KB/s   00:01:56
+         68616192  51%  598.25KB/s   00:01:47
+         68943872  51%  631.87KB/s   00:01:40
+         69271552  52%  546.10KB/s   00:01:56
+         69599232  52%  101.93KB/s   00:10:19
+         70156288  52%    1.04MB/s   00:00:58
+         70483968  53%  574.90KB/s   00:01:48
+         70516736  53%   23.59KB/s   00:43:57
+         70942720  53%  768.69KB/s   00:01:20
+         71139328  53%  119.36KB/s   00:08:36
+         71598080  53%  872.61KB/s   00:01:10
+         71991296  54%  758.41KB/s   00:01:20
+         72155136  54%  259.96KB/s   00:03:53
+         72187904  54%   32.17KB/s   00:31:22
+         72482816  54%  552.81KB/s   00:01:49
+         72974336  54%  591.72KB/s   00:01:41
+         73072640  54%  100.81KB/s   00:09:52
+         73596928  55%  714.31KB/s   00:01:22
+         73662464  55%   23.21KB/s   00:42:28
+         74088448  55%  676.47KB/s   00:01:26
+         74416128  55%  598.24KB/s   00:01:37
+         74678272  56%  410.90KB/s   00:02:21
+         75235328  56%  966.65KB/s   00:00:59
+         75694080  56%  841.01KB/s   00:01:07
+         76283904  57%    1.09MB/s   00:00:50
+         76775424  57%  558.83KB/s   00:01:40
+         77234176  58%  819.07KB/s   00:01:07
+         77660160  58%  767.49KB/s   00:01:11
+         77758464  58%  174.70KB/s   00:05:15
+         78151680  58%  668.60KB/s   00:01:21
+         78512128  58%  662.57KB/s   00:01:22
+         78643200  59%  165.72KB/s   00:05:27
+         78675968  59%   49.82KB/s   00:18:08
+         78807040  59%   92.43KB/s   00:09:45
+         79069184  59%  346.71KB/s   00:02:35
+         79331328  59%  499.41KB/s   00:01:47
+         79659008  59%  260.46KB/s   00:03:24
+         79724544  59%   47.12KB/s   00:18:49
+         79822848  59%  178.38KB/s   00:04:57
+         80084992  60%  370.55KB/s   00:02:22
+         80347136  60%  222.98KB/s   00:03:55
+         80773120  60%  797.38KB/s   00:01:05
+         81264640  61%  875.95KB/s   00:00:59
+         81461248  61%  375.19KB/s   00:02:17
+         81821696  61%  685.26KB/s   00:01:14
+         82214912  61%  620.95KB/s   00:01:21
+         82477056  61%  498.92KB/s   00:01:41
+         82739200  62%  479.09KB/s   00:01:44
+         83263488  62%  719.81KB/s   00:01:09
+         83460096  62%  198.93KB/s   00:04:09
+         83525632  62%   84.61KB/s   00:09:45
+         83787776  62%  486.77KB/s   00:01:41
+         83918848  63%   77.63KB/s   00:10:32
+         84180992  63%  209.94KB/s   00:03:52
+         84377600  63%  266.70KB/s   00:03:02
+         84508672  63%   62.77KB/s   00:12:53
+         84705280  63%   97.73KB/s   00:08:14
+         84803584  63%  138.60KB/s   00:05:48
+         85131264  63%  594.03KB/s   00:01:20
+         85557248  64%  814.50KB/s   00:00:58
+         85852160  64%  562.17KB/s   00:01:24
+         86278144  64%  809.32KB/s   00:00:57
+         86704128  65%  761.28KB/s   00:01:00
+         87130112  65%  760.42KB/s   00:01:00
+         87425024  65%  560.29KB/s   00:01:21
+         87752704  65%  626.28KB/s   00:01:12
+         88014848  66%  493.97KB/s   00:01:31
+         88375296  66%  681.88KB/s   00:01:05
+         88571904  66%  374.79KB/s   00:01:58
+         88965120  66%  758.02KB/s   00:00:58
+         89161728  66%  180.16KB/s   00:04:04
+         89358336  67%  360.51KB/s   00:02:01
+         89948160  67%    1.03MB/s   00:00:40
+         90406912  67%  869.70KB/s   00:00:49
+         90701824  68%  399.70KB/s   00:01:46
+         90832896  68%  101.92KB/s   00:06:55
+         91029504  68%  119.36KB/s   00:05:53
+         91193344  68%  214.88KB/s   00:03:15
+         91389952  68%  282.68KB/s   00:02:27
+         91488256  68%  111.87KB/s   00:06:13
+         91586560  68%  112.46KB/s   00:06:10
+         91881472  68%  565.77KB/s   00:01:13
+         92274688  69%  600.36KB/s   00:01:08
+         92569600  69%  137.37KB/s   00:04:56
+         92897280  69%  466.35KB/s   00:01:26
+         93126656  69%  270.35KB/s   00:02:28
+         93454336  70%  625.89KB/s   00:01:03
+         93814784  70%  702.52KB/s   00:00:56
+         94175232  70%  684.87KB/s   00:00:57
+         94502912  70%  628.86KB/s   00:01:01
+         94863360  71%  654.40KB/s   00:00:58
+         95125504  71%  414.72KB/s   00:01:32
+         95584256  71%  864.71KB/s   00:00:43
+         96108544  72%  885.78KB/s   00:00:42
+         96272384  72%  314.86KB/s   00:01:57
+         96829440  72%    1.04MB/s   00:00:34
+         97386496  73%    1.02MB/s   00:00:34
+         97943552  73%    1.03MB/s   00:00:33
+         98402304  73%  883.68KB/s   00:00:39
+         98566144  73%  167.30KB/s   00:03:28
+         98795520  74%  438.71KB/s   00:01:18
+         99090432  74%  553.00KB/s   00:01:02
+         99221504  74%  158.81KB/s   00:03:35
+         99254272  74%   47.98KB/s   00:11:51
+         99844096  74%    1.07MB/s   00:00:30
+        100270080  75%  794.66KB/s   00:00:41
+        100433920  75%  297.87KB/s   00:01:50
+        100761600  75%  469.41KB/s   00:01:09
+        100827136  75%  103.05KB/s   00:05:16
+        101023744  75%  265.85KB/s   00:02:01
+        101154816  75%  224.99KB/s   00:02:23
+        101220352  75%   39.85KB/s   00:13:28
+        101384192  76%  148.37KB/s   00:03:36
+        101515264  76%  137.08KB/s   00:03:52
+        101744640  76%  362.70KB/s   00:01:27
+        101908480  76%  259.07KB/s   00:02:01
+        101941248  76%   42.50KB/s   00:12:21
+        102039552  76%   63.41KB/s   00:08:15
+        102203392  76%  143.50KB/s   00:03:37
+        102498304  76%  254.88KB/s   00:02:01
+        102629376  76%  114.42KB/s   00:04:29
+        102727680  77%  132.99KB/s   00:03:51
+        102957056  77%  442.03KB/s   00:01:09
+        103186432  77%  427.86KB/s   00:01:10
+        103415808  77%  447.54KB/s   00:01:07
+        103743488  77%  621.51KB/s   00:00:47
+        104103936  78%  693.27KB/s   00:00:42
+        104529920  78%  802.43KB/s   00:00:36
+        104890368  78%  700.32KB/s   00:00:40
+        104955904  78%   68.88KB/s   00:06:54
+        104988672  78%    9.84KB/s   00:48:19
+        105250816  78%  476.32KB/s   00:00:59
+        105512960  79%  501.16KB/s   00:00:55
+        105775104  79%  504.09KB/s   00:00:55
+        106135552  79%  691.11KB/s   00:00:39
+        106364928  79%  429.70KB/s   00:01:03
+        106659840  79%  530.89KB/s   00:00:50
+        106725376  80%   34.30KB/s   00:13:02
+        106856448  80%  253.18KB/s   00:01:45
+        107118592  80%  458.25KB/s   00:00:57
+        107413504  80%  542.53KB/s   00:00:48
+        107773952  80%  584.61KB/s   00:00:44
+        108167168  81%  748.07KB/s   00:00:34
+        108560384  81%  749.23KB/s   00:00:33
+        108953600  81%  757.12KB/s   00:00:32
+        109445120  82%  930.07KB/s   00:00:26
+        109805568  82%  698.20KB/s   00:00:34
+        110034944  82%  270.41KB/s   00:01:27
+        110395392  82%  687.08KB/s   00:00:33
+        110559232  82%  174.00KB/s   00:02:12
+        110657536  82%  176.54KB/s   00:02:10
+        110755840  83%  188.28KB/s   00:02:01
+        111280128  83%  880.84KB/s   00:00:25
+        111673344  83%  502.10KB/s   00:00:43
+        111738880  83%  124.19KB/s   00:02:56
+        112132096  84%  755.05KB/s   00:00:28
+        112328704  84%  154.03KB/s   00:02:18
+        113049600  84%    1.34MB/s   00:00:15
+        113115136  84%  104.36KB/s   00:03:17
+        113410048  84%  165.90KB/s   00:02:02
+        114130944  85%    1.37MB/s   00:00:13
+        114360320  85%  202.38KB/s   00:01:35
+        114458624  85%   79.65KB/s   00:04:02
+        114589696  85%  208.57KB/s   00:01:31
+        115212288  86%    1.18MB/s   00:00:15
+        115605504  86%  751.22KB/s   00:00:24
+        116326400  87%    1.33MB/s   00:00:12
+        116424704  87%  148.00KB/s   00:01:57
+        116850688  87%  724.89KB/s   00:00:23
+        117669888  88%    1.50MB/s   00:00:10
+        118161408  88%  934.12KB/s   00:00:16
+        118620160  88%  893.68KB/s   00:00:17
+        118915072  89%  346.32KB/s   00:00:43
+        119275520  89%  651.01KB/s   00:00:22
+        120094720  89%    1.45MB/s   00:00:09
+        120586240  90%  869.65KB/s   00:00:15
+        121241600  90%    1.23MB/s   00:00:10
+        121831424  91%  923.53KB/s   00:00:13
+        121995264  91%  116.85KB/s   00:01:42
+        122159104  91%  299.83KB/s   00:00:39
+        122519552  91%  634.94KB/s   00:00:17
+        123076608  92%    1.05MB/s   00:00:10
+        123731968  92%    1.07MB/s   00:00:09
+        124420096  93%    1.26MB/s   00:00:07
+        125108224  93%    1.27MB/s   00:00:06
+        125698048  94%    1.06MB/s   00:00:07
+        126386176  94%    1.30MB/s   00:00:05
+        127107072  95%    1.34MB/s   00:00:05
+        127598592  95%  868.10KB/s   00:00:07
+        128253952  96%    1.16MB/s   00:00:04
+        128843776  96%    1.10MB/s   00:00:04
+        129236992  96%  351.15KB/s   00:00:13
+        129400832  96%  105.89KB/s   00:00:44
+        129794048  97%  757.21KB/s   00:00:05
+        130121728  97%  628.27KB/s   00:00:06
+        130482176  97%  684.45KB/s   00:00:05
+        130908160  98%  817.77KB/s   00:00:03
+        131432448  98%  987.38KB/s   00:00:02
+        131891200  98%  795.71KB/s   00:00:02
+        132284416  99%  751.31KB/s   00:00:02
+        132644864  99%  697.79KB/s   00:00:02
+        133136384  99%  883.23KB/s   00:00:01
+        133496832  99%  652.92KB/s   00:00:01
+        134152192 100%    1.23MB/s   00:00:00
+        134218320 100%  435.90KB/s   00:05:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 134.2 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_83714407.npz
+[save] wrote 2 array(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e1_sub2.hdf5
+
+----- run 02:10:37  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q1.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q1.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series
+    spec (as written): source(nyx_series) → timesteps(0,2) → fields[native_fields/temperature] → subsample(4) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 0/3 (timestep,variable) extent(s); fetching ['native_fields/temperature'] (3 pair(s)) for 3 timestep(s)
+    srun: discovered held allocation jobid=17155334
+    remote folder darwin:/projects/autonomousvis/ashrestha/nyx_series (catalog delta)
+    ship plan.json + manifest (delta ['native_fields/temperature']) to the remote
+    srun --jobid=17155334: one step for the whole delta
+    pulled delta: 3 (timestep,var) array(s), 25.17 MB over the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1
+    remote compute on darwin (srun jobid=17155334): reused 0/3 extent(s) from the catalog; fetched ['native_fields/temperature'] — 3 (timestep,variable) pair(s) crossed the wire
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1
+
+--- Output ---
+
+✓ Downloaded 25.2 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/folderpull_f623c6fa
+[save] wrote 3 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1/
+
+----- run 02:12:51  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q2.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q2.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series
+    spec (as written): source(nyx_series) → timesteps(0,2) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(4) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 3/6 (timestep,variable) extent(s); fetching ['native_fields/baryon_density'] (3 pair(s)) for 3 timestep(s)
+    srun: discovered held allocation jobid=17155334
+    remote folder darwin:/projects/autonomousvis/ashrestha/nyx_series (catalog delta)
+    ship plan.json + manifest (delta ['native_fields/baryon_density']) to the remote
+    srun --jobid=17155334: one step for the whole delta
+    pulled delta: 3 (timestep,var) array(s), 25.17 MB over the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2
+    remote compute on darwin (srun jobid=17155334): reused 3/6 extent(s) from the catalog; fetched ['native_fields/baryon_density'] — 3 (timestep,variable) pair(s) crossed the wire
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2
+
+--- Output ---
+
+✓ Downloaded 25.2 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/folderpull_b7abeea7
+[save] wrote 3 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2/
+
+----- run 02:13:29  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q3.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q3.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series
+    spec (as written): source(nyx_series) → timesteps(1,1) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(4) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 2/2 (timestep,variable) extent(s) — full hit, nothing crosses the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3
+    remote compute on darwin: reused 2/2 extent(s) from the catalog; nothing crossed the wire (full catalog hit)
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3
+
+--- Output ---
+[save] wrote 1 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3/
+
+----- run 02:14:07  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q4.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q4.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series
+    spec (as written): source(nyx_series) → timesteps(0,2) → fields[native_fields/temperature,native_fields/baryon_density] → subsample(4) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 6/6 (timestep,variable) extent(s) — full hit, nothing crosses the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4
+    remote compute on darwin: reused 6/6 extent(s) from the catalog; nothing crossed the wire (full catalog hit)
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4
+
+--- Output ---
+[save] wrote 3 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4/
+
+----- run 02:14:45  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q5.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q5.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/nyx_series
+    spec (as written): source(nyx_series) → timesteps(0,2) → fields[native_fields/temperature,native_fields/baryon_density] → region{x:(0,256)} → subsample(4) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 6/6 (timestep,variable) extent(s) — full hit, nothing crosses the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5
+    remote compute on darwin: reused 6/6 extent(s) from the catalog; nothing crossed the wire (full catalog hit)
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5
+
+--- Output ---
+[save] wrote 3 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5/
+
+----- run 02:16:02  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3a.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3a.py
+
+--- Pipelines ---
+[save] FAILED: RuntimeError: remote reduce failed: ValueError: fields: ['native_fields/temperatur'] not available here; have ['derived_fields/HI_number_density', 'derived_fields/HeIII_number_density', 'derived_fields/tau_local', 'derived_fields/tau_real', 'derived_fields/tau_red', 'derived_fields/tau_red_heii', 'derived_fields/taubeta_red', 'native_fields/baryon_density', 'native_fields/dark_matter_density', 'native_fields/temperature', 'native_fields/velocity_x', 'native_fields/velocity_y', 'native_fields/velocity_z']
+
+--- Output ---
+[VisLang] Loaded frozen adapter 'npz (LLM)' from /Users/ashrestha/Projects/VisLang/generated_adapters/npz.py
+[VisLang] Loaded frozen adapter 'raw_volume (LLM)' from /Users/ashrestha/Projects/VisLang/generated_adapters/raw.py
+
+----- run 02:17:19  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3b.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3b.py
+
+--- Pipelines ---
+[save] FAILED: RuntimeError: remote reduce failed: ValueError: region axis 0: [0:99999] out of bounds 0..512
+
+----- run 02:18:33  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3c.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3c.py
+
+--- Pipelines ---
+[save] FAILED: RuntimeError: remote reduce failed: ValueError: unknown axis 'w'; this grid has 3 axes (x, y, z)
+
+----- run 02:18:50  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3d.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3d.py
+
+--- Pipelines ---
+[render] FAILED: NotImplementedError: render over a timeseries folder isn't supported — select one timestep with timesteps(node, N, N), or use save() to write the range.
+
+==============================================================================
+=== VisLang session  pid=22756  2026-07-30 02:19:44
+==============================================================================
+
+----- run 02:21:12  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E4n1.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E4n1.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/data
+    spec (as written): source(data) → timesteps(1,1) → fields[temperature] → subsample(2) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 0/1 (timestep,variable) extent(s); fetching ['temperature'] (1 pair(s)) for 1 timestep(s)
+    srun: discovered held allocation jobid=17155334
+    remote folder darwin:/projects/autonomousvis/ashrestha/data (catalog delta)
+    ship plan.json + manifest (delta ['temperature']) to the remote
+    srun --jobid=17155334: one step for the whole delta
+    pulled delta: 1 (timestep,var) array(s), 0.00 MB over the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n1
+    remote compute on darwin (srun jobid=17155334): reused 0/1 extent(s) from the catalog; fetched ['temperature'] — 1 (timestep,variable) pair(s) crossed the wire
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n1
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n1
+
+--- Output ---
+
+✓ Downloaded 0.0 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/folderpull_d2d3dce7
+[save] wrote 1 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n1/
+
+----- run 02:22:36  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E4n2.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E4n2.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/data
+    spec (as written): source(data) → timesteps(1,2) → fields[temperature] → subsample(2) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 0/2 (timestep,variable) extent(s); fetching ['temperature'] (2 pair(s)) for 2 timestep(s)
+    srun: discovered held allocation jobid=17155334
+    remote folder darwin:/projects/autonomousvis/ashrestha/data (catalog delta)
+    ship plan.json + manifest (delta ['temperature']) to the remote
+    srun --jobid=17155334: one step for the whole delta
+    pulled delta: 2 (timestep,var) array(s), 0.01 MB over the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n2
+    remote compute on darwin (srun jobid=17155334): reused 0/2 extent(s) from the catalog; fetched ['temperature'] — 2 (timestep,variable) pair(s) crossed the wire
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n2
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n2
+
+--- Output ---
+
+✓ Downloaded 0.0 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/folderpull_19d52232
+[save] wrote 2 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n2/
+
+----- run 02:24:05  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E4n5.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E4n5.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/data
+    spec (as written): source(data) → timesteps(1,5) → fields[temperature] → subsample(2) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 0/5 (timestep,variable) extent(s); fetching ['temperature'] (5 pair(s)) for 5 timestep(s)
+    srun: discovered held allocation jobid=17155334
+    remote folder darwin:/projects/autonomousvis/ashrestha/data (catalog delta)
+    ship plan.json + manifest (delta ['temperature']) to the remote
+    srun --jobid=17155334: one step for the whole delta
+    pulled delta: 5 (timestep,var) array(s), 0.02 MB over the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n5
+    remote compute on darwin (srun jobid=17155334): reused 0/5 extent(s) from the catalog; fetched ['temperature'] — 5 (timestep,variable) pair(s) crossed the wire
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n5
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n5
+
+--- Output ---
+
+✓ Downloaded 0.0 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/folderpull_67fb9605
+[save] wrote 5 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n5/
+
+----- run 02:25:30  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E4n10.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E4n10.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/data
+    spec (as written): source(data) → timesteps(1,10) → fields[temperature] → subsample(2) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 0/10 (timestep,variable) extent(s); fetching ['temperature'] (10 pair(s)) for 10 timestep(s)
+    srun: discovered held allocation jobid=17155334
+    remote folder darwin:/projects/autonomousvis/ashrestha/data (catalog delta)
+    ship plan.json + manifest (delta ['temperature']) to the remote
+    srun --jobid=17155334: one step for the whole delta
+    pulled delta: 10 (timestep,var) array(s), 0.04 MB over the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n10
+    remote compute on darwin (srun jobid=17155334): reused 0/10 extent(s) from the catalog; fetched ['temperature'] — 10 (timestep,variable) pair(s) crossed the wire
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n10
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n10
+
+--- Output ---
+
+✓ Downloaded 0.0 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/folderpull_3e868052
+[save] wrote 10 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n10/
+
+----- run 02:26:55  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E4n20.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E4n20.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/autonomousvis/ashrestha/data
+    spec (as written): source(data) → timesteps(1,20) → fields[temperature] → subsample(2) → save
+    (note: the folder reduce runs as one batched remote job — the per-run budget gate is applied on the single-file and whole-folder-fetch paths, not to this batch)
+    catalog: reused 0/20 (timestep,variable) extent(s); fetching ['temperature'] (20 pair(s)) for 20 timestep(s)
+    srun: discovered held allocation jobid=17155334
+    remote folder darwin:/projects/autonomousvis/ashrestha/data (catalog delta)
+    ship plan.json + manifest (delta ['temperature']) to the remote
+    srun --jobid=17155334: one step for the whole delta
+    pulled delta: 20 (timestep,var) array(s), 0.08 MB over the wire
+    -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n20
+    remote compute on darwin (srun jobid=17155334): reused 0/20 extent(s) from the catalog; fetched ['temperature'] — 20 (timestep,variable) pair(s) crossed the wire
+    local:   -> save timeseries -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n20
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n20
+
+--- Output ---
+
+✓ Downloaded 0.1 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/folderpull_80840300
+[save] wrote 20 timestep(s) as hdf5 -> /Users/ashrestha/Projects/VisLang/bench/results/out/e4_n20/

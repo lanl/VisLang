@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
-import io
 import os
-from contextlib import redirect_stdout, redirect_stderr
 
 from mcp.server.fastmcp import FastMCP
-from my_inspect import inspect_source, is_remote, remote_schema_tree
-from my_estimate import estimate_render_cost as _estimate_render_cost, format_estimate
-from adapters import NeedsAdapterError
 
-from dsl_forms import form_namespace, reset_sinks, collected_sinks, leaf_nodes
-from planner import plan_pipeline, format_result
-from sandbox import execute, SandboxError
+# The engine logic lives in cli_core so the `sieve` terminal CLI and this MCP
+# server are two thin front-ends onto ONE implementation. These tools just wrap
+# the shared functions with the tool decorator + docstrings the model reads.
+from cli_core import (do_inspect, do_execute, do_estimate_render_cost,
+                      do_submit_adapter, do_submit_binding)
 
 # --- Guidance surfaced to the model -----------------------------------------
 # The repo's root CLAUDE.md is the always-loaded index (Claude Code auto-loads
@@ -62,27 +59,6 @@ def _instruction_doc(doc):
                          f"See vislang://instructions for the list.")
 
 
-def _adapter_handshake(err):
-    """Turn a NeedsAdapterError into instructions for the session model: write a
-    reader for this format and submit it. No API/second model is involved — you
-    (the model reading this) are the generator; `submit_adapter` is the verifier."""
-    return (
-        "NEEDS_ADAPTER\n"
-        f"No installed reader recognizes {err.filepath!r}. Write a reader adapter "
-        "for this format and submit it:\n"
-        "  1. Read the guide: instructions/writing-adapters.md.\n"
-        "  2. Write a self-contained Python module defining FILETYPE, EXTENSIONS,\n"
-        "     inspect(filepath), and read_array(filepath, location) — use an\n"
-        "     installed reader library, never hand-parse bytes.\n"
-        "  3. Call submit_adapter(filepath, module_code). It runs the module\n"
-        "     against THIS real file; on success it is frozen + registered so\n"
-        "     future files of this format skip the model, and on failure it\n"
-        "     returns the violation so you can fix and resubmit.\n\n"
-        "--- File evidence ---\n"
-        f"{err.evidence or '(evidence unavailable — is the path readable?)'}"
-    )
-
-
 @mcp.tool()
 def inspect(filepath: str, positions: str = None) -> str:
     """Read a file's schema — variables, dimensions, attributes — metadata only, no bulk data.
@@ -101,60 +77,7 @@ def inspect(filepath: str, positions: str = None) -> str:
     positions: optional "x,y,z" override naming the spatial-coordinate variables
     when auto-detection can't tell (e.g. particle data with unusual names).
     """
-    # A FOLDER is a TIMESERIES — locally (an os.path check) or on a remote host
-    # (a metadata-only `stat` over ssh). Either way, list its timesteps + shared
-    # schema instead of trying to read the directory as one file.
-    if is_remote(filepath):
-        from my_inspect import remote_is_dir, remote_folder_listing
-        if remote_is_dir(filepath):
-            return remote_folder_listing(filepath)
-    elif os.path.isdir(filepath):
-        from my_inspect import folder_listing
-        return folder_listing(filepath)
-    try:
-        pos = tuple(p.strip() for p in positions.split(",")) if positions else None
-        info = inspect_source(filepath, positions=pos)
-    except NeedsAdapterError as e:
-        return _adapter_handshake(e)
-    except Exception as e:
-        return f"ERROR inspecting {filepath}: {type(e).__name__}: {e}"
-    return str(info) + _binding_offer(filepath, info)
-
-
-def _binding_offer(filepath, info):
-    """For an HDF5 shown as a generic listing, append an offer to enrich it with a
-    semantic binding via submit_binding. Returns '' when not applicable (not HDF5,
-    binding force-disabled, or a binding is already frozen — then the listing
-    above is already the rich one). Works for a remote source via the schema tree
-    the remote inspect already shipped (info._remote_schema_tree)."""
-    if getattr(info, "filetype", None) != "HDF5" or os.environ.get("VISLANG_NO_BINDING"):
-        return ""
-    try:
-        import schema_binding
-        tree = getattr(info, "_remote_schema_tree", None)
-        if tree is not None:
-            evidence = schema_binding.format_schema(tree)     # remote: no data moved
-        elif is_remote(filepath):
-            return ""   # remote + a cached binding was already applied -> no offer
-        elif schema_binding.has_cached_binding(filepath):
-            return ""
-        else:
-            evidence = schema_binding.schema_evidence(filepath)
-    except Exception:
-        return ""
-    return (
-        "\n\nBINDING_AVAILABLE\n"
-        "This HDF5 shows only a generic dataset listing (raw paths). You can "
-        "enrich it with a semantic binding (physical names, dimensions, where "
-        "attributes live) so specs read cleanly:\n"
-        "  1. Read the guide: instructions/writing-bindings.md.\n"
-        "  2. Propose a binding JSON from the schema tree below.\n"
-        "  3. Call submit_binding(filepath, binding_json) — it verifies every "
-        "claim against the file's own schema and freezes it on success, or "
-        "returns the violation to fix. Binding is optional; the listing works.\n\n"
-        "--- HDF5 schema tree ---\n"
-        f"{evidence}"
-    )
+    return do_inspect(filepath, positions)
 
 
 @mcp.tool()
@@ -169,19 +92,7 @@ def submit_binding(filepath: str, binding_json: str) -> str:
     the exact violation is returned so you can fix and resubmit. Nothing is
     executed — bindings are inert declarative data.
     """
-    from schema_binding import verify_and_freeze_binding
-    schema = None
-    if is_remote(filepath):
-        schema = remote_schema_tree(filepath)   # shipped tree; no data moved
-        if schema is None:
-            return ("BINDING error: could not fetch the remote schema (needs ssh "
-                    "key auth). Inspect the file first, or bind a local copy.")
-    try:
-        info = verify_and_freeze_binding(filepath, binding_json, schema=schema)
-    except Exception as e:
-        return (f"BINDING REJECTED: {type(e).__name__}: {e}\n\n"
-                f"Fix the binding and call submit_binding again.")
-    return "BINDING ACCEPTED — verified and frozen.\n\n" + str(info)
+    return do_submit_binding(filepath, binding_json)
 
 
 @mcp.tool()
@@ -196,20 +107,7 @@ def submit_adapter(filepath: str, module_code: str) -> str:
     registered (future files of this format need no model). On failure it returns
     the violation/traceback — fix the module and call submit_adapter again.
     """
-    from llm_adapter import conform_and_freeze
-    buf = io.StringIO()
-    try:
-        with redirect_stdout(buf), redirect_stderr(buf):
-            report = conform_and_freeze(filepath, module_code)
-    except Exception as e:
-        tb = traceback.format_exc(limit=6).rstrip()
-        return (f"ADAPTER REJECTED — failed conformance against the real file.\n"
-                f"{type(e).__name__}: {e}\n\n"
-                f"Fix the module and call submit_adapter again.\n\n"
-                f"--- traceback ---\n{tb}")
-    body = "\n".join(f"  {k}: {v}" for k, v in report.items())
-    return (f"ADAPTER ACCEPTED — validated, frozen, and registered.\n{body}\n\n"
-            f"Re-run inspect({filepath!r}) to author against it.")
+    return do_submit_adapter(filepath, module_code)
 
 
 @mcp.tool()
@@ -222,22 +120,7 @@ def estimate_render_cost(filepath: str) -> str:
     browser payload, the disk-read cost (and whether narrowing reduces it), and a
     ready-to-use recommendation to keep the first overview responsive.
     """
-    try:
-        return format_estimate(_estimate_render_cost(filepath))
-    except Exception as e:
-        return f"ERROR estimating {filepath}: {type(e).__name__}: {e}"
-
-
-def _run_one(node, dry_run, confirm=False):
-    """Plan+execute one pipeline; return (ok, hold_kind, formatted_text) where
-    hold_kind is None, 'confirm' (over budget), or 'allocation' (no Slurm alloc)."""
-    try:
-        result = plan_pipeline(node, dry_run=dry_run, confirm=confirm)
-        hold = ('allocation' if result.get("needs_allocation")
-                else 'confirm' if result.get("needs_confirm") else None)
-        return True, hold, format_result(result)
-    except Exception as e:
-        return False, None, f"[{getattr(node, 'kind', '?')}] FAILED: {type(e).__name__}: {e}"
+    return do_estimate_render_cost(filepath)
 
 
 @mcp.tool()
@@ -281,72 +164,7 @@ def run_pipeline(spec_path: str, confirm: bool = False) -> str:
 
     Returns the inferred plan per pipeline, any printed URLs/paths, and errors.
     """
-    try:
-        with open(spec_path) as f:
-            spec_code = f.read()
-    except FileNotFoundError:
-        return f"ERROR: spec file not found: {spec_path}"
-    except Exception as e:
-        return f"ERROR reading spec: {type(e).__name__}: {e}"
-
-    from vislang_trace import session_banner, log_run
-    session_banner()                       # delimit this MCP session in the log (once)
-
-    reset_sinks()
-    try:
-        ctx = execute(spec_code, form_namespace())
-    except (SandboxError, SyntaxError) as e:
-        report = (f"Status: BUILD FAILED\nSpec: {spec_path}\n\n"
-                  f"--- Error ---\n{e}")
-        log_run(spec_path, report)
-        return report
-
-    sinks = collected_sinks()
-    dry = not sinks
-    targets = leaf_nodes(ctx) if dry else sinks
-
-    # Execute (or dry-run). This is where reads happen, so capture stdout here.
-    buf = io.StringIO()
-    results = []
-    any_failed = False
-    any_budget_hold = False
-    any_alloc_hold = False
-
-    with redirect_stdout(buf), redirect_stderr(buf):
-        for t in targets:
-            passed, hold, text = _run_one(t, dry_run=dry, confirm=confirm)
-            any_failed = any_failed or not passed
-            any_budget_hold = any_budget_hold or (hold == 'confirm')
-            any_alloc_hold = any_alloc_hold or (hold == 'allocation')
-            results.append(text)
-    output = buf.getvalue().rstrip()
-
-    status = ("FAILED" if any_failed else
-              "NEEDS ALLOCATION" if any_alloc_hold else
-              "NEEDS CONFIRM" if any_budget_hold else "OK")
-    parts = [f"Status: {status}", f"Spec: {spec_path}"]
-    if any_alloc_hold:
-        parts.append("\n(NO SLURM ALLOCATION — one or more pipelines were HELD before "
-                     "shipping the server-side reduce; nothing was materialized. Tell "
-                     "the user there is no allocation and ASK PERMISSION to create the "
-                     "proposed one (the salloc line above); on approval, run it — the "
-                     "harness will still prompt for that specific command. Once it is "
-                     "RUNNING, re-run the spec. Never run salloc without approval.)")
-    if any_budget_hold:
-        parts.append("\n(OVER BUDGET — one or more pipelines were HELD; nothing was "
-                     "materialized for them. Show the estimate to the user and let "
-                     "them choose: commit as-is (re-run with confirm=True) or narrow "
-                     "the spec. Do not auto-confirm.)")
-    if dry:
-        parts.append("\n(no render()/save() sink — dry run: inferred plan only, "
-                     "nothing materialized)")
-    if results:
-        parts.append("\n--- Pipelines ---\n" + "\n\n".join(results))
-    if output:
-        parts.append(f"\n--- Output ---\n{output}")
-    report = "\n".join(parts)
-    log_run(spec_path, report)             # persist the full report (append) to the run log
-    return report
+    return do_execute(spec_path, confirm=confirm)
 
 
 if __name__ == "__main__":

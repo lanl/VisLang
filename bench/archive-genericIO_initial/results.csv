@@ -1,0 +1,25 @@
+E1 — Single-snapshot remote reduction
+Quantity,Value
+Source,"8,512.32 MiB GenericIO"
+Request,fields(4/17) → subsample(100) → save
+Output transferred,40.96 MiB
+Network bandwidth,0.62–1.78 MiB/s
+Remote reduction time,14.43 s
+Pull time,22.96 s
+End-to-end Sieve time,84.63 s
+
+E2 — Five-query session over one 8.31 GiB HACC snapshot
+Query,Request,Reuse,Hit (%),Wire,srun,Pull (s),Total (s)
+q1,add uu (internal energy),4/5,80,10.24 MiB,1,16.40,72.84
+q2,q1 re-issued verbatim,5/5,100,0,0,–,15.15
+q3,filter: uu > cut AND rho < cut,0/5,0,0.87 MiB,1,15.41,75.51
+q4,"add zmet, inside the filter",5/6,83,0.17 MiB,1,16.42,72.99
+q5,retune to a strictly tighter uu cut,0/6,0,0.05 MiB,1,15.94,72.53
+Session total,,,,11.33 MiB,4,64.18,309.02
+
+E3 — Rejected requests
+Run,Malformed request,Rejected by,RTs,srun,Time (s),Wire (B)
+E3a,variable zmett (misspelled),remote schema resolution,2,0,14.77,0
+E3b,"threshold on temperature, which does not exist","validate_narrowing, predicate vars",2,0,14.89,0
+E3c,"subsample(x=2) — per-axis, on point data",point-data modality guard,2,0,14.80,0
+E3d,"region(x=(9000,9999)) on a 128 Mpc/h box",NOT REJECTED — no extent to violate,7,1,77.79,0

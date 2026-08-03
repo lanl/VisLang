@@ -1,0 +1,8 @@
+started,site,route,est_read_mib,wire_mib,err_pct,est_time_lo_s,est_time_hi_s,pull_s,in_band,probe_bw_mibps,est_over_budget
+2026-07-31T13:36:43,remote,held_budget,40.96000671386719,0.0,,48.0,192.1,,,0.426,True
+2026-07-31T13:37:25,remote,remote_reduce,40.96000671386719,40.96,0.0,43.7,174.9,22.9643,low,0.468,True
+2026-07-31T13:38:49,remote,remote_reduce,10.240001678466797,10.24,0.0,10.3,41.0,16.4046,yes,0.499,True
+2026-07-31T13:41:02,remote,remote_reduce,4096.0,0.0,,4034.5,16138.2,15.7614,low,0.508,True
+2026-07-31T13:43:36,remote,remote_reduce,5120.0,0.87,588405.7,5002.5,20010.0,15.4142,low,0.512,True
+2026-07-31T13:44:52,remote,remote_reduce,1024.0,0.17,602252.9,998.4,3993.5,16.424,low,0.513,True
+2026-07-31T13:46:05,remote,remote_reduce,6144.0,0.05,12287900.0,6121.1,24484.5,15.9365,low,0.502,True

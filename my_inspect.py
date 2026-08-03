@@ -47,11 +47,21 @@ def inspect_file(filepath, positions=None):
     return info
 
 
-def inspect_source(uri, positions=None):
+class SchemaUnavailable(Exception):
+    """A remote schema could not be read WITHOUT moving bulk data, and the caller
+    forbade the whole-file fallback (`allow_fetch=False`). Raised only on that
+    path; the default remote inspect still falls back to a fetch as before."""
+
+
+def inspect_source(uri, positions=None, allow_fetch=True):
     """Site-aware inspect for the authoring tools. Local path -> inspect_file;
-    remote URI -> inspected next to the data (or fetched, if no key auth)."""
+    remote URI -> inspected next to the data (or fetched, if no key auth).
+
+    `allow_fetch=False` forbids the whole-file fallback: a caller that must not
+    move bulk data (the `estimate` path — pricing a request cannot be allowed to
+    pay for it) gets SchemaUnavailable instead of a silent multi-GB download."""
     if is_remote(uri):
-        return _inspect_remote(uri, positions)
+        return _inspect_remote(uri, positions, allow_fetch=allow_fetch)
     return inspect_file(uri, positions=positions)
 
 
@@ -93,15 +103,26 @@ def _run_remote_inspect(conn, remote_path):
     return _parse_meta(out)
 
 
-def _inspect_remote(uri, positions=None):
+def _inspect_remote(uri, positions=None, allow_fetch=True):
     conn, remote_path = _remote_conn(uri)
     if conn is None:
+        if not allow_fetch:
+            raise SchemaUnavailable(
+                f"{uri}: no ssh key auth, so the schema can only be read by "
+                f"fetching the file — refused here (nothing may be moved).")
         return _inspect_via_fetch(uri, positions)
     meta = _run_remote_inspect(conn, remote_path)
     if not meta or not meta.get("ok") or meta.get("needs_adapter"):
         # No schema (or an unrecognized format: the remote can't conform an
         # adapter without a model). Fetch the whole file so the LOCAL inspect can
         # bind/enrich or raise NeedsAdapterError against a real local copy.
+        if not allow_fetch:
+            why = ("the format is unrecognized remotely (an adapter must be "
+                   "written against a local copy)"
+                   if (meta or {}).get("needs_adapter")
+                   else "the remote inspect returned no schema")
+            raise SchemaUnavailable(f"{uri}: {why} — a whole-file fetch would be "
+                                    f"needed, and is refused here.")
         return _inspect_via_fetch(uri, positions)
     # Inspect runs on the LOGIN NODE over plain ssh — cheap, and it needs no
     # Slurm allocation. The allocation check belongs at the reduce seam (where the
@@ -211,14 +232,21 @@ def remote_is_dir(uri):
     """True if a remote uri points at a DIRECTORY (a timeseries folder), False if
     a regular file — or if the remote can't be reached with ssh key auth or the
     path can't be stat'd, in which case the caller treats it as a single file and
-    the single-file path surfaces any real error. Metadata only (one `stat`)."""
-    import shlex
-    from my_download import run_remote
+    the single-file path surfaces any real error. Metadata only (one probe).
+
+    `-L` so a symlink TO a directory is a timeseries folder, as it is to every
+    other path here (a link is a way of naming data, not a kind of data).
+
+    This goes through `remote_probe`, which fetches type, size, mtime and the
+    header hash together and caches them for the run. The folder check is the
+    FIRST thing that touches a remote source, so warming that cache here makes
+    the catalog's later identity lookup free instead of two more round trips."""
+    from my_download import remote_probe
     conn, remote_path = _remote_conn(uri)
     if conn is None:
         return False
-    rc, out, _ = run_remote(conn, f"stat -c %F {shlex.quote(remote_path)}")
-    return rc == 0 and "directory" in out.lower()
+    probe = remote_probe(conn, remote_path)
+    return bool(probe) and "directory" in probe["kind"].lower()
 
 
 def remote_timestep_files(uri):
@@ -251,14 +279,21 @@ def remote_timestep_files_stat(uri):
     ssh round-trip — the stat-carrying analog of remote_timestep_files, so the
     catalog can compute each timestep's identity (size+mtime) without a probe per
     file. `find -printf` lists name/size/mtime for regular files at depth 1;
-    non-`#N` names are dropped. None if unreachable; raises if no `…#N` files."""
+    non-`#N` names are dropped. None if unreachable; raises if no `…#N` files.
+
+    `find -L` (not plain `find`) so a timeseries assembled from SYMLINKS is seen
+    at all — bare `-type f` excludes symlinks, which made a linked folder visible
+    to `inspect` (it lists names) yet empty to the reduce path. -L also makes
+    `%s`/`%T@` report the TARGET's size/mtime, which is what the catalog must key
+    identity on: a link's own 72 bytes and creation time say nothing about whether
+    the data changed."""
     import shlex
     from my_download import run_remote
     conn, remote_path = _remote_conn(uri)
     if conn is None:
         return None
     rc, out, _ = run_remote(
-        conn, f"find {shlex.quote(remote_path)} -maxdepth 1 -type f "
+        conn, f"find -L {shlex.quote(remote_path)} -maxdepth 1 -type f "
               f"-printf '%f\\t%s\\t%T@\\n'")
     if rc != 0:
         return None

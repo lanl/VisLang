@@ -1,0 +1,28 @@
+E1 — Single-snapshot remote reduction
+Quantity,Value
+Source,"6,656.02 MiB HDF5"
+Request,fields(2/13) → subsample(2) → save
+Output transferred,128.00 MiB
+Network bandwidth,2.37–5.28 MiB/s
+Byte reduction,52.0×
+Remote reduction time,14.84 s
+Pull time,24.23 s
+End-to-end Sieve time,84.43 s
+Whole-file copy time,0.4–0.8 h
+Wall-clock improvement,15–33×
+
+E2 — Five-query session over a three-snapshot series
+Query,Request,Reuse,Hit (%),Wire,srun,Pull (s),Total (s)
+q1,"1 field, steps 0–2",0/3,0,24.00 MiB,1,8.52,83.21
+q2,add baryon_density,3/6,50,24.00 MiB,1,10.11,77.30
+q3,"narrower time range, step 1",2/2,100,0,0,–,22.49
+q4,q2 re-issued verbatim,6/6,100,0,0,–,22.17
+q5,"add region(x=(0,256))",6/6,100,0,0,–,23.62
+Session total,,,,48.00 MiB,2,18.62,228.78
+
+E3 — Rejected requests
+Run,Malformed request,Rejected by,RTs,srun,Time (s),Wire (B)
+E3a,field native_fields/temperatur,remote schema resolution,2,0,15.02,0
+E3b,"region(x=(0,99999)) on a 512³ grid",validate_narrowing remotely,2,0,14.79,0
+E3c,"subsample(w=2), where w is not an axis",remote grid-range validation,2,0,15.52,0
+E3d,render over a timeseries folder,planner structural check,2,0,13.91,0

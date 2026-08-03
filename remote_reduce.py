@@ -50,6 +50,7 @@ import os
 
 import numpy as np
 
+import vislang_timing as timing        # per-phase seconds/bytes -> timings.jsonl
 from datasetInfo import DatasetInfo
 from my_catalog import ExtentCatalog, make_source_id
 from my_download import (establish_connection, transfer, transfer_dir,
@@ -368,16 +369,66 @@ def _prime_schema(conn, remote_path, catalog, sid, steps):
         return None
 
 
-def _reduce_estimate(src, key, schema, missing, conn, steps):
+def _row_cutting(narrowing):
+    """True when a post-read op DROPS elements rather than masking them in place.
+    On a grid a threshold NaN-fills (shape preserved, bytes knowable); on particles
+    it removes rows, so the transferred count is only known after the read."""
+    from narrowing import RowMask, RowSample
+    return any(isinstance(op, (RowMask, RowSample))
+               for op in (getattr(narrowing, "post_ops", ()) or ()))
+
+
+def _info_from_schema(uri, schema):
+    """A DatasetInfo standing in for the remote source, built from the schema the
+    remote itself reported. Not a guess: `_prime_schema` obtained it by running
+    the inspect next to the data (same binding mode the reducer will use) and the
+    catalog stored it under a size+mtime+header identity, so if the file changed
+    the identity changed and the schema was re-read."""
+    from my_inspect import _dims_from_json
+    info = DatasetInfo(uri, (schema or {}).get("filetype", "remote"),
+                       list((schema or {}).get("variables") or []),
+                       dimensions=_dims_from_json((schema or {}).get("dimensions") or {}),
+                       itemsizes=dict((schema or {}).get("itemsizes") or {}))
+    info.positions = (tuple(schema["positions"])
+                      if (schema or {}).get("positions") else None)
+    return info
+
+
+def _check_before_shipping(src, prefix, schema, steps):
+    """Static-check the request against the schema we already hold, BEFORE any
+    plan is shipped or any scheduler step is spent.
+
+    The schema is in hand by this point either way — the cost estimate is computed
+    from it. Asking it the second obvious question ("is this request even
+    well-posed?") costs nothing extra, and turns a malformed spec from a compute-
+    node traceback into a local error. `_lower` is the SAME lowering the read path
+    uses, so a request that passes here cannot be rejected later for a different
+    reason.
+
+    Returns the fused Narrowing (reused for the estimate, so the priced shape is
+    the one that would actually be read), or None when there is no schema to check
+    against. Raises on an invalid request — that is the point."""
+    if not schema:
+        return None
+    from planner import _lower
+    info = _info_from_schema(src.uri, schema)
+    narrowing, _pending = _lower(info, prefix, [])      # steps discarded; see below
+    steps.append(f"static check: request valid against the cached schema "
+                 f"({len(info.variables)} vars, dims={info.dimensions or {}})")
+    return narrowing
+
+
+def _reduce_estimate(src, key, schema, missing, conn, steps, narrowing=None):
     """Estimate a single-file remote reduce's wire transfer and append a readable
     line to `steps`. Returns a CostEstimate; when the reduced size can't be known
-    locally (no schema, or a value-dependent / particle narrowing) the estimate
-    carries read_mb=None (over_budget False), so the caller does not gate.
+    locally the estimate carries read_mb=None (over_budget False), so the caller
+    does not gate.
 
     The byte math is `my_estimate.estimate_plan_cost` — the same estimator the
-    local paths use — fed a DatasetInfo + a Narrowing built from the catalog's
-    own form-fuse (_grid_ranges_of), so the estimated shape matches what the
-    reduce actually reads and real dtypes are used when the schema carries them."""
+    local paths use. `narrowing` is the fused plan from the pre-ship static check
+    (`_check_before_shipping`), i.e. the SAME lowering the read will perform, so
+    the priced shape is the shape that gets read. Without one (no schema to check
+    against) it falls back to the catalog's own form-fuse."""
     from my_estimate import estimate_plan_cost, format_plan_estimate
     from my_inspect import _dims_from_json
     from narrowing import Narrowing, AxisRange
@@ -392,10 +443,21 @@ def _reduce_estimate(src, key, schema, missing, conn, steps):
     variables = list((schema or {}).get("variables") or [])
     wire_vars = list(missing) if missing else variables
 
-    info, narrowing, note = None, None, None
+    info, note = None, None
     if schema is None:
+        narrowing = None
         note = ("schema unavailable (login-node inspect failed) — reduced size "
                 "not estimated; not gated.")
+    elif narrowing is not None:
+        # Lowered by the static check. A grid `threshold` is a shape-preserving
+        # NaN mask, so its bytes ARE knowable — the old path refused to price any
+        # threshold because it asked the catalog's fuse, whose real question is
+        # "can this be sliced out of a cached superset?" (where a value cut does
+        # disqualify). Those are different questions; this one is answerable.
+        info = _info_from_schema(src.uri, schema)
+        if _row_cutting(narrowing):
+            note = ("value-dependent row cut — the count survives only after the "
+                    "read, so this prices the pre-cut selection: an UPPER bound.")
     elif isinstance(grid, tuple) and len(grid) == 3:
         from my_catalog import _grid_ranges_of
         ranges = _grid_ranges_of(key, grid)
@@ -406,9 +468,7 @@ def _reduce_estimate(src, key, schema, missing, conn, steps):
             narrowing = Narrowing(
                 grid_ranges=[AxisRange(a, b, s or 1) for a, b, s in ranges],
                 project=tuple(wire_vars))
-            info = DatasetInfo(src.uri, schema.get("filetype", "remote"), variables,
-                               dimensions=dims,
-                               itemsizes=dict(schema.get("itemsizes") or {}))
+            info = _info_from_schema(src.uri, schema)
     else:
         note = "particle/unknown modality — reduced size not estimated; not gated."
 
@@ -436,15 +496,20 @@ def remote_reduce(src, middle, confirm=False):
 
     norm = _normalize_remote(src.uri)
     _, host, remote_path = _parse_remote(norm)
-    conn = establish_connection(norm)
-    if conn.method != "ssh-key":
-        raise RemoteUnavailable("remote reduce needs ssh key auth")
+    with timing.phase("probe_source"):
+        conn = establish_connection(norm)
+        if conn.method != "ssh-key":
+            raise RemoteUnavailable("remote reduce needs ssh key auth")
 
-    st = remote_stat(conn, remote_path)
-    if st is None:
-        raise RemoteUnavailable(f"cannot stat {remote_path} on {host}")
-    size, mtime = st
-    sid = make_source_id(norm, size, mtime, remote_header_hash(conn, remote_path) or "")
+        st = remote_stat(conn, remote_path)
+        if st is None:
+            raise RemoteUnavailable(f"cannot stat {remote_path} on {host}")
+        size, mtime = st
+        sid = make_source_id(norm, size, mtime,
+                             remote_header_hash(conn, remote_path) or "")
+    # source_bytes is the denominator of the reduction factor: how much a
+    # whole-file fetch would have moved, against what actually crossed.
+    timing.note(host=host, source_bytes=size, source_id=sid[:8])
     steps.append(f"remote source {host}:{remote_path} ({size / 1e6:.1f} MB, id={sid[:8]})")
 
     # --- catalog delta: fetch only what we don't already hold -----------------
@@ -453,17 +518,25 @@ def remote_reduce(src, middle, confirm=False):
     key = _narrow_key(prefix)
     project = _projection_of(prefix)
     schema = catalog.schema(sid)
+    timing.note(schema_cached=schema is not None)
     if schema is None:
         # First sighting of this file: read its schema on the LOGIN NODE before
         # anything ships. Feeds both the cost gate (below) and `want` — without
         # it an unprojected spec can't be diffed against the catalog either.
-        schema = _prime_schema(conn, remote_path, catalog, sid, steps)
+        with timing.phase("login_node_inspect"):
+            schema = _prime_schema(conn, remote_path, catalog, sid, steps)
     want = project if project is not None else (
         list(schema["variables"]) if schema else None)
 
     have, missing = {}, want
     if want is not None:
-        have, missing = catalog.delta(sid, want, key)
+        with timing.phase("catalog_delta"):
+            have, missing = catalog.delta(sid, want, key)
+        # want / have / missing counted in VARIABLES here (the single-file axis);
+        # the folder path counts (timestep, variable) pairs.
+        timing.note(want_vars=len(want), cached_vars=len(have),
+                    missing_vars=len(missing or []),
+                    cached_bytes=int(sum(a.nbytes for a in have.values())) if have else 0)
         if have:
             steps.append(f"catalog: cached {sorted(have)} for this narrowing")
 
@@ -473,12 +546,24 @@ def remote_reduce(src, middle, confirm=False):
     # there is nothing to gate. Runs BEFORE the allocation gate: it is login-node
     # only (schema + a bandwidth probe), so even a run that stops for a missing
     # allocation reports what it would have cost.
+    # --- static check BEFORE the plan ships ----------------------------------
+    # The schema is already in hand (catalog or login-node inspect), so validate
+    # here rather than letting a compute node discover a typo. Raises on an
+    # invalid request, which costs no bandwidth probe, no scheduler query, no
+    # srun step and no shipped plan.
+    with timing.phase("static_check"):
+        checked = _check_before_shipping(src, prefix, schema, steps)
+    timing.note(pre_validated=checked is not None)
+
     if want is None or missing:
-        estimate = _reduce_estimate(src, key, schema, missing, conn, steps)
+        with timing.phase("cost_estimate"):
+            estimate = _reduce_estimate(src, key, schema, missing, conn, steps,
+                                        narrowing=checked)
         if estimate is not None and estimate.over_budget and not confirm:
             raise BudgetHold(estimate, steps)
     else:
         estimate = None
+        timing.note(route="catalog_full_hit")
 
     # --- allocation gate: the server-side lowering/reduce srun-steps into a HELD
     # Slurm allocation. In AUTO discovery mode, if none exists we HOLD and PROPOSE
@@ -488,7 +573,8 @@ def remote_reduce(src, middle, confirm=False):
     # it directly, so we don't second-guess it here). confirm=True proceeds anyway
     # (auto-mode then falls back to a whole-file fetch downstream).
     if (want is None or missing) and _srun_requested() == "auto" and not confirm:
-        alloc = allocation_status(conn)
+        with timing.phase("allocation_probe"):
+            alloc = allocation_status(conn)
         if alloc.get("present") is False:      # definitively absent (not unknown)
             steps.append(f"allocation: {alloc['reason']}")
             raise AllocationHold(alloc["reason"], recommended_salloc(host), steps)
@@ -521,6 +607,7 @@ def remote_reduce(src, middle, confirm=False):
                            "dimension_selection": key,
                            "site": "remote"}
     total = sum(a.nbytes for a in data.values())
+    timing.note(result_bytes=int(total), fetched_vars=len(fetched))
     steps.append(f"assembled {len(data)} var(s), {total / 1e6:.1f} MB "
                  f"({len(have)} cached, {len(fetched)} fetched)")
     return info, steps, estimate
@@ -549,9 +636,14 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
 
     steps.append(f"remote exec: narrowing prefix -> {rout}"
                  + (f" (vars {missing})" if missing else " (all vars)"))
+    # ship_plan / remote_exec / pull are the three phases the paper's remote-
+    # execution comparison needs kept apart: the AST is bytes-negligible, the
+    # reduce is compute next to the data, and only the pull touches the link.
+    timing.note(plan_bytes=len(plan), srun=bool(jobid))
     if jobid is None:
         cmd = _executor_cmd(rout)                       # plan piped via stdin
-        rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
+        with timing.phase("remote_exec", srun=False):
+            rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
         rplan = None
     else:
         # srun runs vislang_exec on a compute node; stage the plan to shared FS
@@ -559,12 +651,14 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
         rplan = f"{base}/vislang_plan_{tag}.json"
         steps.append(f"srun --jobid={jobid}: step into held allocation "
                      f"(plan staged at {rplan})")
-        stc, _, ste = run_remote(conn, f"mkdir -p {base} && cat > {rplan}",
-                                 stdin_bytes=plan.encode())
+        with timing.phase("ship_plan", bytes=len(plan)):
+            stc, _, ste = run_remote(conn, f"mkdir -p {base} && cat > {rplan}",
+                                     stdin_bytes=plan.encode())
         if stc != 0:
             raise RuntimeError(f"staging plan to {rplan} failed: {ste.strip()[-300:]}")
         cmd = _executor_cmd(rout, plan_path=rplan, jobid=jobid)
-        rc, out, err = run_remote(conn, cmd)
+        with timing.phase("remote_exec", srun=True, jobid=jobid):
+            rc, out, err = run_remote(conn, cmd)
 
     meta = _parse_meta(out)
     if meta is None or not meta.get("ok", False):
@@ -581,7 +675,8 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
 
     from vislang_paths import cache_root
     local = os.path.join(cache_root(), f"pull_{tag}.npz")
-    pulled = transfer(conn, rout, local, size_warn_mb=10 ** 9)   # never prompt
+    with timing.phase("pull"):
+        pulled = transfer(conn, rout, local, size_warn_mb=10 ** 9)   # never prompt
     cleanup = f"rm -f {rout}" + (f" {rplan}" if rplan else "")
     run_remote(conn, cleanup)                                    # best-effort cleanup
     if pulled is None:
@@ -666,9 +761,11 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
 
     norm = _normalize_remote(src.uri)
     _, host, remote_dir = _parse_remote(norm)
-    conn = establish_connection(norm)
-    if conn.method != "ssh-key":
-        raise RemoteUnavailable("remote reduce needs ssh key auth")
+    with timing.phase("probe_source"):
+        conn = establish_connection(norm)
+        if conn.method != "ssh-key":
+            raise RemoteUnavailable("remote reduce needs ssh key auth")
+    timing.note(host=host)
 
     # No projection -> we can't know each file's variables from metadata; run the
     # non-catalog whole-folder batch (still one remote job, one dir pull).
@@ -679,7 +776,8 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
                                      out_local_dir, steps)
 
     from my_inspect import remote_timestep_files_stat
-    files = remote_timestep_files_stat(src.uri)         # [(label, uri, size, mtime)]
+    with timing.phase("list_timesteps"):
+        files = remote_timestep_files_stat(src.uri)     # [(label, uri, size, mtime)]
     if files is None:
         raise RemoteUnavailable(f"cannot list remote folder {src.uri!r}")
     if ts_nodes:
@@ -687,17 +785,20 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         files = [f for f in files if lo <= f[0] <= hi]
     if not files:
         raise ValueError(f"no timesteps match in {src.uri}")
+    timing.note(source_bytes=int(sum(f[2] for f in files)),
+                selected_timesteps=len(files))
 
     # --- catalog delta per timestep (local, no network) ----------------------
     catalog = ExtentCatalog(cache_root())
     per = {}                                            # label -> {uri, sid, have, missing}
     manifest = {}                                       # label(str) -> [missing vars]  (fetch set)
-    for label, uri, size, mtime in files:
-        sid = make_source_id(uri, size, mtime)
-        have, missing = catalog.delta(sid, project, narrow_key)
-        per[label] = {"uri": uri, "sid": sid, "have": have, "missing": missing}
-        if missing:
-            manifest[str(label)] = missing
+    with timing.phase("catalog_delta", n=len(files)):
+        for label, uri, size, mtime in files:
+            sid = make_source_id(uri, size, mtime)
+            have, missing = catalog.delta(sid, project, narrow_key)
+            per[label] = {"uri": uri, "sid": sid, "have": have, "missing": missing}
+            if missing:
+                manifest[str(label)] = missing
 
     n = len(files)
     union_missing = sorted({v for vs in manifest.values() for v in vs})
@@ -709,6 +810,22 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
                  + (f"; fetching {union_missing} ({fetched_pairs} pair(s)) for "
                     f"{len(manifest)} timestep(s)" if manifest
                     else " — full hit, nothing crosses the wire"))
+
+    # --- static check BEFORE the plan ships -----------------------------------
+    # Same reasoning as the single-file path: a malformed request should not cost
+    # a scheduler step. Timestep 0's schema stands for the series — sharing one
+    # schema is what makes a folder a series. Free once the catalog holds it; one
+    # login-node inspect on the very first sighting, which the run would have
+    # spent anyway (the reduce stores the schema when it returns).
+    label0 = files[0][0]
+    schema0 = catalog.schema(per[label0]["sid"])
+    if schema0 is None and manifest:
+        _, _, ts0_path = _parse_remote(_normalize_remote(per[label0]["uri"]))
+        with timing.phase("login_node_inspect"):
+            schema0 = _prime_schema(conn, ts0_path, catalog, per[label0]["sid"], steps)
+    with timing.phase("static_check"):
+        _check_before_shipping(src, prefix, schema0, steps)
+    timing.note(pre_validated=schema0 is not None)
 
     # --- fetch only the missing (timestep, variable) pairs, in ONE remote job -
     fetched = {}                                        # (label, var) -> array
@@ -726,25 +843,33 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         steps.append(f"remote folder {host}:{remote_dir} (catalog delta)")
 
         # The manifest is a file on BOTH paths (--manifest takes a path).
-        stc, _, ste = run_remote(conn, f"mkdir -p {base} && cat > {rmanifest}",
-                                 stdin_bytes=json.dumps(manifest).encode())
-        if stc != 0:
-            raise RuntimeError(f"staging manifest failed: {ste.strip()[-300:]}")
-        steps.append(f"ship plan.json + manifest (delta {union_missing}) to the remote")
-
-        if jobid is None:
-            cmd = _executor_cmd(routdir, folder=True, manifest_path=rmanifest)
-            rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
-            rplan = None
-        else:
-            rplan = f"{base}/vislang_plan_{tag}.json"
-            steps.append(f"srun --jobid={jobid}: one step for the whole delta")
-            stc, _, ste = run_remote(conn, f"cat > {rplan}", stdin_bytes=plan.encode())
+        man_bytes = len(json.dumps(manifest))
+        with timing.phase("ship_plan", bytes=len(plan) + man_bytes):
+            stc, _, ste = run_remote(conn, f"mkdir -p {base} && cat > {rmanifest}",
+                                     stdin_bytes=json.dumps(manifest).encode())
             if stc != 0:
-                raise RuntimeError(f"staging plan failed: {ste.strip()[-300:]}")
-            cmd = _executor_cmd(routdir, plan_path=rplan, jobid=jobid,
-                                folder=True, manifest_path=rmanifest)
-            rc, out, err = run_remote(conn, cmd)
+                raise RuntimeError(f"staging manifest failed: {ste.strip()[-300:]}")
+            steps.append(f"ship plan.json + manifest (delta {union_missing}) to the remote")
+            rplan = None
+            if jobid is not None:
+                rplan = f"{base}/vislang_plan_{tag}.json"
+                steps.append(f"srun --jobid={jobid}: one step for the whole delta")
+                stc, _, ste = run_remote(conn, f"cat > {rplan}",
+                                         stdin_bytes=plan.encode())
+                if stc != 0:
+                    raise RuntimeError(f"staging plan failed: {ste.strip()[-300:]}")
+
+        # ONE remote job for the whole delta, however many timesteps it spans —
+        # `remote_jobs` in the counters stays 1 as N grows.
+        with timing.phase("remote_exec", srun=bool(jobid), jobid=jobid,
+                          n_timesteps=len(manifest)):
+            if jobid is None:
+                cmd = _executor_cmd(routdir, folder=True, manifest_path=rmanifest)
+                rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
+            else:
+                cmd = _executor_cmd(routdir, plan_path=rplan, jobid=jobid,
+                                    folder=True, manifest_path=rmanifest)
+                rc, out, err = run_remote(conn, cmd)
 
         meta = _parse_meta(out)
         if meta is None or not meta.get("ok", False):
@@ -754,7 +879,8 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
 
         pull_dir = os.path.join(cache_root(), f"folderpull_{tag}")
         remote_out = meta.get("outdir", routdir)
-        pulled = transfer_dir(conn, remote_out, pull_dir)
+        with timing.phase("pull"):
+            pulled = transfer_dir(conn, remote_out, pull_dir)
         cleanup = f"rm -rf {routdir} {rmanifest}" + (f" {rplan}" if jobid else "")
         run_remote(conn, cleanup)                       # best-effort
         if pulled is None:
@@ -803,7 +929,8 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         per_step.append((label, loaded))
 
     from my_save import save_timeseries
-    out = save_timeseries(per_step, out_local_dir, schema.get("filetype"))
+    with timing.phase("sink_save_timeseries", n=len(per_step)):
+        out = save_timeseries(per_step, out_local_dir, schema.get("filetype"))
     steps.append(f"-> save timeseries -> {out}")
     report = {"n": n, "host": host, "jobid": jobid, "cached": n - len(manifest),
               "fetched_timesteps": len(manifest), "fetched_vars": union_missing,
@@ -846,20 +973,24 @@ def _folder_batch_savedir(conn, host, remote_dir, src, middle, ts_nodes,
     steps.append(f"remote folder {host}:{remote_dir}")
     steps.append("ship plan.json (folder AST moved to the remote): " + plan)
 
+    timing.note(route="folder_batch_savedir", plan_bytes=len(plan), srun=bool(jobid))
     if jobid is None:
         cmd = _executor_cmd(routdir, folder=True)
-        rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
+        with timing.phase("remote_exec", srun=False):
+            rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
         rplan = None
     else:
         rplan = f"{base}/vislang_plan_{tag}.json"
         steps.append(f"srun --jobid={jobid}: one step for the whole folder "
                      f"(plan staged at {rplan})")
-        stc, _, ste = run_remote(conn, f"mkdir -p {base} && cat > {rplan}",
-                                 stdin_bytes=plan.encode())
+        with timing.phase("ship_plan", bytes=len(plan)):
+            stc, _, ste = run_remote(conn, f"mkdir -p {base} && cat > {rplan}",
+                                     stdin_bytes=plan.encode())
         if stc != 0:
             raise RuntimeError(f"staging plan to {rplan} failed: {ste.strip()[-300:]}")
         cmd = _executor_cmd(routdir, plan_path=rplan, jobid=jobid, folder=True)
-        rc, out, err = run_remote(conn, cmd)
+        with timing.phase("remote_exec", srun=True, jobid=jobid):
+            rc, out, err = run_remote(conn, cmd)
 
     meta = _parse_meta(out)
     if meta is None or not meta.get("ok", False):
@@ -867,7 +998,8 @@ def _folder_batch_savedir(conn, host, remote_dir, src, middle, ts_nodes,
         raise RuntimeError(f"remote folder reduce failed: {detail}")
 
     remote_out = meta.get("outdir", routdir)
-    pulled = transfer_dir(conn, remote_out, out_local_dir)
+    with timing.phase("pull"):
+        pulled = transfer_dir(conn, remote_out, out_local_dir)
     cleanup = f"rm -rf {routdir}" + (f" {rplan}" if rplan else "")
     run_remote(conn, cleanup)
     if pulled is None:

@@ -5,6 +5,8 @@ import hashlib
 import subprocess
 from dataclasses import dataclass
 
+import vislang_timing as timing        # counts ssh round trips + wire bytes (no-op when off)
+
 
 # A remote endpoint with its probed auth method. Built once by
 # establish_connection() and reused by transfer()/run_remote() — so a session
@@ -21,11 +23,78 @@ class Connection:
 # then tries a trivial BatchMode ssh command: if it succeeds, key auth works
 # (rsync/scp will too); otherwise we fall back to a paramiko password login at
 # transfer time.
+_CONN_CACHE = {}        # target -> Connection      (auth probed once per run)
+_PROBE_CACHE = {}       # (target, path) -> dict    (one stat+hash per path per run)
+_HEADER_BYTES = 65536   # header window the catalog's identity hash reads
+
+
+def clear_remote_caches():
+    """Drop the per-run connection and probe caches.
+
+    Both caches are deliberately RUN-scoped, not process-scoped. The probe holds
+    size and mtime, which is exactly what the extent catalog keys source identity
+    on — caching that across runs would let a file change underneath us and turn
+    a stale identity into a false cache hit, i.e. wrong data. The front ends call
+    this at the start of every run, so within a run the facts are consistent and
+    across runs they are re-read."""
+    _CONN_CACHE.clear()
+    _PROBE_CACHE.clear()
+
+
 def establish_connection(remote_source):
+    """Probe a remote endpoint's auth once per run and reuse it.
+
+    The probe is a full ssh session (`ssh … true`), which on a high-latency or
+    brokered path costs as much as any real command. Several layers legitimately
+    ask for a connection to the same host in one run — the folder check, the
+    reduce, the transfer — and each re-probe was a wasted round trip."""
     user, host, _ = _parse_remote(remote_source)
     target = f"{user}@{host}" if user else host
+    cached = _CONN_CACHE.get(target)
+    if cached is not None:
+        return cached
     method = "ssh-key" if _ssh_query(target, "true") is not None else "password"
-    return Connection(user=user, host=host, target=target, method=method)
+    conn = Connection(user=user, host=host, target=target, method=method)
+    _CONN_CACHE[target] = conn
+    return conn
+
+
+def remote_probe(connection, remote_path):
+    """Type, size, mtime and header hash of one remote path in ONE round trip.
+
+    Two independent layers want facts about the same path in a single run: the
+    planner asks "is this a directory?" (a timeseries folder) and the catalog asks
+    "what is this file's identity?" (size + mtime + a hash of its first bytes).
+    Those were three separate ssh invocations. One command answers all of it, and
+    the answer is cached for the rest of the run so the second asker pays nothing.
+
+    Returns {'kind', 'size', 'mtime', 'header_md5', 'nbytes'} or None. `-L`
+    throughout: a symlink is a way of naming data, not a kind of data, so every
+    fact here is the target's."""
+    if connection.method != 'ssh-key':
+        return None
+    ck = (connection.target, remote_path)
+    if ck in _PROBE_CACHE:
+        return _PROBE_CACHE[ck]
+    q = shlex.quote(remote_path)
+    # One session, two facts: stat for type/size/mtime, then the header window for
+    # the identity hash. `head` on a directory fails harmlessly (stderr dropped);
+    # the hash is meaningless there and no caller uses it.
+    out = _ssh_query(connection.target,
+                     f"stat -Lc '%F|%s|%Y' {q}; head -c {_HEADER_BYTES} {q} "
+                     f"2>/dev/null | md5sum")
+    if not out:
+        return None
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    try:
+        kind, size, mtime = lines[0].split("|")
+        info = {"kind": kind.strip(), "size": int(size), "mtime": int(float(mtime)),
+                "header_md5": (lines[1].split()[0] if len(lines) > 1 else None),
+                "nbytes": _HEADER_BYTES}
+    except (IndexError, ValueError):
+        return None
+    _PROBE_CACHE[ck] = info
+    return info
 
 
 # Move bytes for one file/dir over an established Connection.
@@ -51,6 +120,7 @@ def transfer(connection, remote_path, local_path, size_warn_mb=500):
         remote_md5 = _remote_md5(target, remote_path)
         if remote_md5 and remote_md5 == _local_md5(local_path):
             print(f"✓ {local_path} already matches remote (MD5) — skipping download.")
+            timing.count("transfers_skipped_md5")   # reuse: zero bytes crossed
             return local_path
 
     # Warn before pulling a large file. NON-INTERACTIVE: the MCP/Jupyter flow has
@@ -67,31 +137,35 @@ def transfer(connection, remote_path, local_path, size_warn_mb=500):
     print(f"  local:  {local_path}")
 
     # Key-based transfer (rsync preferred, scp fallback) when the probe found a key.
-    if connection.method == "ssh-key":
-        if _have_cmd('rsync'):
-            ok, err = _run_transfer([
-                'rsync', '-a', '--progress', '--partial',
-                '-e', _ssh_transport(),
-                remote_source, local_path
-            ])
-            if ok:
-                return _report_success(local_path)
-            if not _is_auth_error(err):
-                raise RuntimeError(f"rsync failed:\n{err}")
-        elif _have_cmd('scp'):
-            ok, err = _run_transfer([
-                'scp', '-r', *_ssh_opts(),
-                remote_source, local_path
-            ])
-            if ok:
-                return _report_success(local_path)
-            if not _is_auth_error(err):
-                raise RuntimeError(f"scp failed:\n{err}")
-        print("⚠ SSH key authentication not available, trying password login...")
+    with timing.phase("transfer", remote=remote_path) as _t:
+        if connection.method == "ssh-key":
+            if _have_cmd('rsync'):
+                ok, err = _run_transfer([
+                    'rsync', '-a', '--progress', '--partial',
+                    '-e', _ssh_transport(),
+                    remote_source, local_path
+                ])
+                if ok:
+                    _t["bytes"] = timing.dir_bytes(local_path)
+                    return _measured(local_path, "file")
+                if not _is_auth_error(err):
+                    raise RuntimeError(f"rsync failed:\n{err}")
+            elif _have_cmd('scp'):
+                ok, err = _run_transfer([
+                    'scp', '-r', *_ssh_opts(),
+                    remote_source, local_path
+                ])
+                if ok:
+                    _t["bytes"] = timing.dir_bytes(local_path)
+                    return _measured(local_path, "file")
+                if not _is_auth_error(err):
+                    raise RuntimeError(f"scp failed:\n{err}")
+            print("⚠ SSH key authentication not available, trying password login...")
 
-    # Password fallback (works inside Jupyter).
-    if _download_paramiko(connection.user, connection.host, remote_path, local_path):
-        return _report_success(local_path)
+        # Password fallback (works inside Jupyter).
+        if _download_paramiko(connection.user, connection.host, remote_path, local_path):
+            _t["bytes"] = timing.dir_bytes(local_path)
+            return _measured(local_path, "file")
 
     u = connection.user
     raise RuntimeError(
@@ -115,23 +189,26 @@ def transfer_dir(connection, remote_dir, local_dir):
     os.makedirs(local_dir, exist_ok=True)
     src = f"{connection.target}:{remote_dir.rstrip('/')}/"
     dst = local_dir.rstrip("/") + "/"
-    if _have_cmd('rsync'):
-        ok, err = _run_transfer(['rsync', '-a', '--partial',
-                                 '-e', _ssh_transport(), src, dst])
-        if ok:
-            return _report_success(local_dir)
-        if not _is_auth_error(err):
-            raise RuntimeError(f"rsync (dir) failed:\n{err}")
-    elif _have_cmd('scp'):
-        # scp -r needs `dir/.` to copy contents into an existing dst.
-        ok, err = _run_transfer(['scp', '-r', *_ssh_opts(),
-                                 f"{connection.target}:{remote_dir.rstrip('/')}/.",
-                                 dst])
-        if ok:
-            return _report_success(local_dir)
-        if not _is_auth_error(err):
-            raise RuntimeError(f"scp (dir) failed:\n{err}")
-    return None
+    with timing.phase("transfer_dir", remote=remote_dir) as _t:
+        if _have_cmd('rsync'):
+            ok, err = _run_transfer(['rsync', '-a', '--partial',
+                                     '-e', _ssh_transport(), src, dst])
+            if ok:
+                _t["bytes"] = timing.dir_bytes(local_dir)
+                return _measured(local_dir, "dir")
+            if not _is_auth_error(err):
+                raise RuntimeError(f"rsync (dir) failed:\n{err}")
+        elif _have_cmd('scp'):
+            # scp -r needs `dir/.` to copy contents into an existing dst.
+            ok, err = _run_transfer(['scp', '-r', *_ssh_opts(),
+                                     f"{connection.target}:{remote_dir.rstrip('/')}/.",
+                                     dst])
+            if ok:
+                _t["bytes"] = timing.dir_bytes(local_dir)
+                return _measured(local_dir, "dir")
+            if not _is_auth_error(err):
+                raise RuntimeError(f"scp (dir) failed:\n{err}")
+        return None
 
 
 # Back-compat shim: establish a connection, then transfer one file.
@@ -181,14 +258,26 @@ def _mux_opts():
     except OSError:
         return []                               # can't stage a socket -> degrade
     persist = os.environ.get("VISLANG_SSH_MUX_PERSIST", _MUX_PERSIST_DEFAULT)
-    path = os.path.join(cm_dir, "vislang-cm-%C")   # ~73 chars < the 104-byte limit
+    # NOTE: %C hashes local-host/host/port/user and NOT the -o options, so a master
+    # opened under one auth configuration is reused by connections asking for a
+    # different one. Harmless while the options are fixed; if an auth-affecting
+    # option is ever made configurable, encode it in this name too.
+    path = os.path.join(cm_dir, "vislang-cm-%C")   # ~96 chars < the 104-byte limit
     return ['-o', 'ControlMaster=auto',
             '-o', f'ControlPath={path}',
             '-o', f'ControlPersist={persist}']
 
 
 def _ssh_opts():
-    """The full `ssh -o` list shared by ssh/scp: base flags + mux."""
+    """The full `ssh -o` list shared by ssh/scp: base flags + mux.
+
+    Do NOT add `GSSAPIAuthentication=no` here as a latency optimization: on a
+    Kerberos-authenticated host (LANL Darwin, where the server offers
+    publickey,gssapi-keyex,gssapi-with-mic,password,hostbased but the user holds
+    no installed key) GSSAPI IS the login. Disabling it does not make the ~16 s
+    session setup cheaper — it makes every connection fail in 0.27 s with
+    'Permission denied', which is easy to mistake for a speedup if you time the
+    command without checking its exit status."""
     return ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', *_mux_opts()]
 
 
@@ -201,6 +290,7 @@ def _ssh_transport():
 # Run a one-off ssh command in BatchMode (key auth only, never prompts).
 # Returns stdout on success, or None if it failed / auth unavailable.
 def _ssh_query(target, command):
+    timing.count("ssh_query")          # one metadata round trip (stat/md5/auth probe)
     result = subprocess.run(
         ['ssh', *_ssh_opts(), target, command],
         capture_output=True, text=True
@@ -210,7 +300,7 @@ def _ssh_query(target, command):
 
 # Remote file size in bytes (GNU stat), or None if unavailable.
 def _remote_size(target, remote_path):
-    out = _ssh_query(target, f"stat -c %s {shlex.quote(remote_path)}")
+    out = _ssh_query(target, f"stat -Lc %s {shlex.quote(remote_path)}")   # -L: follow symlinks
     try:
         return int(out.strip()) if out else None
     except ValueError:
@@ -297,6 +387,19 @@ def _download_paramiko(user, host, remote_path, local_path):
         client.close()
 
 
+def _measured(local_path, kind):
+    """Record a completed transfer's size + count it, then report it. Bytes are
+    taken from what landed on local disk (a directory tree is walked), which is
+    the only number both rsync and scp agree on. `wire_bytes` accumulates across
+    a run — the headline "how much crossed the network" figure."""
+    n = timing.dir_bytes(local_path)
+    timing.count("transfers")
+    if n:
+        timing.count("wire_bytes", n)
+        timing.count(f"wire_bytes_{kind}", n)
+    return _report_success(local_path)
+
+
 def _report_success(local_path):
     if os.path.isdir(local_path):
         total = sum(
@@ -322,10 +425,21 @@ def _report_success(local_path):
 
 def remote_stat(connection, remote_path):
     """(size_bytes, mtime_epoch) of a remote file in one round-trip, or None.
-    Feeds the catalog's source identity (GNU stat on the HPC targets)."""
+    Feeds the catalog's source identity (GNU stat on the HPC targets).
+
+    `-L` dereferences: for a symlinked dataset the link's own size (~72 B) and
+    creation time carry no information about the data, so keying cache identity on
+    them would both misreport the source size to the cost gate and fail to notice
+    the target changing underneath.
+
+    Served from `remote_probe`'s cache when this run already probed the path, so
+    the common case costs nothing; otherwise it runs its own single command."""
     if connection.method != 'ssh-key':
         return None
-    out = _ssh_query(connection.target, f"stat -c '%s %Y' {shlex.quote(remote_path)}")
+    hit = _PROBE_CACHE.get((connection.target, remote_path))
+    if hit is not None:
+        return hit["size"], hit["mtime"]
+    out = _ssh_query(connection.target, f"stat -Lc '%s %Y' {shlex.quote(remote_path)}")
     try:
         size, mtime = out.split()
         return int(size), int(mtime)
@@ -333,11 +447,18 @@ def remote_stat(connection, remote_path):
         return None
 
 
-def remote_header_hash(connection, remote_path, nbytes=65536):
+def remote_header_hash(connection, remote_path, nbytes=_HEADER_BYTES):
     """md5 of just the file's first nbytes — cheap identity for the catalog
-    without hashing a multi-GB file. None if unavailable."""
+    without hashing a multi-GB file. None if unavailable.
+
+    Served from `remote_probe`'s cache when this run already probed the path AND
+    asked for the same window; a different `nbytes` is a different question, so it
+    falls through to its own command rather than returning the wrong hash."""
     if connection.method != 'ssh-key':
         return None
+    hit = _PROBE_CACHE.get((connection.target, remote_path))
+    if hit is not None and hit.get("nbytes") == int(nbytes) and hit.get("header_md5"):
+        return hit["header_md5"]
     out = _ssh_query(connection.target,
                      f"head -c {int(nbytes)} {shlex.quote(remote_path)} | md5sum")
     return out.split()[0] if out else None
@@ -359,12 +480,17 @@ def measure_bandwidth(connection, mb=4):
         return None
     cmd = ['ssh', *_ssh_opts(), connection.target,
            f"dd if=/dev/zero bs=1M count={int(mb)} status=none"]
+    timing.count("bandwidth_probes")
     t0 = time.monotonic()
     result = subprocess.run(cmd, capture_output=True)
     elapsed = time.monotonic() - t0
     if result.returncode != 0 or not result.stdout or elapsed <= 0:
         return None
-    return len(result.stdout) / elapsed
+    bps = len(result.stdout) / elapsed
+    # The link speed the cost gate was fed — recorded so a predicted time band
+    # can be read back against the bandwidth that produced it.
+    timing.note(probe_bw_bps=round(bps, 1))
+    return bps
 
 
 def run_remote(connection, command, stdin_bytes=None, timeout=None):
@@ -373,6 +499,9 @@ def run_remote(connection, command, stdin_bytes=None, timeout=None):
     vislang_exec without landing a file first."""
     if connection.method != 'ssh-key':
         return 255, '', 'remote commands need ssh key auth'
+    timing.count("ssh_exec")           # one remote command round trip
+    if command.lstrip().startswith("srun"):
+        timing.count("remote_jobs")    # a scheduler step — the O(N) vs O(1) metric
     cmd = ['ssh', *_ssh_opts(), connection.target, command]
     try:
         result = subprocess.run(cmd, input=stdin_bytes, capture_output=True,

@@ -1,0 +1,341 @@
+
+==============================================================================
+=== VisLang session  pid=90417  2026-07-31 13:36:43
+==============================================================================
+
+----- run 13:37:25  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E1a.py -----
+Status: NEEDS CONFIRM
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E1a.py
+
+(OVER BUDGET — one or more pipelines were HELD; nothing was materialized for them. Show the estimate to the user and let them choose: commit as-is (re-run with confirm=True) or narrow the spec. Do not auto-confirm.)
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624  (HELD — over budget, nothing materialized)
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho] → subsample(100) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    login-node inspect: schema cached (17 vars, dims={'particles': 268435456})
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~41 MB
+      result size: ~41 MB
+      est. time: ~48 s–3.2 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (time) — confirm to run as-is, or narrow the spec.
+
+----- run 13:38:49  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E1b.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E1b.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho] → subsample(100) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~41 MB
+      result size: ~41 MB
+      est. time: ~44 s–2.9 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["x", "y", "z", "rho"]}, {"kind": "subsample", "uniform": 100, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_03c6aec4.npz (vars ['x', 'y', 'z', 'rho'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_03c6aec4.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho] → subsample(100) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['x', 'y', 'z', 'rho']
+    remote:  subsample uniform=100 (pushdown)
+    remote:  fuse -> particles=slice(None, None, 100), project=['x', 'y', 'z', 'rho']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_03c6aec4.npz
+    pulled 4 var(s), 42.9 MB over the wire
+    assembled 4 var(s), 42.9 MB (0 cached, 4 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e1_survey.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_03c6aec4.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_03c6aec4.npz
+  pull_03c6aec4.npz
+          3866624   9%    7.23MB/s   00:00:05
+          7667712  18%    7.22MB/s   00:00:04
+         11698176  27%    7.66MB/s   00:00:03
+         14811136  34%    5.91MB/s   00:00:04
+         18546688  43%    7.11MB/s   00:00:03
+         21463040  50%    5.56MB/s   00:00:03
+         24772608  58%    6.20MB/s   00:00:02
+         26443776  62%    3.18MB/s   00:00:04
+         28344320  66%    3.59MB/s   00:00:03
+         33521664  78%    9.86MB/s   00:00:00
+         34897920  81%    2.61MB/s   00:00:02
+         36798464  86%    3.43MB/s   00:00:01
+         38666240  90%    3.46MB/s   00:00:01
+         41287680  96%    4.54MB/s   00:00:00
+         42565632  99%    2.43MB/s   00:00:00
+         42950642 100%    5.31MB/s   00:00:07 (xfer#1, to-check=0/1)
+
+✓ Downloaded 43.0 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_03c6aec4.npz
+[save] wrote 4 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e1_survey.npz (no writer for GenericIO; wrote npz)
+
+----- run 13:40:02  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q1.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q1.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu] → subsample(100) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    catalog: cached ['rho', 'x', 'y', 'z'] for this narrowing
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~10 MB
+      result size: ~51 MB
+      est. time: ~10 s–41 s (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      ⚠ OVER BUDGET (time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["uu"]}, {"kind": "subsample", "uniform": 100, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_e02e32f9.npz (vars ['uu'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_e02e32f9.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[uu] → subsample(100) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['uu']
+    remote:  subsample uniform=100 (pushdown)
+    remote:  fuse -> particles=slice(None, None, 100), project=['uu']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_e02e32f9.npz
+    pulled 1 var(s), 10.7 MB over the wire
+    assembled 5 var(s), 53.7 MB (4 cached, 1 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_e02e32f9.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_e02e32f9.npz
+  pull_e02e32f9.npz
+          7241728  67%   13.73MB/s   00:00:00
+         10737678 100%   13.31MB/s   00:00:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 10.7 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_e02e32f9.npz
+[save] wrote 5 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q1.npz (no writer for GenericIO; wrote npz)
+
+----- run 13:40:17  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q2.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q2.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu] → subsample(100) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    catalog: cached ['rho', 'uu', 'x', 'y', 'z'] for this narrowing
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    catalog: full hit — nothing crossed the wire
+    assembled 5 var(s), 53.7 MB (5 cached, 0 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2.npz
+
+--- Output ---
+[save] wrote 5 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q2.npz (no writer for GenericIO; wrote npz)
+
+----- run 13:40:32  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3a.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3a.py
+
+--- Pipelines ---
+[save] FAILED: ValueError: fields: ['zmett'] not available here; have ['hh', 'id', 'mask', 'mass', 'mu', 'phi', 'rho', 'status', 'uu', 'vx', 'vy', 'vz', 'x', 'y', 'yhe', 'z', 'zmet']
+
+----- run 13:40:47  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3b.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3b.py
+
+--- Pipelines ---
+[save] FAILED: ValueError: threshold variable 'temperature' not in ['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status']
+
+----- run 13:41:02  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3c.py -----
+Status: FAILED
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3c.py
+
+--- Pipelines ---
+[save] FAILED: ValueError: per-axis subsample doesn't apply to point data; use a single factor, e.g. subsample(d, 0.1)
+
+----- run 13:42:20  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E3d.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E3d.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho] → region{x:(9000,9999)} → subsample(100) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~4096 MB
+      result size: ~4096 MB
+      est. time: ~67.2 min–4.5 h (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      note: value-dependent row cut — the count survives only after the read, so this prices the pre-cut selection: an UPPER bound.
+      ⚠ OVER BUDGET (size+time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["x", "y", "z", "rho"]}, {"kind": "region", "ranges": [["x", 9000, 9999]]}, {"kind": "subsample", "uniform": 100, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_3fa2ecf1.npz (vars ['x', 'y', 'z', 'rho'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_3fa2ecf1.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho] → region{x:(9000,9999)} → subsample(100) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['x', 'y', 'z', 'rho']
+    remote:  region {'x': (9000, 9999)} (bbox mask, post-read)
+    remote:  subsample uniform=100 (post-read: follows a computed cut)
+    remote:  fuse -> project=['x', 'y', 'z', 'rho'], post_ops=['RowMask', 'RowSample']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_3fa2ecf1.npz
+    pulled 4 var(s), 0.0 MB over the wire
+    assembled 4 var(s), 0.0 MB (0 cached, 4 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e3d.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_3fa2ecf1.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_3fa2ecf1.npz
+  pull_3fa2ecf1.npz
+              962 100%    1.83MB/s   00:00:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 0.0 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_3fa2ecf1.npz
+[save] wrote 4 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e3d.npz (no writer for GenericIO; wrote npz)
+
+==============================================================================
+=== VisLang session  pid=96088  2026-07-31 13:43:36
+==============================================================================
+
+----- run 13:44:52  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q3.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q3.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu] → threshold(uu>68000.0) → threshold(rho<33000000000.0) → subsample(100) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~5120 MB
+      result size: ~5120 MB
+      est. time: ~83.4 min–5.6 h (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      note: value-dependent row cut — the count survives only after the read, so this prices the pre-cut selection: an UPPER bound.
+      ⚠ OVER BUDGET (size+time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["x", "y", "z", "rho", "uu"]}, {"kind": "threshold", "var": "uu", "op": ">", "value": 68000.0}, {"kind": "threshold", "var": "rho", "op": "<", "value": 33000000000.0}, {"kind": "subsample", "uniform": 100, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_1796197e.npz (vars ['x', 'y', 'z', 'rho', 'uu'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_1796197e.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu] → threshold(uu>68000.0) → threshold(rho<33000000000.0) → subsample(100) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['x', 'y', 'z', 'rho', 'uu']
+    remote:  threshold uu > 68000.0 (row mask)
+    remote:  threshold rho < 33000000000.0 (row mask)
+    remote:  subsample uniform=100 (post-read: follows a computed cut)
+    remote:  fuse -> project=['x', 'y', 'z', 'rho', 'uu'], post_ops=['RowMask', 'RowMask', 'RowSample']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_1796197e.npz
+    pulled 5 var(s), 0.9 MB over the wire
+    assembled 5 var(s), 0.9 MB (0 cached, 5 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_1796197e.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_1796197e.npz
+  pull_1796197e.npz
+           907258 100%   13.75MB/s   00:00:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 0.9 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_1796197e.npz
+[save] wrote 5 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q3.npz (no writer for GenericIO; wrote npz)
+
+----- run 13:46:05  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q4.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q4.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet] → threshold(uu>68000.0) → threshold(rho<33000000000.0) → subsample(100) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    catalog: cached ['rho', 'uu', 'x', 'y', 'z'] for this narrowing
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~1024 MB
+      result size: ~6144 MB
+      est. time: ~16.6 min–66.6 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      note: value-dependent row cut — the count survives only after the read, so this prices the pre-cut selection: an UPPER bound.
+      ⚠ OVER BUDGET (time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["zmet"]}, {"kind": "threshold", "var": "uu", "op": ">", "value": 68000.0}, {"kind": "threshold", "var": "rho", "op": "<", "value": 33000000000.0}, {"kind": "subsample", "uniform": 100, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_74a4995b.npz (vars ['zmet'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_74a4995b.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[zmet] → threshold(uu>68000.0) → threshold(rho<33000000000.0) → subsample(100) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['zmet']
+    remote:  threshold uu > 68000.0 (row mask)
+    remote:  threshold rho < 33000000000.0 (row mask)
+    remote:  subsample uniform=100 (post-read: follows a computed cut)
+    remote:  fuse -> project=['zmet'], post_ops=['RowMask', 'RowMask', 'RowSample']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_74a4995b.npz
+    pulled 1 var(s), 0.2 MB over the wire
+    assembled 6 var(s), 1.1 MB (5 cached, 1 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_74a4995b.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_74a4995b.npz
+  pull_74a4995b.npz
+           181474 100%    8.42MB/s   00:00:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 0.2 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_74a4995b.npz
+[save] wrote 6 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q4.npz (no writer for GenericIO; wrote npz)
+
+----- run 13:47:17  spec=/Users/ashrestha/Projects/VisLang/bench/specs/E2q5.py -----
+Status: OK
+Spec: /Users/ashrestha/Projects/VisLang/bench/specs/E2q5.py
+
+--- Pipelines ---
+[save] ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624
+    spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet] → threshold(uu>250000.0) → threshold(rho<33000000000.0) → subsample(100) → save
+    remote source darwin:/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 (0.0 MB, id=38d272d7)
+    static check: request valid against the cached schema (17 vars, dims={'particles': 268435456})
+    Cost estimate (remote):
+      over the wire: ~6144 MB
+      result size: ~6144 MB
+      est. time: ~1.7 h–6.8 h (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+      note: value-dependent row cut — the count survives only after the read, so this prices the pre-cut selection: an UPPER bound.
+      ⚠ OVER BUDGET (size+time) — confirm to run as-is, or narrow the spec.
+    srun: discovered held allocation jobid=17158540
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624", "positions": null}, {"kind": "fields", "keep": ["x", "y", "z", "rho", "uu", "zmet"]}, {"kind": "threshold", "var": "uu", "op": ">", "value": 250000.0}, {"kind": "threshold", "var": "rho", "op": "<", "value": 33000000000.0}, {"kind": "subsample", "uniform": 100, "per_axis": []}]}
+    remote exec: narrowing prefix -> ~/.vislang/reduce/vislang_reduce_39c28131.npz (vars ['x', 'y', 'z', 'rho', 'uu', 'zmet'])
+    srun --jobid=17158540: step into held allocation (plan staged at ~/.vislang/reduce/vislang_plan_39c28131.json)
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(m000p.full.mpicosmo.624) → fields[x,y,z,rho,uu,zmet] → threshold(uu>250000.0) → threshold(rho<33000000000.0) → subsample(100) → save
+    remote:  inspect /projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624 → GenericIO: vars=['x', 'y', 'z', 'vx', 'vy', 'vz', 'mass', 'uu', 'hh', 'mu', 'rho', 'zmet', 'yhe', 'phi', 'id', 'mask', 'status'], dims={'particles': 268435456}, positions=('x', 'y', 'z')
+    remote:  project fields=['x', 'y', 'z', 'rho', 'uu', 'zmet']
+    remote:  threshold uu > 250000.0 (row mask)
+    remote:  threshold rho < 33000000000.0 (row mask)
+    remote:  subsample uniform=100 (post-read: follows a computed cut)
+    remote:  fuse -> project=['x', 'y', 'z', 'rho', 'uu', 'zmet'], post_ops=['RowMask', 'RowMask', 'RowSample']
+    remote:  -> save -> /vast/home/ashrestha/.vislang/reduce/vislang_reduce_39c28131.npz
+    pulled 6 var(s), 0.1 MB over the wire
+    assembled 6 var(s), 0.1 MB (0 cached, 6 fetched)
+    -> save (local)
+  output: /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5.npz
+
+--- Output ---
+Downloading from darwin:
+  remote: ~/.vislang/reduce/vislang_reduce_39c28131.npz
+  local:  /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_39c28131.npz
+  pull_39c28131.npz
+            55654 100%    3.48MB/s   00:00:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 0.1 MB to /Users/ashrestha/Projects/VisLang/bench/results/cache/pull_39c28131.npz
+[save] wrote 6 array(s) as npz -> /Users/ashrestha/Projects/VisLang/bench/results/out/e2q5.npz (no writer for GenericIO; wrote npz)

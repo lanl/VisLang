@@ -1,8 +1,15 @@
-data = source("ssh://darwin/projects/exasky/data/nyx/highz/512/NVB_C009_l10n512_S12345T692_z42.hdf5")
+data = source("/Users/ashrestha/Projects/VisLang/saved_results/nyx_z42_sub2.hdf5")
 
-few = fields(data, [
-    "native_fields/temperature",
-    "native_fields/baryon_density"])
-small = subsample(few, 2)                          # every 2nd voxel -> 256^3
+dens = fields(data, ["native_fields/baryon_density"])       # 256^3, fits the browser budget
+web = threshold(dens, "native_fields/baryon_density > 1.6")  # ~90th pct: carve the voids away
 
-save(small, "/Users/ashrestha/Projects/VisLang/saved_results/nyx_z42_sub2.hdf5")
+# Opacity keyed to where the data actually lives (render log10-scales the field,
+# so the cosmic web sits at t~0.09-0.35 of the color range, not the top).
+render(web, cmap="inferno", opacity=[
+    0.00, 0.00,
+    0.09, 0.02,
+    0.15, 0.12,
+    0.25, 0.35,
+    0.40, 0.70,
+    1.00, 1.00,
+])
