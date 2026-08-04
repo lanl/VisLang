@@ -61,6 +61,19 @@ def _phase_s(rec, leaf):
     return total
 
 
+def _phase_bytes(rec, leaf, pipe):
+    """Bytes summed over phases of ONE pipeline whose last path component is
+    `leaf`. Keyed on the pipeline index because a multi-sink spec records a
+    materialize per sink, and attributing all of them to the first would
+    overstate the result size of the very row a paper table reads."""
+    total = None
+    for p in rec.get("phases") or ():
+        if ((p.get("name") or "").split("/")[-1] == leaf
+                and p.get("bytes") is not None and p.get("pipeline") == pipe):
+            total = (total or 0) + p["bytes"]
+    return total
+
+
 def _mb(n):
     """Bytes -> MiB (1024**2), matching my_estimate's own byte math so predicted
     and actual are directly comparable. Columns are named `_mib` for that reason:
@@ -71,6 +84,12 @@ def _mb(n):
 
 def _r1(v):
     return None if v is None else round(v, 1)
+
+
+def _num(v, fmt):
+    """`fmt`-formatted cell for a measured number, "" for one that is missing —
+    so a blank in a paper table always means "not measured" and never a real 0."""
+    return "" if v is None else fmt.format(v)
 
 
 # The recorded `source_bytes` is the size of the path we handed Sieve. For a
@@ -139,7 +158,13 @@ def rows(recs):
                 "n_timesteps": p.get("n_timesteps") or p.get("selected_timesteps"),
                 "source_mib": _mb(src_b),
                 "wire_mib": _mb(wire),
-                "result_mib": _mb(p.get("result_bytes")),
+                # `result_bytes` is set by the reduce path; on the fetch path the
+                # size of what was actually kept is only in the materialize phase's
+                # own byte count, so fall back to it rather than leave the cell
+                # blank on the one route where over-fetch is the whole point.
+                "result_mib": _mb(p.get("result_bytes")
+                                  or _phase_bytes(r, "materialize", i)
+                                  or _phase_bytes(r, "materialize_timeseries", i)),
                 # The headline: how many times less data crossed the network than
                 # a whole-file(/folder) fetch of the same source would have moved.
                 "reduction_x": (round(src_b / wire, 1)
@@ -151,6 +176,15 @@ def rows(recs):
                 "estimate_s": _phase_s(r, "cost_estimate") if first else None,
                 "remote_exec_s": _phase_s(r, "remote_exec") if first else None,
                 "pull_s": _phase_s(r, "pull") if first else None,
+                # The whole-file/whole-folder FETCH route (VISLANG_REMOTE=off, or
+                # a fallback) spends nearly all its wall clock in these two, and
+                # without them a fetch run reports a large total_s with no phase
+                # accounting for any of it. `transfer_s` is the inner rsync/scp
+                # alone; `fetch_s` adds the size + md5 + bandwidth probes around it.
+                "fetch_s": (_phase_s(r, "fetch_whole_file")
+                            or _phase_s(r, "fetch_whole_folder")) if first else None,
+                "transfer_s": (_phase_s(r, "transfer")
+                               or _phase_s(r, "transfer_dir")) if first else None,
                 "materialize_s": (_phase_s(r, "materialize")
                                   or _phase_s(r, "materialize_timeseries")) if first else None,
                 "sink_s": (_phase_s(r, "sink_save") or _phase_s(r, "sink_render")
@@ -184,8 +218,8 @@ def rows(recs):
 # ---------------------------------------------------------------------------
 RUNS_COLS = ["started", "site", "route", "forms", "n_timesteps", "source_mib",
              "wire_mib", "reduction_x", "total_s", "inspect_s", "remote_exec_s",
-             "pull_s", "materialize_s", "sink_s", "ssh_exec", "remote_jobs",
-             "status"]
+             "pull_s", "fetch_s", "transfer_s", "materialize_s", "sink_s",
+             "ssh_exec", "remote_jobs", "status"]
 
 EST_COLS = ["started", "site", "route", "est_read_mib", "wire_mib", "err_pct",
             "est_time_lo_s", "est_time_hi_s", "pull_s", "in_band",
@@ -307,9 +341,29 @@ def write_csv(path, cols, data):
 # band, not a hardcoded link speed.
 # ---------------------------------------------------------------------------
 RESULT_ANNOT = {
-    # E1 single-snapshot. The "17" is the file's variable count (not recorded per
-    # run); the projected count is filled from want_vars.
-    "E1b": {"request": "fields({want}/17) → subsample(3) → save"},
+    # E1: the SAME spec on both halves, so one request string serves both columns
+    # and neither can drift from the other. "13" is the Nyx file's variable count
+    # (not recorded per run); the box is index-space on the original 512³ grid.
+    # Not {want}-formatted: the fetch route never records want_vars, so a shared
+    # annotation is the only way both columns can state the same request.
+    "E1a": {"request": "fields(x, y, z, rho — 4/17) → subsample(3) → save",
+            # The uri names a 2,064 B header, so neither the size nor the shape of
+            # the data can be read off it — SOURCE_BYTES_OVERRIDE supplies the
+            # former and this note the latter.
+            "source_note": "GenericIO, header + 8 rank partitions; "
+                           "17 variables; 268,435,456 particles"},
+    "E1b": {"request": "fields(x, y, z, rho — 4/17) → subsample(3) → save"},
+    # E1local: the SAME narrowing with VISLANG_REMOTE=off, so it routes through a
+    # whole-file fetch and narrows locally. "13" is the Nyx file's variable count.
+    # The projected count is prose here, not {want}: the fetch route never records
+    # want_vars (that field is set by the reduce path), so the run log genuinely
+    # cannot carry it and this is the annotation table's whole reason to exist.
+    "E1a_local": {"request": "fields(temperature, baryon_density — 2/13) → "
+                             "subsample(2) → save"},
+    "E1b_local": {"request": "fields(temperature, baryon_density — 2/13) → "
+                             "subsample(2) → save",
+                  # Schema facts the run log does not carry per run.
+                  "source_note": "13 variables; 512³ grid"},
     # E2 five-query session: a label and a short description per query.
     "E2q1": {"label": "q1", "request": "add uu — is any gas hot?"},
     "E2q2": {"label": "q2", "request": "add zmet — baseline enrichment (control)"},
@@ -378,12 +432,19 @@ _BAND_FLOOR_MIB = 256.0
 def _transfer_band(picked):
     """MiB/s over runs with a genuinely throughput-dominated transfer — the
     figure the E1 `Network bandwidth` row reports. Excludes cache hits (0 wire)
-    and any pull small enough to be latency-bound (< _BAND_FLOOR_MIB), since
+    and any transfer small enough to be latency-bound (< _BAND_FLOOR_MIB), since
     those measure per-run fixed cost rather than the link. Returns
-    (lo, hi, [contributor names])."""
+    (lo, hi, [contributor names]).
+
+    `pull_s` (the reduce route's result pull) or, failing that, `transfer_s` (the
+    fetch route's rsync/scp): both are the same link moving bulk bytes, and a
+    session that only took the fetch route would otherwise report no band at all.
+    `transfer_s` needs no fixed-cost correction — it times the transfer alone,
+    with the probes accounted separately in `fetch_s`."""
     rates = []
     for name, r in picked.items():
-        w, p = r.get("wire_mib"), r.get("pull_s")
+        w = r.get("wire_mib")
+        p = r.get("pull_s") or r.get("transfer_s")
         if w and p and w >= _BAND_FLOOR_MIB:
             rates.append((name, w / p))
     if not rates:
@@ -399,26 +460,96 @@ def _span(lo, hi, fmt):
 
 
 def _results_e1(w, picked, lo, hi):
-    r = picked.get("E1b")
-    w.writerow(["E1 — Single-snapshot remote reduction"])
-    w.writerow(["Quantity", "Value"])
-    if not r:
-        w.writerow(["(no E1b run recorded)", ""])
+    """E1 — ONE request, run twice, side by side: reduced next to the data (E1a)
+    against fetched whole and narrowed here (E1b).
+
+    Both halves are confirmed, so the pair isolates ROUTE from policy. Every cell
+    comes from this session's own timing records — unlike _results_compare, which
+    has to reach into another session's timings.jsonl for its denominator, this
+    table's baseline was measured minutes after its numerator, on the same link.
+
+    Two rows need their definitions stated, because the phase tree names them
+    differently per route. `Pull time` is the phase that moves bulk bytes at the
+    top level: `pull` on the reduce route, `fetch_whole_folder` on the fetch route.
+    `Network bandwidth` divides the wire by `transfer_dir` alone — the rsync
+    without the probes around it — so it is a link rate on both routes rather than
+    a rate on one and a rate-plus-fixed-cost on the other. The session-wide band
+    (lo, hi) is no longer used here: with two columns, a per-run rate is what lets
+    a reader check the wall clocks against each other."""
+    a, r = picked.get("E1a"), picked.get("E1b")
+    w.writerow(["E1 — One request, two routes: reduce next to the data vs "
+                "fetch whole and narrow locally"])
+    w.writerow(["Quantity", "E1a — remote reduce", "E1b — no remote reduce"])
+    if not (a or r):
+        w.writerow(["(no E1a/E1b run recorded)", "", ""])
         return
-    src, wire = r.get("source_mib"), r.get("wire_mib")
-    fmt = _fmt_from_uri(r.get("uri"))
-    req = RESULT_ANNOT["E1b"]["request"].format(want=r.get("want_vars"))
+
+    def _cell(rec, key, fmt, absent=""):
+        return "" if rec is None else _num(rec.get(key), fmt) or absent
+
+    def _both(key, fmt, absent=""):
+        return [_cell(a, key, fmt, absent), _cell(r, key, fmt, absent)]
+
+    def _pull(rec):
+        """The top-level bulk-transfer phase, whatever the route calls it."""
+        if rec is None:
+            return ""
+        return _num(rec.get("pull_s") or rec.get("fetch_s"), "{:,.2f} s")
+
+    def _band(rec):
+        """Wire ÷ the rsync alone, so both routes report a comparable link rate.
+
+        Flagged when the payload is under _BAND_FLOOR_MIB: below that the quotient
+        times the fixed per-transfer cost rather than throughput (see the floor's
+        comment — 1.7 MiB reads as 0.11 MiB/s on a link doing 17.3 MiB/s). The
+        reduce route's whole point is a small payload, so its cell will nearly
+        always carry this flag, and an unflagged number here would read as a slow
+        link and quietly discredit the wall clock beside it."""
+        if rec is None:
+            return ""
+        wire, t = rec.get("wire_mib"), rec.get("transfer_s")
+        if not (wire and t):
+            return ""
+        rate = f"{wire / t:,.2f} MiB/s"
+        return rate if wire >= _BAND_FLOOR_MIB else f"{rate} (latency-bound)"
+
+    def _local(rec):
+        """Every phase that ran HERE: inspect, lower, materialize, save. On the
+        fetch route this is the narrowing itself; on the reduce route it is only
+        the schema read and the save, because the narrowing happened remotely."""
+        if rec is None:
+            return ""
+        v = sum(x for x in (rec.get("inspect_s"), rec.get("lower_s"),
+                            rec.get("materialize_s"), rec.get("sink_s"))
+                if x is not None) or None
+        return _num(v, "{:,.2f} s")
+
+    def _source(rec):
+        """Size plus the schema facts the run log cannot carry. The uri is a
+        FOLDER here, so it has no extension and _fmt_from_uri yields nothing —
+        the format comes from the annotation instead."""
+        if rec is None or rec.get("source_mib") is None:
+            return ""
+        size = f"{rec['source_mib']:,.2f} MiB {_fmt_from_uri(rec.get('uri'))}".strip()
+        note = RESULT_ANNOT["E1a"].get("source_note")
+        return "; ".join(x for x in (size, note) if x)
+
+    req = RESULT_ANNOT["E1a"]["request"]
     rows_out = [
-        ["Source", f"{src:,.2f} MiB {fmt}".strip() if src is not None else ""],
-        ["Request", req],
-        ["Output transferred", f"{wire:,.2f} MiB" if wire is not None else ""],
-        ["Network bandwidth",
-         _span(lo, hi, lambda v: f"{v:.2f}") + " MiB/s" if lo is not None else ""],
+        # The fetch route records wire_bytes but no source_bytes for a FOLDER, so
+        # E1b's cell is empty on the measurement alone. It is the same folder by
+        # construction (one spec, two env overlays), which is a fact about the
+        # experiment rather than a number pulled from the other column.
+        ["Source", _source(a), _source(r) or ("same source" if _source(a) else "")],
+        ["Request", req, "identical"],
+        ["Output transferred", *_both("wire_mib", "{:,.2f} MiB")],
+        ["Network bandwidth", _band(a), _band(r)],
         ["Remote reduction time",
-         f"{r.get('remote_exec_s'):.2f} s" if r.get("remote_exec_s") is not None else ""],
-        ["Pull time", f"{r.get('pull_s'):.2f} s" if r.get("pull_s") is not None else ""],
-        ["End-to-end Sieve time",
-         f"{r.get('total_s'):.2f} s" if r.get("total_s") is not None else ""],
+         _cell(a, "remote_exec_s", "{:,.2f} s"),
+         _cell(r, "remote_exec_s", "{:,.2f} s", "none — nothing ran remotely")],
+        ["Local work time", _local(a), _local(r)],
+        ["Pull time", _pull(a), _pull(r)],
+        ["End-to-end Sieve time", *_both("total_s", "{:,.2f} s")],
     ]
     # DELIBERATELY NOT REPORTED: "Byte reduction", "Whole-file copy time" and
     # "Wall-clock improvement".
@@ -434,6 +565,215 @@ def _results_e1(w, picked, lo, hi):
     # The measured quantities they were derived from are all still in runs.csv
     # (`reduction_x`) and estimate.csv; only the paper table drops them.
     w.writerows(rows_out)
+    # Which direction the rate asymmetry cuts, stated in the table rather than
+    # left for a reader to assume. A flagged cell is NOT a slower link: the two
+    # runs are minutes apart on one link, and the only unflagged rate is the real
+    # one. Because the fetch route is the column measuring true throughput, any
+    # wall-clock gap in the reduce route's favour is understated, not inflated.
+    if any(rec and 0 < (rec.get("wire_mib") or 0) < _BAND_FLOOR_MIB
+           for rec in (a, r)):
+        w.writerow([f"(note) a payload under {_BAND_FLOOR_MIB:,.0f} MiB times the "
+                    f"fixed per-transfer cost, not the link — a (latency-bound) "
+                    f"rate above is not evidence of a slower connection",
+                    "same link, minutes apart",
+                    "the unflagged rate is the session's real link speed"])
+
+
+def _results_e1local(w, picked):
+    """E1local — the same request with the reduce turned OFF (VISLANG_REMOTE=off):
+    the whole file crosses the wire and the narrowing runs locally afterwards.
+
+    A different row set from _results_e1 on purpose. There is no remote reduction
+    and no result pull to report; what there IS, and what the reduce route has no
+    equivalent of, is a transfer of the ENTIRE source followed by local work on
+    it — so the table reports where the wall clock went, which is the finding.
+
+    `Over-fetch` is reported here even though _results_e1 deliberately drops
+    `Byte reduction`: that row was excluded as a ratio against a COUNTERFACTUAL
+    (a whole-file copy that never ran). On this route the whole-file copy is
+    exactly what DID run, so wire ÷ result is two measured quantities from one
+    run — the bytes that crossed against the bytes that were kept.
+
+    Nothing from another session is folded in. Comparing this against the reduce
+    route's numbers is a job for the paper text, where the two sessions can be
+    named; a hardcoded denominator in here would be the very thing the E1 table's
+    comment warns against."""
+    held, r = picked.get("E1a_local"), picked.get("E1b_local")
+    if not (held or r):
+        return
+    w.writerow(["E1local — Same request without remote reduce "
+                "(whole-file fetch, local narrowing)"])
+    w.writerow(["Quantity", "Value"])
+    if held:
+        # The gate's own prediction, from the run where nothing was materialized.
+        # Read it HERE rather than from the executed run: on the fetch path the
+        # post-fetch local plan overwrites est_* with its own (small) local-read
+        # estimate, so the executed row no longer carries what the gate predicted.
+        est, band = held.get("est_read_mib"), None
+        if held.get("est_time_lo_s") is not None:
+            band = _span(held["est_time_lo_s"], held["est_time_hi_s"],
+                         lambda v: f"{v / 60:.0f}") + " min"
+        w.writerow(["Gate, unconfirmed run", f"{held.get('status')} — "
+                    f"{_num(held.get('wire_mib'), '{:,.2f} MiB')} crossed"])
+        w.writerow(["Gate predicted over the wire", _num(est, "{:,.2f} MiB")])
+        w.writerow(["Gate predicted time", band or ""])
+        w.writerow(["Gate decision", "HELD (over budget)"
+                    if held.get("held") else ""])
+    if not r:
+        w.writerow(["(no confirmed E1b_local run recorded)", ""])
+        return
+    src, wire = r.get("source_mib"), r.get("wire_mib")
+    res, tr = r.get("result_mib"), r.get("transfer_s")
+    fmt = _fmt_from_uri(r.get("uri"))
+    req = RESULT_ANNOT["E1b_local"]["request"]
+    # Local work is every phase that ran AFTER the bytes landed — the entire cost
+    # of the narrowing itself, against which the transfer above should be read.
+    local_s = sum(v for v in (r.get("inspect_s"), r.get("lower_s"),
+                              r.get("materialize_s"), r.get("sink_s"))
+                  if v is not None) or None
+    note = RESULT_ANNOT["E1b_local"].get("source_note")
+    w.writerows([
+        ["Source", "; ".join(x for x in
+                             [f"{src:,.2f} MiB {fmt}".strip() if src is not None else "",
+                              note] if x)],
+        ["Request", req],
+        ["Over the wire", _num(wire, "{:,.2f} MiB")],
+        ["Result kept", _num(res, "{:,.2f} MiB")],
+        ["Over-fetch (wire ÷ result)",
+         f"{wire / res:,.1f}x" if wire and res else ""],
+        ["Wire ÷ source", _num(r.get("reduction_x"), "{:,.1f}x")],
+        ["Transfer time", _num(tr, "{:,.2f} s")],
+        ["Transfer throughput",
+         f"{wire / tr:,.2f} MiB/s" if wire and tr else ""],
+        ["Fetch phase (transfer + probes)", _num(r.get("fetch_s"), "{:,.2f} s")],
+        ["Local inspect", _num(r.get("inspect_s"), "{:,.2f} s")],
+        ["Local narrowing (materialize)", _num(r.get("materialize_s"), "{:,.2f} s")],
+        ["Local save", _num(r.get("sink_s"), "{:,.2f} s")],
+        ["Local work, total", _num(local_s, "{:,.2f} s")],
+        ["End-to-end Sieve time", _num(r.get("total_s"), "{:,.2f} s")],
+        ["Share of wall clock spent transferring",
+         f"{tr / r['total_s']:.1%}" if tr and r.get("total_s") else ""],
+    ])
+
+
+def _compare_data(picked, base):
+    """Every measured quantity behind the E1-vs-E1local comparison, computed once
+    and formatted by _results_compare.
+
+    Each value is a (remote_reduce, whole_file_fetch) pair. None means "this route
+    has no such quantity" (there is no remote reduction on a fetch), which the
+    formatters render as a dash rather than a zero."""
+    r, b = picked.get("E1b_local"), base.get("E1b")
+    if not (r and b):
+        return None
+
+    def rate(x):
+        """Effective bulk rate: bytes that crossed ÷ the rsync that carried them."""
+        w_, t_ = x.get("wire_mib"), x.get("transfer_s")
+        return w_ / t_ if w_ and t_ else None
+
+    def local_s(x):
+        return sum(v for v in (x.get("inspect_s"), x.get("lower_s"),
+                               x.get("materialize_s"), x.get("sink_s"))
+                   if v is not None) or None
+
+    def over(x):
+        w_, res = x.get("wire_mib"), x.get("result_mib")
+        return w_ / res if w_ and res else None
+
+    return {
+        "source_mib": r.get("source_mib"),
+        "fmt": _fmt_from_uri(r.get("uri")),
+        "source_note": RESULT_ANNOT["E1b_local"].get("source_note"),
+        "request": RESULT_ANNOT["E1b_local"]["request"],
+        "route": (b.get("route"), r.get("route")),
+        "wire": (b.get("wire_mib"), r.get("wire_mib")),
+        "result": (b.get("result_mib"), r.get("result_mib")),
+        "over": (over(b), over(r)),
+        # The fetch route runs nothing remotely, so this is absent, not zero.
+        "remote_exec": (b.get("remote_exec_s"), None),
+        "transfer": (b.get("transfer_s"), r.get("transfer_s")),
+        # pull_s and fetch_s are the same level of the phase tree: the phase that
+        # WRAPS my_download.transfer() on each route.
+        "pull": (b.get("pull_s"), r.get("fetch_s")),
+        "rate": (rate(b), rate(r)),
+        "local": (local_s(b), local_s(r)),
+        "rts": ((b.get("ssh_query") or 0) + (b.get("ssh_exec") or 0),
+                (r.get("ssh_query") or 0) + (r.get("ssh_exec") or 0)),
+        "srun": (b.get("remote_jobs") or 0, r.get("remote_jobs") or 0),
+        "total": (b.get("total_s"), r.get("total_s")),
+    }
+
+
+def _pen(pair, unit="x"):
+    """The fetch route's cost as a multiple of the reduce route's."""
+    b, r = pair
+    return f"{r / b:,.1f}{unit}" if b and r else ""
+
+
+def _results_compare(w, picked, base, base_label):
+    """E1 vs E1local, row for row: the SAME request on the SAME file, reduced next
+    to the data versus fetched whole and narrowed here.
+
+    Both columns are read from timing records — `base` comes from another session's
+    timings.jsonl (named in `base_label`, so a reader can never mistake it for this
+    session's measurement). That is the one honest way to state a movement ratio:
+    the denominator was measured by the same runtime on the same file, not assumed.
+
+    The two runs saw DIFFERENT link speeds, so the effective-rate row is reported
+    for both and the wall-clock ratio must be read with it in hand — see the note
+    the caller writes underneath."""
+    d = _compare_data(picked, base)
+    if not d:
+        return
+    w.writerow([f"E1 vs E1local — same request, same file: reduce next to the data "
+                f"vs fetch the whole file"])
+    w.writerow(["Quantity", f"remote reduce ({base_label})",
+                "no remote reduce (this session)", "penalty"])
+
+    def _cells(key, fmt, pen="", absent="—"):
+        b_, r_ = d[key]
+        return [absent if b_ is None else fmt.format(b_),
+                absent if r_ is None else fmt.format(r_), pen]
+
+    src = (f"{d['source_mib']:,.2f} MiB {d['fmt']}".strip()
+           if d["source_mib"] else "")
+    rows_out = [
+        ["Source", "; ".join(x for x in (src, d["source_note"]) if x),
+         "same file", ""],
+        ["Request", d["request"], "identical", ""],
+        ["Route", *d["route"], ""],
+        ["Output transferred", *_cells("wire", "{:,.2f} MiB",
+                                       _pen(d["wire"]) + " the bytes")],
+        ["Result kept", *_cells("result", "{:,.2f} MiB", "same result")],
+        ["Over-fetch (wire ÷ result)", *_cells("over", "{:,.1f}x")],
+        ["Remote reduction time",
+         *_cells("remote_exec", "{:,.2f} s", absent="none — nothing ran remotely")],
+        ["Transfer time (rsync alone)",
+         *_cells("transfer", "{:,.2f} s", _pen(d["transfer"]))],
+        ["Pull / fetch phase (transfer + probes)",
+         *_cells("pull", "{:,.2f} s", _pen(d["pull"]))],
+        ["Effective transfer rate", *_cells("rate", "{:,.2f} MiB/s")],
+        ["Local work (inspect + narrow + save)", *_cells("local", "{:,.2f} s")],
+        # query + exec, the same definition _results_e3 uses. Counting only
+        # ssh_query would read 3 vs 3 and hide the four exec round trips the
+        # reduce route spends shipping the plan and launching the step — the
+        # cost that buys the 52x, and the honest debit against it.
+        ["ssh round trips (query + exec)", *_cells("rts", "{:d}")],
+        ["srun jobs", *_cells("srun", "{:d}")],
+        ["End-to-end Sieve time",
+         *_cells("total", "{:,.2f} s", _pen(d["total"]) + " the wall clock")],
+    ]
+    w.writerows(rows_out)
+    # The caveat belongs IN the table, not in a commit message: the fetch run saw a
+    # faster link, so the wall-clock penalty above is if anything conservative.
+    rb, rr = d["rate"]
+    if rb and rr:
+        w.writerow(["(note) link speed differed between the sessions",
+                    f"{rb:,.2f} MiB/s", f"{rr:,.2f} MiB/s",
+                    f"the fetch run's link was {rr / rb:,.2f}x "
+                    f"{'faster' if rr > rb else 'slower'}, so the wall-clock "
+                    f"penalty is {'conservative' if rr > rb else 'flattered'}"])
 
 
 def _results_e2(w, picked):
@@ -492,15 +832,27 @@ def _results_e3(w, picked):
         w.writerow(["(no E3 runs recorded)"])
 
 
-def write_results(path, all_rows):
-    """Write the three paper tables (E1/E2/E3) into one readable results.csv.
-    Returns the list of runs that fed the E1 transfer band (logged, not silent)."""
+def write_results(path, all_rows, baseline_rows=None, baseline_label=""):
+    """Write the paper tables (E1 / E1local / E2 / E3) into one readable
+    results.csv. Returns the list of runs that fed the E1 transfer band (logged,
+    not silent).
+
+    A section appears only when its runs exist, so a study that ran one group does
+    not emit tables of "(no runs recorded)" for the others — except E1/E2, which
+    are the paper's two standing tables and say so explicitly when empty."""
     picked = _latest_by_spec(all_rows)
     lo, hi, contrib = _transfer_band(picked)
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         wr = csv.writer(f)
         _results_e1(wr, picked, lo, hi)
+        if picked.get("E1a_local") or picked.get("E1b_local"):
+            wr.writerow([])
+            _results_e1local(wr, picked)
+            if baseline_rows:
+                wr.writerow([])
+                _results_compare(wr, picked, _latest_by_spec(baseline_rows),
+                                 baseline_label or "baseline session")
         wr.writerow([])
         _results_e2(wr, picked)
         # E3 only when the session actually ran rejections — a study whose

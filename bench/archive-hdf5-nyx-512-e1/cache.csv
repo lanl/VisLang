@@ -1,0 +1,2 @@
+started,route,n_timesteps,reused_pairs,total_pairs,reuse_pct,cached_vars,want_vars,wire_mib,total_s,ssh_exec,remote_jobs
+2026-08-04T14:11:17,remote_folder_reduce,3,0,6,0.0,,,39.55,97.3533,7,1

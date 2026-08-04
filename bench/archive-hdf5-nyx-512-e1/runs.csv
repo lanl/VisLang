@@ -1,0 +1,6 @@
+started,site,route,forms,n_timesteps,source_mib,wire_mib,reduction_x,total_s,inspect_s,remote_exec_s,pull_s,fetch_s,transfer_s,materialize_s,sink_s,ssh_exec,remote_jobs,status
+2026-08-03T11:20:09,remote,held_budget,fields+subsample,,,0.0,,30.1309,,,,,,,,,,NEEDS CONFIRM
+2026-08-03T11:21:46,remote,whole_file_fetch,fields+subsample,,,0.0,,35.2338,,,,13.7457,6.9375,,,,,FAILED
+2026-08-03T11:29:22,remote,whole_file_fetch,fields+subsample,,6656.02,6656.02,1.0,748.1693,0.107,,,716.7714,710.0863,0.4875,0.0151,,,OK
+2026-08-04T14:11:17,remote,remote_folder_reduce,fields+region+threshold,3,19968.06,39.55,504.8,97.3533,,14.8974,10.4421,,10.4413,,0.0571,7,1,OK
+2026-08-04T14:12:55,remote,whole_folder_fetch,fields+region+threshold,,,19968.06,,1262.7592,0.0108,,,1246.3867,1246.3857,0.3054,0.0118,,,OK

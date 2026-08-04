@@ -1,0 +1,5 @@
+started,site,route,est_read_mib,wire_mib,err_pct,est_time_lo_s,est_time_hi_s,pull_s,in_band,probe_bw_mibps,est_over_budget
+2026-08-03T11:20:09,remote,held_budget,6656.020065307617,0.0,,6174.3,24697.1,,,0.539,True
+2026-08-03T11:21:46,remote,whole_file_fetch,6656.020065307617,0.0,,6018.5,24074.0,,,0.553,True
+2026-08-03T11:29:22,remote,whole_file_fetch,128.0,6656.02,-98.1,,,,,0.531,False
+2026-08-04T14:12:55,remote,whole_folder_fetch,39.55078125,19968.06,-99.8,,,,,,False

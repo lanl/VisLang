@@ -61,6 +61,13 @@ from dsl_forms.nodes import (SourceNode, FieldsNode, RegionNode, SubsampleNode,
                              ThresholdNode, CompressNode, TimestepsNode)
 
 _NARROWING = ("fields", "region", "subsample", "threshold")
+
+# How much remote stderr to keep when a remote step fails. Generous on purpose:
+# the executor's own traceback lands at the END of the stream, so a tight tail
+# clip keeps the symptom (a missing output file) and discards the CAUSE (whatever
+# the srun step raised before it). 500 chars was enough to hide a real failure
+# behind "FileNotFoundError: …/vislang_reduce_*.npz".
+_ERR_TAIL = 4000
 META_BEGIN = "===VISLANG_META_BEGIN==="
 META_END = "===VISLANG_META_END==="
 
@@ -662,7 +669,7 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
 
     meta = _parse_meta(out)
     if meta is None or not meta.get("ok", False):
-        detail = (meta or {}).get("error") or err.strip()[-500:] or f"rc={rc}"
+        detail = (meta or {}).get("error") or err.strip()[-_ERR_TAIL:] or f"rc={rc}"
         raise RuntimeError(f"remote reduce failed: {detail}")
 
     # The remote ran its OWN plan_pipeline (same tracing code) — surface what it
@@ -873,7 +880,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
 
         meta = _parse_meta(out)
         if meta is None or not meta.get("ok", False):
-            detail = (meta or {}).get("error") or err.strip()[-500:] or f"rc={rc}"
+            detail = (meta or {}).get("error") or err.strip()[-_ERR_TAIL:] or f"rc={rc}"
             raise RuntimeError(f"remote folder delta failed: {detail}")
         schema = meta.get("schema")
 
@@ -994,7 +1001,7 @@ def _folder_batch_savedir(conn, host, remote_dir, src, middle, ts_nodes,
 
     meta = _parse_meta(out)
     if meta is None or not meta.get("ok", False):
-        detail = (meta or {}).get("error") or err.strip()[-500:] or f"rc={rc}"
+        detail = (meta or {}).get("error") or err.strip()[-_ERR_TAIL:] or f"rc={rc}"
         raise RuntimeError(f"remote folder reduce failed: {detail}")
 
     remote_out = meta.get("outdir", routdir)

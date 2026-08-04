@@ -137,11 +137,20 @@ def transfer(connection, remote_path, local_path, size_warn_mb=500):
     print(f"  local:  {local_path}")
 
     # Key-based transfer (rsync preferred, scp fallback) when the probe found a key.
+    #
+    # `-L` (--copy-links) transfers what a symlink POINTS AT, not the link. `-a`
+    # implies `-l`, which on a symlinked dataset copies the link's ~72 bytes and
+    # exits 0 — a "successful" transfer of a locally-dangling link whose target
+    # path (`/projects/...`) does not exist here, so the very next getsize raises
+    # FileNotFoundError and the run records 0 wire bytes. Every metadata probe
+    # already dereferences for the same reason (remote_stat's `stat -Lc`,
+    # remote_timestep_files_stat's `find -L`): a link is a way of naming data,
+    # not a kind of data. scp and the paramiko fallback follow links already.
     with timing.phase("transfer", remote=remote_path) as _t:
         if connection.method == "ssh-key":
             if _have_cmd('rsync'):
                 ok, err = _run_transfer([
-                    'rsync', '-a', '--progress', '--partial',
+                    'rsync', '-aL', '--progress', '--partial',
                     '-e', _ssh_transport(),
                     remote_source, local_path
                 ])
@@ -191,7 +200,9 @@ def transfer_dir(connection, remote_dir, local_dir):
     dst = local_dir.rstrip("/") + "/"
     with timing.phase("transfer_dir", remote=remote_dir) as _t:
         if _have_cmd('rsync'):
-            ok, err = _run_transfer(['rsync', '-a', '--partial',
+            # -L for the same reason as transfer(): a timeseries folder assembled
+            # from `…#N` symlinks would otherwise arrive as N dangling links.
+            ok, err = _run_transfer(['rsync', '-aL', '--partial',
                                      '-e', _ssh_transport(), src, dst])
             if ok:
                 _t["bytes"] = timing.dir_bytes(local_dir)

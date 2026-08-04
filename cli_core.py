@@ -133,11 +133,32 @@ def do_execute(spec_path, confirm=False, force_dry=False):
     over-budget run the user has approved). A spec with no sink is a dry run
     either way.
     """
+    # The spec is ALWAYS a local Python file; remoteness belongs inside it, in
+    # source("ssh://…"). Both mistakes below are easy to make and produce errors
+    # that point at the wrong thing (a binary read as UTF-8; "not found" for a
+    # path that was never meant to be opened), so name the actual problem.
+    if is_remote(spec_path):
+        return (f"ERROR: a spec is a LOCAL file, but this looks like a remote "
+                f"source URI:\n  {spec_path}\n\n"
+                f"The remote path goes INSIDE the spec, in source():\n"
+                f"    # spec.py\n"
+                f'    save(subsample(fields(source("{spec_path}"), ["var"]), 2), '
+                f'"out.npz")\n\n'
+                f"then run it locally:  sieve estimate spec.py\n"
+                f"To read a remote source's schema instead:  sieve inspect <uri>")
     try:
         with open(spec_path) as f:
             spec_code = f.read()
     except FileNotFoundError:
         return f"ERROR: spec file not found: {spec_path}"
+    except (UnicodeDecodeError, IsADirectoryError) as e:
+        why = ("it is a directory" if isinstance(e, IsADirectoryError)
+               else "it is binary, not Python source")
+        return (f"ERROR: {spec_path} is not a spec — {why}.\n\n"
+                f"`estimate`/`execute` take a spec file (a few lines of DSL forms), "
+                f"not a data file. For a data file you want:\n"
+                f"    sieve inspect {spec_path}       # its schema, metadata only\n"
+                f"    sieve render-cost {spec_path}   # its render payload cost")
     except Exception as e:
         return f"ERROR reading spec: {type(e).__name__}: {e}"
 

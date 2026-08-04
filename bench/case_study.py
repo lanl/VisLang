@@ -7,11 +7,20 @@ harness (vislang_timing.py) records each run; `summarize.py` tabulates them.
 
 Three run groups, in order, plus one table derived from them:
 
-  E1 movement       one 8.31 GiB remote HACC snapshot (268,435,456 particles,
-                    17 variables), narrowed to 4 variables at stride 100. Run
-                    twice: once unconfirmed (the cost gate HOLDS — zero bytes
-                    move) and once confirmed (the actual transfer), so predicted
-                    and actual sit in the same table.
+  E1 movement       one 19.5 GiB remote Nyx TIMESERIES (3 x 512^3, 13 fields),
+                    narrowed to 2 fields in a 120^3 box above the mean baryon
+                    density. Run twice, BOTH confirmed, differing only in where
+                    the narrowing executes: E1a reduces on darwin and pulls the
+                    result, E1b sets VISLANG_REMOTE=off so the whole series
+                    crosses the wire and the identical chain runs here. The
+                    denominator is measured by the same runtime on the same link
+                    minutes later, not asserted.
+  E1local baseline  the SAME narrowing request as E1, on a 6.98 GB remote Nyx
+                    snapshot (512^3, 13 fields -> 2 fields at stride 2), run with
+                    VISLANG_REMOTE=off so the whole file crosses the wire and the
+                    narrowing runs locally. Also a HELD/confirmed pair. This is
+                    the denominator for "reduce next to the data", measured by
+                    the same runtime rather than asserted. Needs no allocation.
   E2 iteration      eight successive questions in one scientist's session,
                     converging on whether this feedback prescription ejected
                     ENRICHED gas: survey, control, three distinct value lineages
@@ -113,16 +122,29 @@ ENV = {
     "VISLANG_TRACE_FILE": os.path.join(RESULTS, "trace.log"),
 }
 
+# The per-query overlay that turns the reduce OFF, so the same spec routes down
+# the whole-file/whole-folder fetch instead. Used by E1b and the E1local group.
+_OFF = {"VISLANG_REMOTE": "off"}                # no reduce next to the data
+
 
 class Q:
     """One measured query: a spec, why it is in the paper, and what to expect.
 
     `expect` is prose, not an assertion — the point of the run is to find out. It
-    is printed next to the outcome so a surprise is visible instead of buried."""
+    is printed next to the outcome so a surprise is visible instead of buried.
 
-    def __init__(self, qid, group, title, spec, why, expect, confirm=False):
+    `env` is a per-query overlay on the session ENV, applied for that query only
+    and restored after (run_one). It exists because a BASELINE is a different
+    runtime setting of the same request, not a different request:
+    E1local sets VISLANG_REMOTE=off so the identical spec routes through the
+    whole-file fetch instead of the remote reduce. Keeping it per-query means the
+    baseline and the reduced run can sit in one session and one table."""
+
+    def __init__(self, qid, group, title, spec, why, expect, confirm=False,
+                 env=None):
         self.qid, self.group, self.title = qid, group, title
         self.spec, self.why, self.expect, self.confirm = spec, why, expect, confirm
+        self.env = env or {}
 
 
 if os.path.exists(CUTS_FILE):                   # written by --derive-cuts
@@ -176,29 +198,150 @@ def _halo():
     return [("uu", "<", CUT_UU_COLD), ("rho", ">", CUT_RHO_DENSE)]
 
 
-# --- E1: data movement, and the gate that precedes it -----------------------
-_SURVEY = f'subsample(fields(source("{SNAP}"), {F_BASE!r}), {STRIDE})'
+# --- E1: data movement — reduce next to the data, against fetching it -------
+# ONE request, run twice, differing ONLY in where the narrowing executes. Both
+# halves are confirmed — the budget gate is no longer demonstrated here, and its
+# only remaining evidence in the study is E1a_local's confirm=False — so the
+# pair isolates route from policy: E1a reduces on darwin and pulls the result,
+# E1b sets VISLANG_REMOTE=off so the whole timeseries crosses the wire and the
+# identical chain runs locally against the copy. The denominator is measured by
+# the same runtime and the same spec, not asserted.
+#
+# The source is the FOLDER, so this is a 3-timestep series: E1a runs it as one
+# batched remote job (planner._plan_remote_folder), while E1b's fallback pulls
+# the entire directory — all three 6.98 GB files, 20.94 GB — into
+# vislang_paths.downloads_dir() and then maps the chain over the copies
+# (planner._plan_folder). E1b needs no Slurm allocation; E1a does.
+#
+# The `#N` files in nyx_series/ are SYMLINKS to /projects/exasky/…; transfer_dir
+# uses `rsync -aL`, so E1b receives real files rather than dangling links.
+NYX_SERIES = "ssh://darwin//projects/autonomousvis/ashrestha/nyx_series/"
+NYX_SERIES_BYTES = 3 * 6_979_342_896            # 20.94 GB across 3 timesteps
+E1_FIELDS = ["native_fields/baryon_density", "native_fields/dark_matter_density"]
+# A 120^3 box offset into the volume (indices on the ORIGINAL 512^3 grid, which
+# is where region/subsample compose — planner._grid_ranges), then the one cut
+# whose constant is physically meaningful: baryon_density is in units of the
+# cosmic mean (HDF5 attr `units: (mean)`, field mean = 1.000), so `> 1.0` is
+# "denser than the cosmic mean" and keeps ~20% of voxels.
+_E1_QUERY = (
+    'threshold('
+    'region('
+    f'fields(timesteps(source("{NYX_SERIES}"), 0, 2), {E1_FIELDS!r}), '
+    'x=(100, 220), y=(40, 160), z=(40, 160)), '
+    '"native_fields/baryon_density > 1.0")'
+)
+
+# The request under test: the survey, on the multi-part GenericIO snapshot. The
+# NYX timeseries variant of this pair is archived under
+# bench/archive-hdf5-nyx-512-e1/ — the constants above stay so it can be switched
+# back by pointing _E1_QUERY at them.
+_E1_GENIO = f'subsample(fields(source("{SNAP}"), {F_BASE!r}), {STRIDE})'
 
 E1 = [
-    Q("E1a", "E1", "First look at the gas — cost gate holds",
-      _save(_SURVEY, "e1_survey"),
-      "The gate prices the request from metadata before any bulk read. A HELD run "
-      "is the claim that Sieve can refuse a request without paying for it.",
-      "HELD over budget (the 3 s time budget); 0 bytes over the wire; an estimate "
-      "of ~41 MiB.",
-      confirm=False),
-    Q("E1b", "E1", "First look at the gas — confirmed, executed",
-      _save(_SURVEY, "e1_survey"),
-      "The headline movement number: 4 of 17 variables at stride 100, reduced "
-      "next to the data. The denominator is the 8.31 GiB an ad-hoc copy moves — "
-      "NOT the 2,064 B header the harness records (see SNAP_BYTES).",
-      "~41 MiB over the wire (268,435,456/100 rows x 4 vars x 4 B = 42,949,672 B), "
-      "a ~208x reduction against SNAP_BYTES. GenericIO is a COLUMN store "
-      "(supports_column_pushdown=True), so the projection is pushed into the read "
-      "and only the 4 requested columns are touched (~4.29 GB, not the full "
-      "8.31 GiB). What it cannot do is skip rows "
-      "(supports_strided_read=False), so every row of those columns is read and "
-      "the stride is applied after.",
+    Q("E1a", "E1", "Reduced next to the data — one remote job",
+      _save(_E1_GENIO, "e1_genio"),
+      "The headline movement number: 4 of 17 variables at stride 3, reduced next "
+      "to the data. The denominator is E1b below — the same spec, same runtime, "
+      "same link, remote reduce switched off — NOT the 2,064 B header the harness "
+      "records as source_bytes (see SNAP_BYTES and summarize's "
+      "SOURCE_BYTES_OVERRIDE).",
+      "~1,365 MiB over the wire (268,435,456/3 rows x 4 vars x 4 B = "
+      "1,431,655,776 B). GenericIO is a COLUMN store, so the projection is pushed "
+      "into the read and only 4 columns are touched (~4.29 GB of the 8.31 GiB); it "
+      "cannot skip rows (supports_strided_read=False), so every row of those "
+      "columns is read remotely and the stride applied after. The reduce saves "
+      "MOVEMENT, not work.",
+      confirm=True),
+    Q("E1b", "E1", "Fetched whole, reduced locally — the baseline",
+      _save(_E1_GENIO, "e1_genio"),
+      "What an ad-hoc copy costs, produced by the same runtime and the same spec "
+      "rather than asserted as a denominator. VISLANG_REMOTE=off routes the "
+      "identical chain down the whole-file fetch. Note this pair could not be run "
+      "at all until _fetch_remote learned to pull a multi-part snapshot's `#N` "
+      "partitions: the named path is a 2,064 B header, so the fetch route used to "
+      "copy 2 KB and then fail locally with no parts to read.",
+      "~8.31 GiB over the wire (header + 8 rank partitions) for the same "
+      "~1,365 MiB result, a ~6.2x transfer penalty — far smaller than NYX's 505x, "
+      "because stride 3 keeps a third of every column. Local work should be LARGE "
+      "here, unlike the NYX pair's 0.33 s: the same unskippable 4.29 GB read now "
+      "happens on this machine, plus a ~1.4 GB write.",
+      confirm=True, env=_OFF),
+]
+
+# --- E1local: the same movement question, WITHOUT remote reduce -------------
+# A baseline, not a new capability. One real Nyx snapshot (512^3 grid, 13
+# fields, 6.98 GB) narrowed to 2 fields at stride 2 — byte-identical to the
+# request the NYX study's E1b answered WITH a remote reduce (see
+# bench/archive-hdf5-NYX-512/queries.json: ~128 MB over the wire, 84 s
+# end-to-end). Here VISLANG_REMOTE=off routes the same spec down the whole-file
+# FETCH path instead (planner.py:400): the entire 6.98 GB crosses the network
+# into ~/.vislang/downloads/, and `fields → subsample(2)` then runs LOCALLY
+# against the downloaded copy. Nothing executes on darwin, so this path needs no
+# Slurm allocation at all.
+#
+# Only WHERE the narrowing runs differs between the two routes, which is what
+# makes the pair a clean measurement of what moving the computation to the data
+# actually buys: 6.98 GB and a full local copy, against 128 MB and none.
+#
+# `#1` here is part of the FILENAME, not the timeseries convention — the source
+# is a single file (remote_is_dir decides), so `…#N` is never parsed.
+NYX_SNAP = ("ssh://darwin/projects/autonomousvis/ashrestha/nyx_series/"
+            "nyx512#1.hdf5")
+NYX_SNAP_BYTES = 6_979_342_896                  # 6.98 GB / 6.50 GiB, one stat
+NYX_FIELDS = ["native_fields/temperature", "native_fields/baryon_density"]
+# Where the whole-file fetch stages its copy (vislang_paths.downloads_dir): the
+# local source E1c_local narrows, so the read can be timed on its own.
+DOWNLOADED = os.path.join(REPO, ".vislang", "downloads", "nyx512#1.hdf5")
+_NYX_QUERY = f'subsample(fields(source("{NYX_SNAP}"), {NYX_FIELDS!r}), 2)'
+
+# The remote-reduce half of the comparison: the archived NYX-512 session ran this
+# EXACT spec on this EXACT file WITH the reduce (its E1b), so its timings are the
+# measured denominator for E1local. Kept as a path to a run log rather than copied
+# numbers — if the archive moves, the comparison table disappears instead of
+# quietly reporting stale values.
+COMPARE_TIMINGS = os.path.join(REPO, "bench", "archive-hdf5-NYX-512",
+                               "timings.jsonl")
+
+E1local = [
+    Q("E1a_local", "E1local", "Whole-file fetch — cost gate holds",
+      _save(_NYX_QUERY, "e1_local_sub2.hdf5"),
+      "On the fetch path the gate prices the WHOLE file from one stat plus a "
+      "bandwidth probe — there is no narrowing to discount, because the "
+      "narrowing happens after the bytes land. A HELD run is the claim that "
+      "Sieve refuses the expensive route before paying for it, not after.",
+      "HELD over budget (1 GiB / 3 s defaults); 0 bulk bytes; an estimate of "
+      "~6.98 GB over the wire against a ~128 MB result.",
+      confirm=False, env=_OFF),
+    Q("E1b_local", "E1local", "Whole-file fetch — confirmed, reduced locally",
+      _save(_NYX_QUERY, "e1_local_sub2.hdf5"),
+      "The baseline the headline number is measured against: the same 2-of-13 "
+      "fields at stride 2, but reduced HERE instead of there. This is what an "
+      "ad-hoc copy costs, produced by the same runtime and the same spec rather "
+      "than asserted as a denominator.",
+      "~6.98 GB over the wire (the entire file) for the same ~128 MB result "
+      "E1b of the NYX study got for ~128 MB — a ~52x transfer penalty; wall "
+      "clock dominated entirely by the download, plus 6.98 GB of local disk.",
+      confirm=True, env=_OFF),
+    # The narrowing alone, against the copy E1b_local already fetched — a LOCAL
+    # source, so no network and no gate on the transfer. Its only purpose is to
+    # separate the two costs the fetch route bundles together: E1b_local's
+    # materialize reads a file its own rsync wrote seconds earlier, so it is
+    # served from the OS page cache. Run this after dropping the cache
+    # (`sudo purge`) and the same read is priced against the disk instead.
+    #
+    # Which number belongs in the table depends on the question: warm is faithful
+    # to THIS route (the narrowing always follows the download), while cold is
+    # what a LATER query against an already-downloaded file would pay.
+    Q("E1c_local", "E1local", "Local narrowing only — cold page cache",
+      _save(f'subsample(fields(source("{DOWNLOADED}"), {NYX_FIELDS!r}), 2)',
+            "e1_local_cold.hdf5"),
+      "Isolates the narrowing from the transfer. E1b_local's 0.49 s materialize "
+      "read a file the preceding rsync had just written through the page cache on "
+      "a 51.5 GiB machine; this run prices the identical hyperslab against the "
+      "disk, so the local-work row can be reported without a warm-cache asterisk.",
+      "the same 128 MiB result and byte-identical output; a materialize slower "
+      "than 0.49 s by whatever the page cache was worth — bounded by the 1,024 "
+      "MiB actually read (2 of 13 variables), not by the 6,656 MiB downloaded.",
       confirm=True),
 ]
 
@@ -334,7 +477,7 @@ E3 = [
 # session: the paper's HACC tables are E1 (movement) and E2 (the investigation).
 # The rejection evidence is carried by the NYX study in archive-hdf5-NYX-512,
 # which measured the same four cases. Re-enable by adding "E3": E3 here.
-GROUPS = {"E1": E1, "E2": E2}
+GROUPS = {"E1": E1, "E1local": E1local, "E2": E2}
 
 
 def run_one(q, run_pipeline):
@@ -344,12 +487,25 @@ def run_one(q, run_pipeline):
     with open(path, "w") as f:
         f.write(f"# {q.qid}: {q.title}\n{q.spec}\n")
     print(f"\n{'=' * 78}\n[{q.qid}] {q.title}\n  spec: {q.spec}")
+    if q.env:
+        print(f"  env: {' '.join(f'{k}={v}' for k, v in sorted(q.env.items()))}")
+    # Per-query env overlay, restored afterwards so one query's runtime setting
+    # cannot leak into the next (a leaked VISLANG_REMOTE=off would silently turn
+    # a later reduced run into a whole-file fetch and the table would lie).
+    saved = {k: os.environ.get(k) for k in q.env}
+    os.environ.update(q.env)
     t0 = time.perf_counter()
     try:
         report = run_pipeline(path, confirm=q.confirm)
         err = None
     except Exception as e:                      # never abort the session
         report, err = "", f"{type(e).__name__}: {e}"
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
     dt = time.perf_counter() - t0
     status = "EXCEPTION"
     for line in (report or "").splitlines():
@@ -390,7 +546,10 @@ def write_session_md(rows, recs, path):
     for r in rows:
         groups.setdefault(r["group"], []).append(r)
 
-    titles = {"E1": "E1 — Data movement, and the gate before it",
+    titles = {"E1": ("E1 — Data movement: one request, two routes (reduce next "
+                     "to the data vs fetch whole and narrow locally)"),
+              "E1local": ("E1local — The same request without remote reduce "
+                          "(whole-file fetch, local narrowing)"),
               "E2": "E2 — An iterative session (catalog reuse)",
               "E3": "E3 — What a rejected request costs"}
     for g, rs in groups.items():
@@ -774,8 +933,20 @@ def _emit(rows, summarize):
         data = sel(all_rows)
         summarize.write_csv(os.path.join(RESULTS, f"{name}.csv"), cols, data)
         print(summarize.fmt_table(title, cols, data))
-    # The three paper tables (E1/E2/E3) in one readable file.
-    contrib = summarize.write_results(os.path.join(RESULTS, "results.csv"), all_rows)
+    # The paper tables in one readable file. When the E1local baseline ran, the
+    # remote-reduce column of its comparison comes from the ARCHIVED NYX session's
+    # own timings.jsonl — the same file, the same request, measured by the same
+    # runtime — so the movement ratio has a measured denominator instead of an
+    # assumed one. Absent that file, the comparison table is simply omitted.
+    base_rows, base_label = None, ""
+    if os.path.exists(COMPARE_TIMINGS):
+        base_recs = summarize.load(COMPARE_TIMINGS)
+        base_rows = summarize.rows(base_recs)
+        started = sorted(r.get("started") or "" for r in base_recs if r.get("started"))
+        base_label = (f"{os.path.basename(os.path.dirname(COMPARE_TIMINGS))}"
+                      + (f", {started[-1][:10]}" if started else ""))
+    contrib = summarize.write_results(os.path.join(RESULTS, "results.csv"), all_rows,
+                                      base_rows, base_label)
     print(f"results.csv: E1 transfer band from {', '.join(contrib) or 'no transfers'}")
     write_session_md(rows, recs, os.path.join(RESULTS, "session.md"))
     with open(os.path.join(RESULTS, "COLUMNS.md"), "w") as f:

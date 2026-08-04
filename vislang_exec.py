@@ -106,6 +106,34 @@ def _rebuild(text):
     return terminal, None
 
 
+# The reducer runs DOWNSTREAM of the caller's cost gate: a plan only reaches this
+# machine because the local planner already priced it and the user confirmed (or it
+# held locally and nothing shipped). Re-gating here would re-litigate a decision
+# already made, against a budget this side happens to configure differently — and
+# the two sides need not agree, since the local budget prices a NETWORK transfer
+# while this one would price a local read. So the remote leg is always confirmed.
+_CONFIRMED = True
+
+
+def _held_reason(result):
+    """A message when `result` came back un-materialized, else None.
+
+    A HOLD is not an exception: the planner returns a result dict with
+    needs_confirm/needs_allocation and no output. Callers that assume a written
+    file must check, or the hold surfaces far downstream as a FileNotFoundError on
+    the output path — which is exactly how a low remote budget once masqueraded as
+    a missing reduce file."""
+    if result is None or result.get("materialized"):
+        return None
+    if result.get("needs_confirm"):
+        return ("remote plan HELD over budget and produced no output — the remote "
+                "budget (VISLANG_BUDGET_BYTES/SECONDS) is stricter than the "
+                "caller's, which already confirmed this request")
+    if result.get("needs_allocation"):
+        return "remote plan HELD: no Slurm allocation on the remote"
+    return "remote plan produced no output (not materialized, no reason given)"
+
+
 def _run_single(text, out):
     """SINGLE-file reduce (unchanged behavior): save the narrowed arrays to an
     .npz and report the reduced file + schema + saved variables to the caller."""
@@ -118,9 +146,12 @@ def _run_single(text, out):
         return err
     out = out if out.endswith(".npz") else out + ".npz"
     try:
-        result = plan_pipeline(save(terminal, out), dry_run=False)
+        result = plan_pipeline(save(terminal, out), dry_run=False, confirm=_CONFIRMED)
     except Exception as e:
         return _fail(f"{type(e).__name__}: {e}")
+    held = _held_reason(result)
+    if held:
+        return _fail(held)
 
     # Schema for the caller's catalog: re-inspect is metadata-only and cheap.
     chain_head = terminal
@@ -163,9 +194,13 @@ def _run_folder(text, outdir):
     if err is not None:
         return err
     try:
-        result = plan_pipeline(save(terminal, outdir), dry_run=False)  # dir, not .npz
+        result = plan_pipeline(save(terminal, outdir), dry_run=False,
+                               confirm=_CONFIRMED)  # dir, not .npz
     except Exception as e:
         return _fail(f"{type(e).__name__}: {e}")
+    held = _held_reason(result)
+    if held:
+        return _fail(held)
 
     meta = {
         "vislang_exec": PLAN_VERSION,
@@ -255,7 +290,10 @@ def _run_folder_delta(text, manifest_path, outdir):
             reset_sinks()
             terminal_file = save(_reroot(narrowing, path, src_node.positions, keep), tmp)
             try:
-                plan_pipeline(terminal_file, dry_run=False)
+                held = _held_reason(plan_pipeline(terminal_file, dry_run=False,
+                                                  confirm=_CONFIRMED))
+                if held:
+                    return _fail(f"timestep #{label}: {held}")
                 with np.load(tmp) as z:
                     for var in z.files:
                         bundle[f"{label}/{var}"] = z[var]

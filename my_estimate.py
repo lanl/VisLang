@@ -69,8 +69,14 @@ def estimate_render_cost(filepath, budget_mb=256):
     budget_mb (target browser payload) is the single source of truth for the
     budget — the MCP tool does not duplicate it. 256 is an interim default; the
     plan is to *estimate* it (from browser/memory limits) rather than hardcode it.
+
+    `allow_fetch=False` is load-bearing, exactly as on the planner's estimate path
+    (planner.py:456): this function's whole contract is "reads no bulk data", and
+    a remote source whose schema can only be had by fetching the file would
+    otherwise download multi-GB to answer how expensive a read would be. Better to
+    raise SchemaUnavailable and say so.
     """
-    info = inspect_source(filepath)
+    info = inspect_source(filepath, allow_fetch=False)
     file_mb = _on_disk_mb(filepath)
 
     dims = info.dimensions or {}
@@ -181,11 +187,11 @@ def format_estimate(report):
 
 
 def _budget_bytes():
-    return int(float(os.environ.get("VISLANG_BUDGET_BYTES", 1 * 1024 ** 3)))
+    return int(float(os.environ.get("VISLANG_BUDGET_BYTES", 10 * 1024 ** 3)))
 
 
 def _budget_seconds():
-    return float(os.environ.get("VISLANG_BUDGET_SECONDS", 3))
+    return float(os.environ.get("VISLANG_BUDGET_SECONDS", 3500))
 
 
 @dataclass

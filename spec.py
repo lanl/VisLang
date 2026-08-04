@@ -1,15 +1,6 @@
-data = source("/Users/ashrestha/Projects/VisLang/saved_results/nyx_z42_sub2.hdf5")
+HACC = ("ssh://darwin/projects/exasky/data/hacc/SCIDAC_RUNS/128MPC_RUNS_FLAMINGO_DESIGN_3A/FSN_0.5387_VEL_149.279_TEXP_9.613_BETA_0.8710_SEED_1.387e5/output/m000p.full.mpicosmo.624")
 
-dens = fields(data, ["native_fields/baryon_density"])       # 256^3, fits the browser budget
-web = threshold(dens, "native_fields/baryon_density > 1.6")  # ~90th pct: carve the voids away
-
-# Opacity keyed to where the data actually lives (render log10-scales the field,
-# so the cosmic web sits at t~0.09-0.35 of the color range, not the top).
-render(web, cmap="inferno", opacity=[
-    0.00, 0.00,
-    0.09, 0.02,
-    0.15, 0.12,
-    0.25, 0.35,
-    0.40, 0.70,
-    1.00, 1.00,
-])
+snap = source(HACC)
+snap = fields(snap, ["x", "y", "z", "rho"])
+snap = subsample(snap, 3)
+save(snap, "/Users/ashrestha/Projects/VisLang/forP/gio")

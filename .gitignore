@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+.DS_Store
 
 .env
 setup-env.sh
@@ -15,6 +16,10 @@ alloc-node.sh
 .venv
 
 output/
+bench/results/
+bench/archive-*/out/
+bench/archive-*/cache/
+forP/
 saved_results/
 .ipynb_checkpoints/
 unorg.ipynb
@@ -30,9 +35,7 @@ test_particles.npz
 INTERPRETER_PLAN.md
 REMOTE_COMPUTE_PLAN.md
 TODO.md
-# consolidated cache root (extent catalog, fetch downloads, frozen bindings)
 .vislang/
-# legacy cache dirs (pre-consolidation) — ignore the ones still on disk
 vislang_cache/
 binding_cache/
 .mcp.json

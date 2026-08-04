@@ -146,9 +146,33 @@ def _remote_fetch_gate(uri, sink, terminal, steps, confirm):
     return None
 
 
+def _remote_parts(connection, remote_path):
+    """Sibling `<base>#N` partition paths for a multi-part snapshot, or [].
+
+    GenericIO writes one file per MPI rank next to a small header, and the reader
+    follows the header to the parts — so the path a spec names is NOT all of the
+    data. One `ls` expands the glob remotely; a format with no such siblings
+    simply yields nothing and the caller behaves as before.
+
+    NB this is the same `…#N` spelling VisLang uses for TIMESTEPS. The collision
+    is safe here because we only reach this function for a path that already
+    resolved to a FILE (remote_is_dir was false): a timeseries is a DIRECTORY of
+    `#N` files, never a file with `#N` siblings."""
+    import shlex
+    from my_download import _ssh_query
+    out = _ssh_query(connection.target,
+                     f"ls -1d {shlex.quote(remote_path)}#* 2>/dev/null")
+    return [ln for ln in (out or "").split("\n") if ln.strip()]
+
+
 def _fetch_remote(uri):
     """Establish a connection and transfer a remote source to a local cache,
-    returning the local path."""
+    returning the local path.
+
+    Multi-part formats need their siblings too. Fetching only the named path
+    leaves a local HEADER whose parts are missing, and the read then fails (or
+    worse, reads nothing) — so pull `<base>#N` into the same directory, where the
+    reader expects to find them."""
     from my_download import establish_connection, transfer, _parse_remote
     from vislang_paths import downloads_dir
     norm = _normalize_remote(uri)
@@ -156,9 +180,16 @@ def _fetch_remote(uri):
     cache_dir = downloads_dir()
     os.makedirs(cache_dir, exist_ok=True)
     local = os.path.join(cache_dir, os.path.basename(remote_path.rstrip("/")) or "download")
-    out = transfer(establish_connection(norm), remote_path, local)
+    conn = establish_connection(norm)
+    out = transfer(conn, remote_path, local)
     if out is None:
         raise RuntimeError(f"remote transfer of {uri} was cancelled")
+    parts = _remote_parts(conn, remote_path)
+    for i, part in enumerate(parts, 1):
+        print(f"[fetch] partition {i}/{len(parts)}: {os.path.basename(part)}")
+        if transfer(conn, part, os.path.join(cache_dir,
+                                             os.path.basename(part))) is None:
+            raise RuntimeError(f"remote transfer of partition {part} was cancelled")
     return out
 
 
