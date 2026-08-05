@@ -350,7 +350,8 @@ RESULT_ANNOT = {
             # The uri names a 2,064 B header, so neither the size nor the shape of
             # the data can be read off it — SOURCE_BYTES_OVERRIDE supplies the
             # former and this note the latter.
-            "source_note": "GenericIO, header + 8 rank partitions; "
+            # No format label here — _fmt_from_uri already supplies "GenericIO".
+            "source_note": "header + 8 rank partitions; "
                            "17 variables; 268,435,456 particles"},
     "E1b": {"request": "fields(x, y, z, rho — 4/17) → subsample(3) → save"},
     # E1local: the SAME narrowing with VISLANG_REMOTE=off, so it routes through a
@@ -577,6 +578,30 @@ def _results_e1(w, picked, lo, hi):
                     f"rate above is not evidence of a slower connection",
                     "same link, minutes apart",
                     "the unflagged rate is the session's real link speed"])
+    # When BOTH payloads clear the floor and their rates still diverge, the wall
+    # clocks are not directly comparable and the gap is not purely the route. Say
+    # so, and say which way it cuts: a slower baseline FLATTERS the reduce, the
+    # opposite of the latency-bound case above. Silence here would let a reader
+    # read the end-to-end ratio as though one number caused it.
+    def _rate(rec):
+        if rec is None:
+            return None
+        wire, t = rec.get("wire_mib"), rec.get("transfer_s")
+        return (wire / t) if (wire and t and wire >= _BAND_FLOOR_MIB) else None
+
+    ra, rr = _rate(a), _rate(r)
+    if ra and rr and max(ra, rr) / min(ra, rr) >= 1.5:
+        # What the slower side's wall clock would have been at the faster rate.
+        adj = (r.get("total_s") - r.get("transfer_s")
+               + r.get("wire_mib") / max(ra, rr)) if rr < ra else None
+        w.writerow(["(note) the two routes did NOT see the same effective rate, so "
+                    "the wall clocks are not a clean route comparison",
+                    f"{ra:,.2f} MiB/s", f"{rr:,.2f} MiB/s "
+                    + (f"— {ra / rr:,.1f}x slower per byte; at E1a's rate E1b "
+                       f"would be ~{adj:,.0f} s, not {r.get('total_s'):,.0f} s, "
+                       f"so the gap below is FLATTERED"
+                       if adj else f"— {rr / ra:,.1f}x faster per byte, so the gap "
+                                   f"below is conservative")])
 
 
 def _results_e1local(w, picked):

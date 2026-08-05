@@ -262,9 +262,12 @@ E1 = [
       "copy 2 KB and then fail locally with no parts to read.",
       "~8.31 GiB over the wire (header + 8 rank partitions) for the same "
       "~1,365 MiB result, a ~6.2x transfer penalty — far smaller than NYX's 505x, "
-      "because stride 3 keeps a third of every column. Local work should be LARGE "
-      "here, unlike the NYX pair's 0.33 s: the same unskippable 4.29 GB read now "
-      "happens on this machine, plus a ~1.4 GB write.",
+      "because stride 3 keeps a third of every column. Local work is NOT expected "
+      "to be large despite the unskippable 4.29 GB read: pygio reads whole columns "
+      "sequentially and rsync has just left the file in the page cache, so the "
+      "narrowing lands near memory bandwidth (measured: 1.5 s). The finding is "
+      "that the work is cheap wherever it runs, and only its LOCATION decides "
+      "whether 8.31 GiB or 1.33 GiB crosses the wire.",
       confirm=True, env=_OFF),
 ]
 
