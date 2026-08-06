@@ -371,16 +371,33 @@ class GenericIOAdapter(FormatAdapter):
         if isinstance(n, int) and n >= 0:
             dimensions['particles'] = n
 
+        # Box size, needed to write this format back out (my_save). Same #0
+        # fallback as the names above. NB phys_ORIGIN is deliberately not
+        # captured: pygio.read_phys_origin returns the phys_scale (verified — two
+        # files written with different origins read back the same origin, equal to
+        # their scale), so capturing it would record the box size as the corner.
         attributes = {}
         scale = _hdr(pygio.read_phys_scale, filepath)
+        if scale is None:
+            scale = _hdr(pygio.read_phys_scale, f"{filepath}#0")
         if scale is not None:
             attributes['phys_scale'] = scale
-        origin = _hdr(pygio.read_phys_origin, filepath)
-        if origin is not None:
-            attributes['phys_origin'] = origin
+
+        # Exact per-variable dtypes, from the same header. Two uses: honest byte
+        # math in the estimator (itemsizes), and deciding BEFORE a read whether a
+        # result can be written back as GenericIO (dtype names survive the remote
+        # schema's JSON hop, np.dtype objects would not).
+        dtypes = _hdr(pygio.read_variable_dtypes, filepath)
+        if not dtypes:
+            dtypes = _hdr(pygio.read_variable_dtypes, f"{filepath}#0", default={})
+        itemsizes = {}
+        if dtypes:
+            attributes['dtypes'] = {k: np.dtype(v).name for k, v in dtypes.items()}
+            itemsizes = {k: np.dtype(v).itemsize for k, v in dtypes.items()}
 
         return DatasetInfo(filepath, self.name, variables,
-                           dimensions=dimensions, attributes=attributes)
+                           dimensions=dimensions, attributes=attributes,
+                           itemsizes=itemsizes)
 
     def read_array(self, filepath, location, selection):
         # Single-variable path (rarely used; load() prefers read_all). pygio has

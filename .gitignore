@@ -40,4 +40,5 @@ vislang_cache/
 binding_cache/
 .mcp.json
 
+setupenv.sh
 paper/
