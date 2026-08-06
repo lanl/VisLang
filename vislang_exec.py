@@ -43,6 +43,25 @@ def _fail(msg):
     return 1
 
 
+def _jsonable_attrs(attributes):
+    """Schema attributes as plain JSON types. The outer json.dumps uses
+    default=str, which would turn an array-valued attribute into its repr — and
+    some attributes are DATA the caller reads back (GenericIO's phys_scale /
+    phys_origin, which a format-preserving save needs), so lists must stay lists."""
+    import numpy as np
+    out = {}
+    for key, value in (attributes or {}).items():
+        if isinstance(value, np.ndarray):
+            out[key] = value.tolist()
+        elif isinstance(value, (list, tuple)):
+            out[key] = [v.item() if isinstance(v, np.generic) else v for v in value]
+        elif isinstance(value, np.generic):
+            out[key] = value.item()
+        else:
+            out[key] = value
+    return out
+
+
 def _inspect_report(path):
     """Metadata-only inspect on the remote (no bulk read, no data shipped): print
     the schema meta between the sentinels. For HDF5 the raw schema tree is
@@ -76,7 +95,7 @@ def _inspect_report(path):
             "variables": list(info.variables),
             "dimensions": dict(info.dimensions or {}),
             "positions": list(info.positions) if info.positions else None,
-            "attributes": dict(info.attributes or {}),
+            "attributes": _jsonable_attrs(info.attributes),
             # Live metadata for the caller's cost estimate (honest byte math
             # instead of a 4 B/element guess). NOT persisted to the catalog —
             # remote_reduce._catalog_schema strips it before store_schema.

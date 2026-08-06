@@ -73,10 +73,17 @@ Storage only — it does **not** cheapen a render.
 ## save(node, path) -> (sink)
 Write the materialized result to disk, **preserving the source's format**. The
 output format follows `path`'s extension when it's a known one (`.npz`,
-`.hdf5`/`.h5`); with no recognized extension it defaults to the source's original
-format (HDF5 today; other formats fall back to `.npz` with a note until a writer
-exists). A **folder (timeseries)** source writes one file per timestep into the
-`path` directory, named `timestep#N.<ext>` — itself a valid timeseries folder.
+`.hdf5`/`.h5`, `.gio`); with no recognized extension it defaults to the source's
+original format (HDF5, npz, and GenericIO today; other formats fall back to
+`.npz` with a note until a writer exists). GenericIO output is a single
+unpartitioned file with **no extension** (its snapshots are named by convention),
+and it needs equal-length 1-D columns of a pygio-writable dtype plus the box
+geometry from the source header — a result that can't satisfy that (a grid, an
+unsupported dtype, a header with no `phys_scale`) degrades to `.npz` with a note
+saying why, rather than inventing the missing metadata. An explicit `.gio` path
+raises instead of degrading. A **folder (timeseries)** source writes one file per
+timestep into the `path` directory, named `timestep#N.<ext>` — itself a valid
+timeseries folder.
 
 ## render(node, cmap=None, opacity=None) -> (sink)
 Serve the headless k3d browser viewer; prints its URL. Renders everything the

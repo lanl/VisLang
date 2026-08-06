@@ -45,9 +45,10 @@ ssh, then its `#N` files are mapped over next to the data). The interpreter maps
 the rest of the chain over the timesteps; `timesteps(node, start, stop)` picks an
 inclusive `#N` range. `render` over a series isn't supported (select one timestep,
 or save the range); `save` writes one file per timestep. **`save` preserves the
-source's format** — the output path's extension wins if known (`.npz`/`.hdf5`),
-else the source's original format (HDF5 today; npz fallback for formats without a
-writer). Multi-file loading lives in `my_save.py` + `planner._plan_folder` (local)
+source's format** — the output path's extension wins if known
+(`.npz`/`.hdf5`/`.gio`), else the source's original format (HDF5, npz, and
+GenericIO today; npz fallback, with a note, for formats without a writer or for a
+result GenericIO can't hold). Multi-file loading lives in `my_save.py` + `planner._plan_folder` (local)
 / `planner._plan_remote_folder` (remote, reducing each timestep next to the data).
 
 ## MCP tools (called directly, not written in a spec)

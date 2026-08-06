@@ -967,8 +967,9 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
 
 def _save(loaded, path):
     """Write the loaded arrays, preserving the source's format where possible
-    (HDF5 today; npz otherwise). The output format follows the path's extension
-    when it is a known one (.npz/.h5/.hdf5), else the source's original format."""
+    (HDF5, npz, GenericIO today; npz otherwise). The output format follows the
+    path's extension when it is a known one (.npz/.h5/.hdf5/.gio), else the
+    source's original format."""
     from my_save import save_loaded
     return save_loaded(loaded, path)
 

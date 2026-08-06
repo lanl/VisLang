@@ -395,6 +395,7 @@ def _info_from_schema(uri, schema):
     info = DatasetInfo(uri, (schema or {}).get("filetype", "remote"),
                        list((schema or {}).get("variables") or []),
                        dimensions=_dims_from_json((schema or {}).get("dimensions") or {}),
+                       attributes=dict((schema or {}).get("attributes") or {}),
                        itemsizes=dict((schema or {}).get("itemsizes") or {}))
     info.positions = (tuple(schema["positions"])
                       if (schema or {}).get("positions") else None)
@@ -604,9 +605,13 @@ def remote_reduce(src, middle, confirm=False):
     data.update(fetched)
     order = want if want is not None else list(data)
     variables = [v for v in order if v in data]
+    # The source's own attributes ride along: a format-preserving save needs them
+    # (GenericIO's phys_scale/phys_origin live there), and dropping them would
+    # make a remote round-trip silently lossier than a local one.
     info = DatasetInfo(src.uri, schema.get("filetype", "remote"), variables,
                        dimensions=schema.get("dimensions") or {},
-                       attributes={"remote_reduced": True, "source_id": sid})
+                       attributes={**(schema.get("attributes") or {}),
+                                   "remote_reduced": True, "source_id": sid})
     info.positions = tuple(schema["positions"]) if schema.get("positions") else None
     info.data = {v: data[v] for v in data}
     info.loaded = True
@@ -927,7 +932,8 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
                 data[var] = fetched[(label, var)]
         loaded = DatasetInfo(f"{src.uri}#{label}", schema.get("filetype", "remote"),
                              list(project), dimensions=schema.get("dimensions") or {},
-                             attributes={"remote_reduced": True})
+                             attributes={**(schema.get("attributes") or {}),
+                                         "remote_reduced": True})
         loaded.positions = tuple(schema["positions"]) if schema.get("positions") else None
         loaded.data = data
         loaded.loaded = True
