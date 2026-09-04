@@ -115,6 +115,33 @@ def _normalize_remote(uri):
     return uri
 
 
+def _held_session(hold, kind, uri, steps):
+    """The HELD result for a remote with no usable session. One builder so the
+    reduce route, the folder route and the fetch route all report identically."""
+    steps += hold.steps
+    steps.append(f"HELD: {hold.reason} — nothing was read.")
+    steps.append(f"  {hold.connect_cmd}")
+    return {"kind": kind, "uri": uri, "steps": steps, "output": None,
+            "materialized": False, "needs_session": True,
+            "connect_cmd": hold.connect_cmd, "session_reason": hold.reason}
+
+
+def _session_gate(uri, kind, steps):
+    """HELD result when `uri`'s host can't be driven non-interactively, else None.
+
+    Checked once per run, BEFORE the route is chosen. Every route below needs the
+    same non-interactive connection — the remote reduce to ship a plan, the
+    whole-file fetch to run rsync in BatchMode — so a missing session is one
+    clear, fixable hold rather than a different failure depending on whether the
+    spec happened to contain a narrowing form.
+
+    A probe that throws is not a hold: the individual route reports it with more
+    context than this gate has."""
+    from remote_reduce import session_check
+    hold = session_check(uri)
+    return None if hold is None else _held_session(hold, kind, uri, steps)
+
+
 def _remote_fetch_gate(uri, sink, terminal, steps, confirm):
     """Estimate + gate a whole-file remote FETCH before pulling. The whole file
     crosses the wire, so wire bytes == file size (known from one stat). Returns a
@@ -379,9 +406,14 @@ def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
     if dry_run:
         return _estimate_remote(src, middle, sink, steps, mode, has_narrowing)
 
+    held = _session_gate(src.uri, sink.kind, steps)
+    if held is not None:
+        timing.note(route="held_session")
+        return held
+
     if mode != "off" and has_narrowing:
         from remote_reduce import (remote_reduce, RemoteUnavailable, BudgetHold,
-                                   AllocationHold)
+                                   AllocationHold, SessionHold)
         try:
             with timing.phase("remote_reduce"):
                 loaded, rsteps, estimate = remote_reduce(src, middle, confirm)
@@ -396,6 +428,13 @@ def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
                       "output": None, "materialized": True, "estimate": estimate}
             steps.append(f"-> {sink.kind} (local)")
             return _finish(loaded, pending_compress, sink, result)
+        except SessionHold as h:
+            # Normally caught by _session_gate above; kept because remote_reduce
+            # re-checks after its own probe, and because a session can expire
+            # between the gate and the ship. Never falls through to the fetch —
+            # that path needs the very session this host does not have.
+            timing.note(route="held_session")
+            return _held_session(h, sink.kind, src.uri, steps)
         except AllocationHold as h:
             timing.note(route="held_allocation")
             steps += h.steps
@@ -874,7 +913,7 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
         with timing.phase("list_timesteps"):
             files = remote_timestep_files_stat(src.uri)
         if files is None:
-            steps.append("(could not list the remote folder — needs ssh key auth; "
+            steps.append("(could not list the remote folder — needs a live session; "
                          "nothing checked, nothing priced)")
             return {"kind": sink.kind, "uri": src.uri, "steps": steps,
                     "output": None, "materialized": False}
@@ -893,8 +932,13 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
 
     # Execute: one remote job for the whole folder (cost gate mirrors _plan_remote).
     steps = []
+    held = _session_gate(src.uri, sink.kind, steps)
+    if held is not None:
+        timing.note(route="held_session")
+        return held
     if mode != "off" and has_narrowing:
-        from remote_reduce import remote_folder_reduce, RemoteUnavailable
+        from remote_reduce import (remote_folder_reduce, RemoteUnavailable,
+                                   SessionHold)
         steps.append("(note: the folder reduce runs as one batched remote job — "
                      "the per-run budget gate is applied on the single-file and "
                      "whole-folder-fetch paths, not to this batch)")
@@ -939,6 +983,11 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
             return {"kind": "save", "uri": src.uri, "steps": steps, "output": out,
                     "materialized": True, "timesteps": report.get("timesteps", []),
                     "sites": {"remote": fetched, "cached": cached, "fetch": 0}}
+        except SessionHold as h:
+            # As in _plan_remote: the whole-folder fetch needs the same session,
+            # so there is nothing to fall back TO.
+            timing.note(route="held_session")
+            return _held_session(h, sink.kind, src.uri, steps)
         except RemoteUnavailable as e:
             timing.note(remote_unavailable=str(e))
             if mode == "force":

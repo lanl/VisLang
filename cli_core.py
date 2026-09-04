@@ -82,12 +82,56 @@ def _binding_offer(filepath, info):
     )
 
 
+def _session_handshake(uri):
+    """NEEDS_SESSION handshake for a remote source we cannot reach or drive
+    non-interactively, or '' when the session is fine.
+
+    Authentication is settled HERE, at authoring time, for the same reason
+    adapters and bindings are: `inspect` is the step that always precedes a spec,
+    so the run path can assume what authoring established instead of discovering
+    it half-way through a materialize."""
+    from remote_reduce import session_check
+    hold = session_check(uri)
+    if hold is None:
+        return ""
+    if not hold.reachable:
+        # Unreachable and unauthenticated fail identically at the ssh layer but
+        # need opposite fixes. Saying "type your password" to someone whose VPN
+        # is down sends them to a dialog that cannot possibly succeed.
+        return (
+            "NEEDS_SESSION\n"
+            f"{hold.host} is not reachable — no TCP connection to it at all. This "
+            f"is a network problem, not a credential one: check the VPN (WSU "
+            f"hosts are restricted off-campus) or the hostname.\n\n"
+            f"Nothing was read. Tell the user; do not offer to authenticate."
+        )
+    return (
+        "NEEDS_SESSION\n"
+        f"{hold.host} needs an interactive login and no VisLang session is open.\n\n"
+        f"Open one, then re-run this inspect:\n"
+        f"  1. Call connect({hold.target!r})  —  CLI: {hold.connect_cmd}\n"
+        f"  2. A password dialog appears on the USER's screen. They type it there;\n"
+        f"     it goes straight to ssh. It never reaches VisLang, this transcript,\n"
+        f"     or you. You only learn whether a session opened.\n"
+        f"  3. Re-run inspect once connect reports the session is live.\n\n"
+        f"The session then serves every later inspect, estimate and run until it "
+        f"expires. Nothing was read."
+    )
+
+
 def do_inspect(filepath, positions=None):
     """Read a source's schema (metadata only). `positions` is an optional
     "x,y,z" string naming the spatial-coordinate variables. A FOLDER is a
     timeseries — return its listing instead of reading it as one file."""
     from my_download import clear_remote_caches
     clear_remote_caches()                  # one inspect is its own run (see do_execute)
+    # A remote source with no session cannot be inspected next to the data, and
+    # the fallback (fetch the whole file, inspect it locally) needs the same
+    # session. Ask for one instead of pulling gigabytes or failing obscurely.
+    if is_remote(filepath):
+        handshake = _session_handshake(filepath)
+        if handshake:
+            return handshake
     # A FOLDER is a TIMESERIES — locally (an os.path check) or on a remote host
     # (a metadata-only `stat` over ssh). Either way, list its timesteps + shared
     # schema instead of trying to read the directory as one file.
@@ -108,14 +152,101 @@ def do_inspect(filepath, positions=None):
     return str(info) + _binding_offer(filepath, info)
 
 
+# --- sessions ----------------------------------------------------------------
+
+def _target_of(host):
+    """The ssh target for a bare host, an alias, or any remote URI.
+
+    `connect("ssh://gpu-server/scratch/run1")` and `connect("gpu-server")` mean
+    the same thing — the model has a URI in hand, not a hostname, and making it
+    strip the path itself is a needless step to get wrong."""
+    from planner import _normalize_remote
+    from my_download import _parse_remote
+    text = (host or "").strip()
+    if is_remote(text):
+        try:
+            user, hostname, _ = _parse_remote(_normalize_remote(text))
+            return f"{user}@{hostname}" if user else hostname
+        except ValueError:
+            pass
+    return text.rstrip("/")
+
+
+def do_connect(host, timeout=120):
+    """Open (or confirm) a session for `host`, then report what it can do.
+
+    The secret never passes through here. `open_master` hands OpenSSH an
+    SSH_ASKPASS helper; ssh forks it, a dialog appears on the USER's screen, and
+    the answer goes back over ssh's own pipe. This function learns one bit —
+    whether a session came up — and the model that called it learns the same."""
+    from my_download import (clear_remote_caches, master_alive, host_reachable,
+                             open_master, establish_connection)
+    from vislang_hosts import preflight, hosts_file
+    target = _target_of(host)
+    if not target:
+        return "ERROR: connect needs a host, e.g. connect('gpu-server')."
+    clear_remote_caches()          # a session may have opened since the last probe
+
+    if master_alive(target):
+        opened = f"Session already live for {target}."
+    else:
+        # Reachability first. An unreachable host and an unauthenticated one fail
+        # identically at the ssh layer, and showing a password dialog to someone
+        # whose VPN is down wastes their time on something that cannot work.
+        if not host_reachable(target):
+            return (f"UNREACHABLE: no TCP connection to {target}.\n\n"
+                    f"This is a network problem, not a credential one — check the "
+                    f"VPN (WSU hosts are restricted off-campus) or the hostname. "
+                    f"No password was requested, because one could not have helped.")
+        ok, detail = open_master(target, timeout=timeout)
+        if not ok:
+            return (f"NOT CONNECTED: could not open a session to {target}.\n\n"
+                    f"{detail}\n\n"
+                    f"Nothing was read. If no dialog appeared, open the session "
+                    f"from a terminal instead: sieve connect {target}")
+        opened = f"Session opened for {target}."
+
+    conn = establish_connection(f"{target}:/")
+    if not conn.batch_ok:
+        return (f"{opened}\nBut a BatchMode command still fails, so the session "
+                f"is not usable. Check ~/.ssh permissions and that "
+                f"VISLANG_SSH_MUX is not set to 0.")
+
+    lines = [opened, "Non-interactive commands now work — inspect, estimate and "
+                     "run will use it until it expires."]
+    check = preflight(conn)
+    if check["ok"]:
+        lines.append(f"Reducer ready: python={check['python']} repo={check['repo']}")
+        lines.append("Ready. Re-run the inspect or spec that asked for this.")
+    else:
+        lines.append("")
+        lines.append("The session works, but this host cannot run the reducer yet:")
+        lines += [f"  - {p}" for p in check["problems"]]
+        lines.append(f"Configure it in {hosts_file()}. Until then, remote work "
+                     f"falls back to fetching whole files.")
+    return "\n".join(lines)
+
+
+def do_disconnect(host):
+    """Close the session for `host` (a no-op if none is open)."""
+    from my_download import close_master, clear_remote_caches
+    target = _target_of(host)
+    clear_remote_caches()
+    if close_master(target):
+        return f"Session closed for {target}."
+    return f"No session was open for {target}."
+
+
 # --- execute / estimate ------------------------------------------------------
 
 def _run_one(node, dry_run, confirm=False):
     """Plan+execute one pipeline; return (ok, hold_kind, formatted_text) where
-    hold_kind is None, 'confirm' (over budget), or 'allocation' (no Slurm alloc)."""
+    hold_kind is None, 'session' (no live ssh session), 'confirm' (over budget),
+    or 'allocation' (no Slurm alloc)."""
     try:
         result = plan_pipeline(node, dry_run=dry_run, confirm=confirm)
-        hold = ('allocation' if result.get("needs_allocation")
+        hold = ('session' if result.get("needs_session")
+                else 'allocation' if result.get("needs_allocation")
                 else 'confirm' if result.get("needs_confirm") else None)
         return True, hold, format_result(result)
     except Exception as e:
@@ -202,6 +333,7 @@ def do_execute(spec_path, confirm=False, force_dry=False):
         any_failed = False
         any_budget_hold = False
         any_alloc_hold = False
+        any_session_hold = False
 
         with redirect_stdout(buf), redirect_stderr(buf):
             for t in targets:
@@ -209,14 +341,28 @@ def do_execute(spec_path, confirm=False, force_dry=False):
                 any_failed = any_failed or not passed
                 any_budget_hold = any_budget_hold or (hold == 'confirm')
                 any_alloc_hold = any_alloc_hold or (hold == 'allocation')
+                any_session_hold = any_session_hold or (hold == 'session')
                 results.append(text)
         output = buf.getvalue().rstrip()
 
+        # A missing session outranks the other holds: without one nothing can be
+        # priced or scheduled, so reporting "over budget" or "no allocation"
+        # would name a downstream symptom instead of the cause.
         status = ("FAILED" if any_failed else
+                  "NEEDS SESSION" if any_session_hold else
                   "NEEDS ALLOCATION" if any_alloc_hold else
                   "NEEDS CONFIRM" if any_budget_hold else "OK")
         meta["status"] = status
     parts = [f"Status: {status}", f"Spec: {spec_path}"]
+    if any_session_hold:
+        parts.append("\n(NO SESSION — one or more pipelines were HELD before "
+                     "anything was read. The remote needs an interactive login. "
+                     "Call connect(host) (the command is shown above): a password "
+                     "dialog opens on the USER's screen and the secret goes "
+                     "straight to ssh — never through VisLang, this report, or "
+                     "you. Then re-run the spec. If the report says the host is "
+                     "UNREACHABLE, do not offer to authenticate — say the network "
+                     "or VPN is the problem.)")
     if any_alloc_hold:
         parts.append("\n(NO SLURM ALLOCATION — one or more pipelines were HELD before "
                      "shipping the server-side reduce; nothing was materialized. Tell "

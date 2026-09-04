@@ -25,6 +25,11 @@ sys.path.insert(0, REPO)
 # never disagree on variable names via a stale frozen binding.
 os.environ["VISLANG_NO_BINDING"] = "1"
 sys.modules["schema_binding"] = None
+# The "remote" in these fixtures IS this machine, so name this repo as the
+# remote checkout. `remote_repo` has no default any more: an unset value means
+# "unconfigured", so that a real host says so instead of shipping a local path
+# its shell cannot resolve.
+os.environ["VISLANG_REMOTE_REPO"] = REPO
 
 import h5py
 
@@ -57,7 +62,7 @@ def check(name, cond, detail=""):
 # ---------------------------------------------------------------------------
 def fake_establish(remote_source):
     return Connection(user="u", host="fakehost", target="u@fakehost",
-                      method="ssh-key")
+                      batch_ok=True)
 
 
 def fake_stat(conn, path):

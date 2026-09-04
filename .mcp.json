@@ -1,16 +1,10 @@
 {
   "mcpServers": {
     "vislang": {
-      "command": "/opt/homebrew/Caskroom/miniconda/base/envs/autoviz/bin/python",
+      "command": "/opt/miniconda3/envs/vislang/bin/python",
       "args": ["mcp_server.py"],
-      "cwd": "/Users/ashrestha/Projects/VisLang",
-      "env": {
-        "VISLANG_SRUN_JOBID": "auto",
-        "VISLANG_SRUN_NAME": "vislang",
-        "VISLANG_REMOTE_PYTHON": "/vast/home/ashrestha/.conda/envs/autoviz/bin/python",
-        "VISLANG_REMOTE_REPO": "/vast/projects/autonomousvis/ashrestha/code/VisLang",
-        "VISLANG_REMOTE": "force"
-      }
+      "cwd": "/Users/agoosh11/Projects/VisLang",
+      "env": {}
     }
   }
 }

@@ -250,15 +250,31 @@ def render_points(dataset_info, cmap=None, opacity=None):
         name="density",
     )
 
-    # point cloud (every loaded point — thin via subset upstream), colored by a
-    # scalar if one exists
-    color_by = "mass" if "mass" in scalar_vars else (scalar_vars[0] if scalar_vars else None)
-    if color_by is not None:
-        attr = np.ascontiguousarray(np.asarray(data[color_by]).astype(np.float32))
-        plot += k3d.points(positions=pts, point_size=extent / 300.0, shader="flat",
-                           attribute=attr, color_map=_k3d_colormap('plasma'),
-                           color_range=[float(attr.min()), float(attr.max())],
-                           name="particles")
+    # point cloud (every loaded point — thin via subset upstream): ONE LAYER PER
+    # scalar, since a k3d point object carries a single `attribute` and so can
+    # only be colored by one variable. Every loaded field therefore gets its own
+    # layer over the same positions, named "particles: <var>", and the viewer's
+    # object panel switches between them. Only the first starts visible —
+    # identical clouds stacked at identical coordinates would just hide each
+    # other, and the panel is how you compare them.
+    #
+    # Each layer holds its own copy of `pts` (12 bytes/point), so N fields cost
+    # N x the cloud. That multiplier is the reason to subsample hard upstream:
+    # `mass` sorts first when present because it is the usual thing to look at.
+    order = (["mass"] if "mass" in scalar_vars else []) + \
+            [v for v in scalar_vars if v != "mass"]
+    if order:
+        for i, var in enumerate(order):
+            attr = np.ascontiguousarray(np.asarray(data[var]).astype(np.float32))
+            lo, hi = float(np.nanmin(attr)), float(np.nanmax(attr))
+            if lo == hi:
+                hi = lo + 1.0        # a constant field has no range to map onto
+            layer = k3d.points(positions=pts, point_size=extent / 300.0,
+                               shader="flat", attribute=attr,
+                               color_map=_k3d_colormap('plasma'),
+                               color_range=[lo, hi], name=f"particles: {var}")
+            layer.visible = (i == 0)
+            plot += layer
     else:
         plot += k3d.points(positions=pts, point_size=extent / 300.0, shader="flat",
                            color=0xffffff, name="particles")

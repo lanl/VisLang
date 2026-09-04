@@ -50,7 +50,7 @@ def _on_disk_mb(filepath):
 
 def _remote_on_disk_mb(uri):
     """Remote file size (MB) via one stat round-trip, or None if unreachable /
-    no ssh key auth. Partitions (#0, #1, …) are not summed remotely."""
+    no live session. Partitions (#0, #1, …) are not summed remotely."""
     try:
         from my_inspect import _remote_conn
         from my_download import remote_stat

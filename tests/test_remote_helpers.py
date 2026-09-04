@@ -55,12 +55,27 @@ def with_fake(script, fn):
         subprocess.run = real
 
 
-KEY = Connection(user="u", host="h", target="u@h", method="ssh-key")
+KEY = Connection(user="u", host="h", target="u@h", batch_ok=True)
+
+
+def remote_calls():
+    """CALLS minus the local `ssh -G` config reads.
+
+    Naming the ControlMaster socket resolves the target through `ssh -G`, which
+    reads ~/.ssh/config and touches no network. It is not a round trip, so the
+    assertions about *which* command ran, and how many, must not count it."""
+    return [c for c in CALLS if c[0][:2] != ["ssh", "-G"]]
+
+
+# Naming the ControlMaster socket resolves the target through `ssh -G` (once per
+# target, then cached). Prime that cache so the fake subprocess.run below
+# captures only the ssh/scp commands under test, not the config probe.
+my_download._SSHCFG_CACHE["u@h"] = {"hostname": "h", "user": "u", "port": "22"}
 
 
 def main():
     print("== key-auth gate: password connections never spawn a process ==")
-    pw = Connection(user="u", host="h", target="u@h", method="password")
+    pw = Connection(user="u", host="h", target="u@h", batch_ok=False)
 
     def boom(cmd, kw):
         raise AssertionError("subprocess was called")
@@ -76,7 +91,7 @@ def main():
     out = with_fake(lambda c, k: Result(0, b"27543608 1750000000\n"),
                     lambda: remote_stat(KEY, "/data/f.raw"))
     check("stat parsed", out == (27543608, 1750000000), repr(out))
-    argv = CALLS[0][0]
+    argv = remote_calls()[0][0]
     check("stat uses BatchMode", "BatchMode=yes" in " ".join(argv))
     check("stat targets host", "u@h" in argv)
     check("stat quotes path", "'/data/f.raw'" in argv[-1] or "/data/f.raw" in argv[-1])
@@ -92,20 +107,20 @@ def main():
     got = with_fake(lambda c, k: Result(0, f"{md5}  -\n".encode()),
                     lambda: remote_header_hash(KEY, "/data/f.raw", nbytes=1024))
     check("header hash parsed", got == md5)
-    check("head -c present", "head -c 1024" in CALLS[0][0][-1])
+    check("head -c present", "head -c 1024" in remote_calls()[0][0][-1])
 
     print("== run_remote ==")
     rc, so, se = with_fake(lambda c, k: Result(3, b"out", b"err"),
                            lambda: run_remote(KEY, "do thing", stdin_bytes=b"PLAN"))
     check("run rc/stdout/stderr", (rc, so, se) == (3, "out", "err"))
-    check("run pipes stdin", CALLS[0][1].get("input") == b"PLAN")
-    check("run passes command", CALLS[0][0][-1] == "do thing")
+    check("run pipes stdin", remote_calls()[0][1].get("input") == b"PLAN")
+    check("run passes command", remote_calls()[0][0][-1] == "do thing")
 
     print("== measure_bandwidth ==")
     bw = with_fake(lambda c, k: Result(0, b"\0" * (1 << 20)),
                    lambda: measure_bandwidth(KEY, mb=1))
     check("bandwidth positive", bw is not None and bw > 0)
-    check("bandwidth dd command", "dd if=/dev/zero" in CALLS[0][0][-1])
+    check("bandwidth dd command", "dd if=/dev/zero" in remote_calls()[0][0][-1])
     check("bandwidth failure -> None",
           with_fake(lambda c, k: Result(1, b""), lambda: measure_bandwidth(KEY)) is None)
 
@@ -137,7 +152,7 @@ def main():
           any("stat -Lc" in c[0][-1] for c in CALLS), str(CALLS))
     check("is_dir asks for type+size+mtime+hash in ONE command",
           sum(1 for c in CALLS if "stat -Lc" in c[0][-1]) == 1
-          and "md5sum" in CALLS[-1][0][-1], str(CALLS))
+          and "md5sum" in remote_calls()[-1][0][-1], str(CALLS))
 
     clear_remote_caches()
     check("remote_is_dir False on a regular file",
@@ -154,7 +169,7 @@ def main():
               else Result(0, b"regular file|27543608|1750000000\n"
                              b"d41d8cd98f00b204e9800998ecf8427e  -\n"),
               lambda: my_inspect.remote_is_dir("u@h:/data/f.raw"))
-    n_after_probe = len(CALLS)
+    n_after_probe = len(remote_calls())
 
     def explode(cmd, kw):
         raise AssertionError(f"extra round trip: {cmd[-1]}")
@@ -205,7 +220,7 @@ def main():
                        lambda: push_file(KEY, "/local/env.tar.gz",
                                          "~/.vislang/env.tar.gz"))
         check("push succeeds", ok is True)
-        check("push mkdir first", "mkdir -p ~/.vislang" in CALLS[0][0][-1])
+        check("push mkdir first", "mkdir -p ~/.vislang" in remote_calls()[0][0][-1])
         check("push then rsync", CALLS[1][0][0] == "rsync"
               and CALLS[1][0][-1] == "u@h:~/.vislang/env.tar.gz")
         check("push mkdir failure -> False",

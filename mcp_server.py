@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 import os
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 # The engine logic lives in cli_core so the `sieve` terminal CLI and this MCP
 # server are two thin front-ends onto ONE implementation. These tools just wrap
 # the shared functions with the tool decorator + docstrings the model reads.
 from cli_core import (do_inspect, do_execute, do_estimate_render_cost,
-                      do_submit_adapter, do_submit_binding)
+                      do_submit_adapter, do_submit_binding, do_connect,
+                      do_disconnect)
 
 # --- Guidance surfaced to the model -----------------------------------------
 # The repo's root CLAUDE.md is the always-loaded index (Claude Code auto-loads
@@ -24,7 +25,7 @@ def _read_instruction(name):
         return f.read()
 
 
-mcp = FastMCP("VisLang Data Management", instructions=(
+mcp = MCPServer("VisLang Data Management", instructions=(
     "VisLang: a declarative DSL for reading, narrowing, and rendering scientific "
     "data. Author a small spec.py from forms and run it with run_pipeline; call "
     "inspect(filepath) to read a file's schema before writing the spec. Full "
@@ -60,6 +61,35 @@ def _instruction_doc(doc):
 
 
 @mcp.tool()
+def connect(host: str) -> str:
+    """Open an ssh session to a remote host that needs an interactive login.
+
+    Call this when `inspect` returns a `NEEDS_SESSION` handshake or a run reports
+    `Status: NEEDS SESSION`. `host` may be a hostname, an ssh alias, or the whole
+    source URI — connect("ssh://gpu-server/scratch/run") is fine.
+
+    YOU NEVER HANDLE THE SECRET. A password dialog opens on the USER's screen;
+    OpenSSH reads the answer directly from its own helper process. It does not
+    pass through VisLang, this tool's result, or your context — all you get back
+    is whether a session came up. Never ask the user to type a password to you,
+    and never put one in a spec or a tool argument.
+
+    The session is shared by every later inspect, estimate and run until it
+    expires (8h by default), so call this once per host, not once per spec. If
+    the host is UNREACHABLE this returns without prompting — that is a VPN or
+    network problem, and a password cannot fix it.
+    """
+    return do_connect(host)
+
+
+@mcp.tool()
+def disconnect(host: str) -> str:
+    """Close the ssh session for a host. Rarely needed — sessions expire on their
+    own — but useful to force re-authentication or to release one deliberately."""
+    return do_disconnect(host)
+
+
+@mcp.tool()
 def inspect(filepath: str, positions: str = None) -> str:
     """Read a file's schema — variables, dimensions, attributes — metadata only, no bulk data.
 
@@ -67,6 +97,10 @@ def inspect(filepath: str, positions: str = None) -> str:
     you can `region`, `subsample`, `fields`, or `threshold` them. `inspect` is the
     engine behind the `source()` form; calling it here is the same read, just so
     you can see the schema while authoring.
+
+    For a REMOTE source (ssh://…) with no live session, this returns a
+    `NEEDS_SESSION` handshake instead of reading anything: call `connect(host)`,
+    which prompts the user in a dialog, then inspect again.
 
     If no reader recognizes the file, this returns a `NEEDS_ADAPTER` handshake:
     follow it to write a reader module and call `submit_adapter`. If `filepath` is
@@ -129,6 +163,12 @@ def run_pipeline(spec_path: str, confirm: bool = False) -> str:
 
     Convention: keep the spec in a single file named `spec.py`, edited in place —
     pass spec_path="spec.py". Do not create a new/uniquely-named file per request.
+
+    SESSION GATE: a remote source needs a live ssh session. Without one the run is
+    HELD before anything is read and reports `Status: NEEDS SESSION` — call
+    `connect(host)` (a dialog prompts the user; the secret never reaches you) and
+    re-run. If it reports the host is UNREACHABLE, that is a VPN/network problem;
+    say so rather than offering to authenticate.
 
     COST GATE: before any bulk read/transfer, the interpreter estimates the run's
     cost (bytes; plus a measured time band for remote transfers). If a pipeline is

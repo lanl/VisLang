@@ -6,6 +6,7 @@ subcommand prints the same formatted report the MCP tools return, and exits
 non-zero when that report signals a failure / hold so the CLI composes in
 shell scripts and CI.
 
+    sieve connect gpu-server                      # open an ssh session (password dialog)
     sieve inspect ssh://darwin/path/to/data/     # explore a source's schema
     sieve estimate spec.py                        # static-check + cost, nothing read
     sieve execute spec.py [--confirm]             # run the reduction / transfer
@@ -18,15 +19,18 @@ import sys
 
 from cli_core import (do_inspect, do_estimate, do_execute,
                       do_estimate_render_cost, do_submit_adapter,
-                      do_submit_binding)
+                      do_submit_binding, do_connect, do_disconnect)
 
 # A report is "bad" (non-zero exit) when it starts with one of these markers or
 # holds the run. The reports are prose for humans/LLMs; this is the thin machine
-# signal a shell needs. `NEEDS CONFIRM`/`NEEDS ALLOCATION` are holds, not success.
-_BAD_PREFIXES = ("ERROR", "NEEDS_ADAPTER", "ADAPTER REJECTED", "BINDING REJECTED",
-                 "BINDING error")
+# signal a shell needs. `NEEDS CONFIRM`/`NEEDS ALLOCATION`/`NEEDS SESSION` are
+# holds, not success.
+_BAD_PREFIXES = ("ERROR", "NEEDS_ADAPTER", "NEEDS_SESSION", "ADAPTER REJECTED",
+                 "BINDING REJECTED", "BINDING error", "UNREACHABLE",
+                 "NOT CONNECTED")
 _BAD_STATUSES = ("Status: FAILED", "Status: BUILD FAILED",
-                 "Status: NEEDS CONFIRM", "Status: NEEDS ALLOCATION")
+                 "Status: NEEDS CONFIRM", "Status: NEEDS ALLOCATION",
+                 "Status: NEEDS SESSION")
 
 
 def _emit(report):
@@ -48,6 +52,15 @@ def build_parser():
         description="Read, inspect, narrow, and reduce scientific data with the "
                     "VisLang DSL — the terminal twin of the MCP server.")
     sub = p.add_subparsers(dest="cmd", required=True, metavar="<command>")
+
+    pc = sub.add_parser("connect", help="open an ssh session for a remote host "
+                                        "(prompts in a dialog, not here)")
+    pc.add_argument("host", help="host, ssh alias, or any remote URI")
+    pc.add_argument("--timeout", type=int, default=120,
+                    help="seconds to wait for the password dialog (default 120)")
+
+    pd = sub.add_parser("disconnect", help="close the session for a host")
+    pd.add_argument("host", help="host, ssh alias, or any remote URI")
 
     pi = sub.add_parser("inspect", help="read a source's schema (metadata only)")
     pi.add_argument("uri", help="file, folder (=timeseries), or ssh://host/path")
@@ -79,7 +92,11 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
-        if args.cmd == "inspect":
+        if args.cmd == "connect":
+            report = do_connect(args.host, timeout=args.timeout)
+        elif args.cmd == "disconnect":
+            report = do_disconnect(args.host)
+        elif args.cmd == "inspect":
             report = do_inspect(args.uri, args.positions)
         elif args.cmd == "estimate":
             report = do_estimate(args.spec)

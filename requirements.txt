@@ -1,3 +1,7 @@
 # Sandboxed DSL execution (mcp_server run_pipeline -> sandbox.execute)
 # 0.0.19 removed pm.MontyRepl, which sandbox.execute() is built on.
 pydantic-monty>=0.0.18,<0.0.19
+
+# MCP server surface (mcp_server.py). v2 renamed FastMCP -> MCPServer and moved
+# it to mcp.server.mcpserver; the server uses the v2 name, so 1.x won't import.
+mcp>=2

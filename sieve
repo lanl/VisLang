@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # `sieve` launcher — the VisLang terminal CLI.
 #
-# The engine needs the `autoviz` conda env (h5py, yt, k3d, paramiko, …), so this
-# shim picks that interpreter and runs cli.py from the repo, no matter where you
-# invoke it from. Put this file (or a symlink to it) on your PATH:
+# The engine needs a conda env with the science stack (h5py, yt, k3d, paramiko,
+# …), so this shim picks that interpreter and runs cli.py from the repo, no
+# matter where you invoke it from. Put this file (or a symlink to it) on your
+# PATH:
 #
 #     ln -s "$(pwd)/sieve" ~/.local/bin/sieve
 #
 # Override the interpreter with VISLANG_PYTHON=/path/to/python if your env lives
-# elsewhere; otherwise it falls back to the known autoviz path, then `conda run`.
+# somewhere not listed below; otherwise it tries the known env paths in order
+# (the same interpreter .mcp.json points the MCP server at, first), then
+# `conda run`.
 set -euo pipefail
 
 # Resolve symlinks to find the REPO, not the link. `~/.local/bin/sieve` is a link

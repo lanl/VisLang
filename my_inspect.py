@@ -15,7 +15,7 @@ _plan_local):
                          inspect_file; a remote URI (ssh:// or user@host:) is
                          inspected NEXT TO THE DATA — schema shipped back, no bulk
                          transfer — via `vislang_exec.py --inspect`, falling back
-                         to a whole-file fetch when there is no ssh key auth.
+                         to a whole-file fetch when there is no live session.
 
 inspect also resolves the spatial-coordinate variables (`info.positions`),
 auto-detected from the variable names. Pass positions=('x','y','z') to override.
@@ -70,7 +70,7 @@ def inspect_source(uri, positions=None, allow_fetch=True):
 # ---------------------------------------------------------------------------
 def _remote_conn(uri):
     """(connection, remote_path) for a remote uri, or (None, None) if the host
-    can't be reached with ssh key auth (caller then falls back to a fetch)."""
+    can't be driven non-interactively (caller then falls back to a fetch)."""
     from my_download import establish_connection, _parse_remote
     from remote_reduce import _normalize_remote
     try:
@@ -79,7 +79,7 @@ def _remote_conn(uri):
         conn = establish_connection(norm)
     except Exception:
         return None, None
-    if conn.method != "ssh-key":
+    if not conn.batch_ok:
         return None, None
     return conn, remote_path
 
@@ -90,9 +90,11 @@ def _run_remote_inspect(conn, remote_path):
     import shlex
     from my_download import run_remote
     from remote_reduce import _parse_meta
-    py = os.environ.get("VISLANG_REMOTE_PYTHON", "python")
-    repo = os.environ.get("VISLANG_REMOTE_REPO",
-                          os.path.dirname(os.path.abspath(__file__)))
+    from vislang_hosts import remote_python, remote_repo
+    py = remote_python(conn.host)
+    repo = remote_repo(conn.host)
+    if not repo:
+        return None            # unconfigured host: caller falls back / reports
     # VISLANG_NO_BINDING=1: the remote returns the generic listing + the HDF5
     # schema tree; the binding decision is made LOCALLY, keyed by the structure-
     # only signature (filesystem-independent), so a locally-frozen binding serves
@@ -108,7 +110,7 @@ def _inspect_remote(uri, positions=None, allow_fetch=True):
     if conn is None:
         if not allow_fetch:
             raise SchemaUnavailable(
-                f"{uri}: no ssh key auth, so the schema can only be read by "
+                f"{uri}: no live session, so the schema can only be read by "
                 f"fetching the file — refused here (nothing may be moved).")
         return _inspect_via_fetch(uri, positions)
     meta = _run_remote_inspect(conn, remote_path)
@@ -230,7 +232,7 @@ def timestep_files(dirpath):
 
 def remote_is_dir(uri):
     """True if a remote uri points at a DIRECTORY (a timeseries folder), False if
-    a regular file — or if the remote can't be reached with ssh key auth or the
+    a regular file — or if the remote can't be driven non-interactively or the
     path can't be stat'd, in which case the caller treats it as a single file and
     the single-file path surfaces any real error. Metadata only (one probe).
 
@@ -253,7 +255,7 @@ def remote_timestep_files(uri):
     """[(label, remote_uri)] for a REMOTE timestep folder — the remote analog of
     timestep_files(). Lists the folder over ssh, parses each name's `#N` token,
     and rebuilds a full remote uri per timestep (the original uri + '/<name>').
-    Returns None if the remote can't be reached with ssh key auth; raises
+    Returns None if the remote can't be driven non-interactively; raises
     ValueError if reachable but holding no `…#N` files. Metadata only — no file
     contents cross the wire."""
     import shlex
@@ -350,7 +352,8 @@ def remote_folder_listing(uri):
         return f"FOLDER {uri}\n  {e}"
     if ts is None:
         return (f"FOLDER {uri}\n  (cannot list the remote folder — remote commands "
-                f"need ssh key auth; set up keys, or inspect a local copy)")
+                f"needs a live session — run `sieve connect <host>`, or "
+                f"inspect a local copy)")
     labels = [lab for lab, _ in ts]
     first_uri = ts[0][1]
     contiguous = labels == list(range(labels[0], labels[-1] + 1))

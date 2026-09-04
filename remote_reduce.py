@@ -16,8 +16,9 @@ Execution model (v1): the reducer is invoked as a plain
 `python vislang_exec.py` on the remote — no container. That assumes the VisLang
 code + its Python deps are reachable on the remote, which holds when the repo
 lives on a filesystem shared with the compute nodes (the common HPC case: NFS/
-Lustre-mounted $HOME/$PROJECT). VISLANG_REMOTE_PYTHON / VISLANG_REMOTE_REPO name
-the interpreter and repo path on the remote.
+Lustre-mounted $HOME/$PROJECT). The interpreter and repo path on the remote come
+from `vislang_hosts` — per-host settings in `.vislang/hosts.json`, with
+VISLANG_REMOTE_PYTHON / VISLANG_REMOTE_REPO still overriding.
 
 Scheduler placement (opt-in): set VISLANG_SRUN_JOBID to a *held* allocation id
 (or to `auto` to discover the held allocation via squeue at reduce time) and each
@@ -35,8 +36,9 @@ locally without the whole file anyway; a pure geometric cut ships fewer bytes
 by construction). `measure_bandwidth` is available for a finer gate later.
 
 Env knobs: VISLANG_REMOTE=off|auto|force, VISLANG_REMOTE_PYTHON (remote
-interpreter, default "python"), VISLANG_REMOTE_REPO (remote repo dir, default =
-this repo's path — correct on a shared filesystem), VISLANG_CACHE (catalog
+interpreter, default "python"), VISLANG_REMOTE_REPO (remote repo dir — no
+default; unset means unconfigured, and the reduce says so rather than shipping a
+local path a remote shell cannot resolve), VISLANG_CACHE (catalog
 root), VISLANG_NO_BINDING (force generic HDF5 names on both sides),
 VISLANG_SRUN_JOBID (held allocation id, or "auto" to discover it → srun-step
 mode), VISLANG_SRUN_NAME / VISLANG_SRUN_PARTITION (filter auto-discovery to this
@@ -55,7 +57,7 @@ from datasetInfo import DatasetInfo
 from my_catalog import ExtentCatalog, make_source_id
 from my_download import (establish_connection, transfer, transfer_dir,
                          _parse_remote, remote_stat, remote_header_hash, run_remote,
-                         measure_bandwidth)
+                         measure_bandwidth, host_reachable, connect_command)
 from ast_serialize import to_plan_json
 from dsl_forms.nodes import (SourceNode, FieldsNode, RegionNode, SubsampleNode,
                              ThresholdNode, CompressNode, TimestepsNode)
@@ -86,6 +88,61 @@ class BudgetHold(Exception):
         super().__init__("over budget — remote transfer held pending confirm")
         self.estimate = estimate
         self.steps = steps
+
+
+class SessionHold(Exception):
+    """The remote needs an interactive login and no session is live, so nothing
+    can run next to the data. Carries the reason, the `connect` command to
+    propose, and the steps so far, so the planner reports NEEDS SESSION without
+    reading anything.
+
+    Deliberately NOT a RemoteUnavailable: that means "fall back to the whole-file
+    fetch", and the fetch path is equally unauthenticated. Falling back here
+    would trade a clear, fixable hold for a second failure further along, after
+    the cost gate has already approved moving the whole file."""
+
+    def __init__(self, reason, connect_cmd, steps, reachable=True, host=None,
+                 target=None):
+        super().__init__("no session — remote work held pending connect")
+        self.reason = reason
+        self.connect_cmd = connect_cmd
+        self.steps = steps
+        self.reachable = reachable      # False -> a network problem, not a credential one
+        self.host = host
+        self.target = target
+
+
+def _session_hold(conn, steps):
+    """The SessionHold for a host we cannot drive non-interactively.
+
+    A BatchMode probe fails identically whether the host is unreachable or
+    merely unauthenticated, and the two need opposite fixes — so ask the network
+    which one it is rather than answering an unplugged VPN with a password
+    dialog that cannot possibly help."""
+    reachable = host_reachable(conn.target)
+    if not reachable:
+        reason = (f"{conn.host} is not reachable at all — this is a network or "
+                  f"VPN problem, not a credential one")
+    else:
+        reason = (f"{conn.host} answers but needs an interactive login, and no "
+                  f"VisLang session is open for it")
+    return SessionHold(reason, connect_command(conn.target), steps,
+                       reachable=reachable, host=conn.host, target=conn.target)
+
+
+def session_check(uri):
+    """SessionHold for `uri`'s host when it cannot be driven non-interactively,
+    else None.
+
+    The single place that answers "is there a session?", so the planner's gate,
+    the reduce's own re-check and `inspect`'s handshake all agree — and all
+    resolve the connection through this module's `establish_connection`, the seam
+    the tests already substitute."""
+    try:
+        conn = establish_connection(_normalize_remote(uri))
+    except Exception:
+        return None            # not a session problem; the caller reports its own
+    return None if conn.batch_ok else _session_hold(conn, [])
 
 
 class AllocationHold(Exception):
@@ -226,17 +283,19 @@ def allocation_status(conn):
             "reason": f"held allocation RUNNING (jobid={jid}{extra})"}
 
 
-def _remote_tmp():
+def _remote_tmp(host=None):
     """Base dir on the remote for the staged plan + reduced .npz. srun places
     vislang_exec on a COMPUTE node whose local /tmp the login-node pull can't
     see, so srun mode needs a shared-FS dir; direct-ssh mode keeps /tmp (the
     reducer runs on the same node ssh landed on)."""
+    from vislang_hosts import remote_tmp
     if _srun_requested():
-        return os.environ.get("VISLANG_REMOTE_TMP", "~/.vislang/reduce")
-    return "/tmp"
+        return remote_tmp(host, default="~/.vislang/reduce")
+    return remote_tmp(host, default="/tmp")
 
 
-def _executor_cmd(rout, plan_path=None, jobid=None, folder=False, manifest_path=None):
+def _executor_cmd(rout, plan_path=None, jobid=None, folder=False,
+                  manifest_path=None, host=None):
     """The remote command that runs vislang_exec -> rout.
 
     Direct `python vislang_exec.py` (no container): the deps are assumed present
@@ -253,9 +312,14 @@ def _executor_cmd(rout, plan_path=None, jobid=None, folder=False, manifest_path=
     or the two disagree on variable names — so forward that flag. Under srun the
     `VAR=val cmd` shell prefix would be read as srun's executable, so the flag is
     forwarded via `--export` instead."""
-    py = os.environ.get("VISLANG_REMOTE_PYTHON", "python")
-    repo = os.environ.get("VISLANG_REMOTE_REPO",
-                          os.path.dirname(os.path.abspath(__file__)))
+    from vislang_hosts import remote_python, remote_repo
+    py = remote_python(host)
+    repo = remote_repo(host)
+    if not repo:
+        raise RemoteUnavailable(
+            f"no VisLang checkout configured for {host or 'this host'} — set "
+            f"`repo` for it in .vislang/hosts.json (or VISLANG_REMOTE_REPO). "
+            f"`sieve connect <host>` reports what is missing.")
     flag = "--outdir" if folder else "--out"
     man = f" --manifest {manifest_path}" if manifest_path else ""   # catalog delta
     if jobid is None:
@@ -506,8 +570,8 @@ def remote_reduce(src, middle, confirm=False):
     _, host, remote_path = _parse_remote(norm)
     with timing.phase("probe_source"):
         conn = establish_connection(norm)
-        if conn.method != "ssh-key":
-            raise RemoteUnavailable("remote reduce needs ssh key auth")
+        if not conn.batch_ok:
+            raise _session_hold(conn, steps)
 
         st = remote_stat(conn, remote_path)
         if st is None:
@@ -632,7 +696,7 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
     plan = to_plan_json(terminal)
 
     tag = os.urandom(4).hex()
-    base = _remote_tmp()
+    base = _remote_tmp(conn.host)
     rout = f"{base}/vislang_reduce_{tag}.npz"
     requested = _srun_requested()
     jobid = _discover_jobid(conn, steps) if requested == "auto" else requested
@@ -653,7 +717,7 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
     # reduce is compute next to the data, and only the pull touches the link.
     timing.note(plan_bytes=len(plan), srun=bool(jobid))
     if jobid is None:
-        cmd = _executor_cmd(rout)                       # plan piped via stdin
+        cmd = _executor_cmd(rout, host=conn.host)                       # plan piped via stdin
         with timing.phase("remote_exec", srun=False):
             rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
         rplan = None
@@ -668,7 +732,7 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
                                      stdin_bytes=plan.encode())
         if stc != 0:
             raise RuntimeError(f"staging plan to {rplan} failed: {ste.strip()[-300:]}")
-        cmd = _executor_cmd(rout, plan_path=rplan, jobid=jobid)
+        cmd = _executor_cmd(rout, plan_path=rplan, jobid=jobid, host=conn.host)
         with timing.phase("remote_exec", srun=True, jobid=jobid):
             rc, out, err = run_remote(conn, cmd)
 
@@ -775,8 +839,8 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
     _, host, remote_dir = _parse_remote(norm)
     with timing.phase("probe_source"):
         conn = establish_connection(norm)
-        if conn.method != "ssh-key":
-            raise RemoteUnavailable("remote reduce needs ssh key auth")
+        if not conn.batch_ok:
+            raise _session_hold(conn, steps)
     timing.note(host=host)
 
     # No projection -> we can't know each file's variables from metadata; run the
@@ -847,7 +911,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         terminal = _rebuild_delta_source(remote_dir, src.positions, narrow_prefix)
         plan = to_plan_json(terminal)
         tag = os.urandom(4).hex()
-        base = _remote_tmp()
+        base = _remote_tmp(conn.host)
         routdir = f"{base}/vislang_reduce_{tag}"
         rmanifest = f"{base}/vislang_manifest_{tag}.json"
         requested = _srun_requested()
@@ -876,11 +940,13 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         with timing.phase("remote_exec", srun=bool(jobid), jobid=jobid,
                           n_timesteps=len(manifest)):
             if jobid is None:
-                cmd = _executor_cmd(routdir, folder=True, manifest_path=rmanifest)
+                cmd = _executor_cmd(routdir, folder=True, manifest_path=rmanifest,
+                                    host=conn.host)
                 rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
             else:
                 cmd = _executor_cmd(routdir, plan_path=rplan, jobid=jobid,
-                                    folder=True, manifest_path=rmanifest)
+                                    folder=True, manifest_path=rmanifest,
+                                    host=conn.host)
                 rc, out, err = run_remote(conn, cmd)
 
         meta = _parse_meta(out)
@@ -979,7 +1045,7 @@ def _folder_batch_savedir(conn, host, remote_dir, src, middle, ts_nodes,
     plan = to_plan_json(terminal)
 
     tag = os.urandom(4).hex()
-    base = _remote_tmp()
+    base = _remote_tmp(conn.host)
     routdir = f"{base}/vislang_reduce_{tag}"
     requested = _srun_requested()
     jobid = _discover_jobid(conn, steps) if requested == "auto" else requested
@@ -988,7 +1054,7 @@ def _folder_batch_savedir(conn, host, remote_dir, src, middle, ts_nodes,
 
     timing.note(route="folder_batch_savedir", plan_bytes=len(plan), srun=bool(jobid))
     if jobid is None:
-        cmd = _executor_cmd(routdir, folder=True)
+        cmd = _executor_cmd(routdir, folder=True, host=conn.host)
         with timing.phase("remote_exec", srun=False):
             rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
         rplan = None
@@ -1001,7 +1067,8 @@ def _folder_batch_savedir(conn, host, remote_dir, src, middle, ts_nodes,
                                      stdin_bytes=plan.encode())
         if stc != 0:
             raise RuntimeError(f"staging plan to {rplan} failed: {ste.strip()[-300:]}")
-        cmd = _executor_cmd(routdir, plan_path=rplan, jobid=jobid, folder=True)
+        cmd = _executor_cmd(routdir, plan_path=rplan, jobid=jobid, folder=True,
+                            host=conn.host)
         with timing.phase("remote_exec", srun=True, jobid=jobid):
             rc, out, err = run_remote(conn, cmd)
 
