@@ -4,7 +4,7 @@ Format dispatch lives in `adapters.py`. Each adapter implements one contract:
 `can_handle` (cheap recognition), `inspect` (metadata → `DatasetInfo`), and
 `read_array` (one selected numpy array). All orchestration — variable
 resolution, narrowing, selection bookkeeping — is universal framework code in
-`my_load.py` + `narrowing.py`; adapters only know how to recognize a file and
+`vislang/interpreter/load.py` + `narrowing.py`; adapters only know how to recognize a file and
 fetch one array, applying the narrowing via `indexer`/`apply_selection`.
 `DatasetInfo` is the format boundary: once `inspect` fills it, everything
 downstream is format-blind.

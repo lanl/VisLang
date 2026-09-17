@@ -17,7 +17,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from my_catalog import ExtentCatalog, make_source_id
+from vislang.remote.catalog import ExtentCatalog, make_source_id
 
 PASS = []
 
@@ -171,9 +171,9 @@ def main():
 
     # drift guard: _fuse_forms must agree with planner._grid_ranges (it delegates
     # to it, so this checks the forms->node rebuild is faithful: axes, per-axis).
-    from my_catalog import _fuse_forms
-    from planner import _grid_ranges as _pgr
-    from dsl_forms.nodes import RegionNode as _RN, SubsampleNode as _SN
+    from vislang.remote.catalog import _fuse_forms
+    from vislang.interpreter.planner import _grid_ranges as _pgr
+    from vislang.dsl.nodes import RegionNode as _RN, SubsampleNode as _SN
     gshape = [200, 60, 30]
     xcheck = True
     for forms, rns, sns in [

@@ -33,11 +33,11 @@ os.environ["VISLANG_REMOTE_REPO"] = REPO
 
 import h5py
 
-import remote_reduce
-from my_download import Connection
-from dsl_forms import reset_sinks
-from dsl_forms.forms import source, fields, subsample, threshold, timesteps, save
-from planner import plan_pipeline
+from vislang.remote import reduce
+from vislang.remote.download import Connection
+from vislang.dsl import reset_sinks
+from vislang.dsl.forms import source, fields, subsample, threshold, timesteps, save
+from vislang.interpreter.planner import plan_pipeline
 
 # The reducer runs as a LOCAL subprocess here (fakes stand in for ssh), so use
 # the interpreter running the test; override with VISLANG_TEST_PYTHON.
@@ -147,20 +147,19 @@ def main():
         f["density"] = dens
         f["temp"] = dens % 7
 
-    remote_reduce.establish_connection = fake_establish
-    remote_reduce.remote_stat = fake_stat
-    remote_reduce.remote_header_hash = fake_header_hash
-    remote_reduce.run_remote = fake_run_remote
-    remote_reduce.transfer = fake_transfer
-    remote_reduce.transfer_dir = fake_transfer_dir
+    reduce.establish_connection = fake_establish
+    reduce.remote_stat = fake_stat
+    reduce.remote_header_hash = fake_header_hash
+    reduce.run_remote = fake_run_remote
+    reduce.transfer = fake_transfer
+    reduce.transfer_dir = fake_transfer_dir
 
     # The planner now probes remote folder-ness before dispatch. Our fake remote
     # IS this machine, so back both probes with the local filesystem (the ssh
     # command construction is unit-tested separately in test_remote_helpers.py).
-    import my_inspect
-
+    from vislang.formats import inspect
     def local_path(uri):
-        return remote_reduce._parse_remote(remote_reduce._normalize_remote(uri))[2]
+        return reduce._parse_remote(reduce._normalize_remote(uri))[2]
 
     def fake_remote_is_dir(uri):
         return os.path.isdir(local_path(uri))
@@ -187,9 +186,9 @@ def main():
         out.sort(key=lambda t: t[0])
         return out
 
-    my_inspect.remote_is_dir = fake_remote_is_dir
-    my_inspect.remote_timestep_files = fake_remote_timestep_files
-    my_inspect.remote_timestep_files_stat = fake_remote_timestep_files_stat
+    inspect.remote_is_dir = fake_remote_is_dir
+    inspect.remote_timestep_files = fake_remote_timestep_files
+    inspect.remote_timestep_files_stat = fake_remote_timestep_files_stat
 
     cache = os.path.join(TMP, "cache")
     os.environ["VISLANG_CACHE"] = cache

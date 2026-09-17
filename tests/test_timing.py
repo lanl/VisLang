@@ -1,4 +1,4 @@
-"""Timing harness verification (vislang_timing.py).
+"""Timing harness verification (timing.py).
 
 Run from the repo root: python tests/test_timing.py
 Covers: one JSONL line per run, nested phase paths, counters, estimate
@@ -32,7 +32,7 @@ def test_run_record(tmp):
     """One run -> exactly one JSONL object, carrying identity + phases."""
     path = os.path.join(tmp, "t1.jsonl")
     os.environ["VISLANG_TIMINGS_FILE"] = path
-    import vislang_timing as timing
+    import vislang.runtime.timing as timing
 
     with timing.run("spec.py", spec_code="save(source('x'),'y')") as rec:
         with timing.pipeline(kind="save", uri="x"):
@@ -71,8 +71,8 @@ def test_estimate_flattened(tmp):
     """A CostEstimate lands as flat columns — the predicted half of the table."""
     path = os.path.join(tmp, "t2.jsonl")
     os.environ["VISLANG_TIMINGS_FILE"] = path
-    import vislang_timing as timing
-    from my_estimate import CostEstimate
+    import vislang.runtime.timing as timing
+    from vislang.interpreter.estimate import CostEstimate
 
     est = CostEstimate(site="remote", read_mb=128.0, output_mb=128.0,
                        time_lo_s=204.0, time_hi_s=828.0, confidence="measured",
@@ -94,7 +94,7 @@ def test_error_recorded_and_reraised(tmp):
     exception still reaches the caller unchanged."""
     path = os.path.join(tmp, "t3.jsonl")
     os.environ["VISLANG_TIMINGS_FILE"] = path
-    import vislang_timing as timing
+    import vislang.runtime.timing as timing
 
     raised = None
     try:
@@ -118,7 +118,7 @@ def test_detached_and_disabled(tmp):
     """No run open -> nothing recorded, no crash. VISLANG_TIMING=0 -> no file."""
     path = os.path.join(tmp, "t4.jsonl")
     os.environ["VISLANG_TIMINGS_FILE"] = path
-    import vislang_timing as timing
+    import vislang.runtime.timing as timing
 
     with timing.phase("orphan") as p:            # the remote executor's situation
         p["bytes"] = 1
@@ -144,7 +144,7 @@ def test_flush_failure_is_survivable(tmp):
     with open(blocker, "w") as f:
         f.write("")
     os.environ["VISLANG_TIMINGS_FILE"] = os.path.join(blocker, "sub", "x.jsonl")
-    import vislang_timing as timing
+    import vislang.runtime.timing as timing
     with timing.run("spec.py"):
         with timing.phase("inspect"):
             pass
@@ -158,10 +158,10 @@ def test_end_to_end_local(tmp):
     os.environ["VISLANG_TIMINGS_FILE"] = path
     import h5py
     import numpy as np
-    import vislang_timing as timing
-    from dsl_forms import reset_sinks, collected_sinks
-    from dsl_forms.forms import source, fields, subsample, save
-    from planner import plan_pipeline
+    import vislang.runtime.timing as timing
+    from vislang.dsl import reset_sinks, collected_sinks
+    from vislang.dsl.forms import source, fields, subsample, save
+    from vislang.interpreter.planner import plan_pipeline
 
     src = os.path.join(tmp, "cube.h5")                # HDF5: a real grid + pushdown
     with h5py.File(src, "w") as f:

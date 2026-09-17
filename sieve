@@ -28,10 +28,12 @@ here="$(cd -P "$(dirname "$src")" && pwd)"
 
 if [[ -n "${VISLANG_PYTHON:-}" ]]; then
     exec "$VISLANG_PYTHON" "$here/cli.py" "$@"
+elif [[ -x "/opt/miniconda3/envs/vislang/bin/python" ]]; then
+    exec "/opt/miniconda3/envs/vislang/bin/python" "$here/cli.py" "$@"
 elif [[ -x "/opt/homebrew/Caskroom/miniconda/base/envs/autoviz/bin/python" ]]; then
     exec "/opt/homebrew/Caskroom/miniconda/base/envs/autoviz/bin/python" "$here/cli.py" "$@"
 elif command -v conda >/dev/null 2>&1; then
-    exec conda run --no-capture-output -n autoviz python "$here/cli.py" "$@"
+    exec conda run --no-capture-output -n vislang python "$here/cli.py" "$@"
 else
     exec python3 "$here/cli.py" "$@"
 fi

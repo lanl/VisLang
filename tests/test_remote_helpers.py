@@ -1,4 +1,4 @@
-"""Remote-probe helpers in my_download.py, tested without a live host.
+"""Remote-probe helpers in download.py, tested without a live host.
 
 Run from the repo root: python tests/test_remote_helpers.py
 No ssh here — subprocess.run is monkeypatched to capture argv and return
@@ -12,8 +12,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import my_download
-from my_download import (Connection, remote_stat, remote_header_hash,
+from vislang.remote import download
+from vislang.remote.download import (Connection, remote_stat, remote_header_hash,
                          remote_file_md5, measure_bandwidth,
                          run_remote, push_file)
 
@@ -70,7 +70,7 @@ def remote_calls():
 # Naming the ControlMaster socket resolves the target through `ssh -G` (once per
 # target, then cached). Prime that cache so the fake subprocess.run below
 # captures only the ssh/scp commands under test, not the config probe.
-my_download._SSHCFG_CACHE["u@h"] = {"hostname": "h", "user": "u", "port": "22"}
+download._SSHCFG_CACHE["u@h"] = {"hostname": "h", "user": "u", "port": "22"}
 
 
 def main():
@@ -125,9 +125,9 @@ def main():
           with_fake(lambda c, k: Result(1, b""), lambda: measure_bandwidth(KEY)) is None)
 
     print("== remote_is_dir / remote_timestep_files (folder detection) ==")
-    import my_inspect
-    from my_download import clear_remote_caches, remote_probe, remote_stat as _rstat
-    from my_download import remote_header_hash as _rhash
+    from vislang.formats import inspect
+    from vislang.remote.download import clear_remote_caches, remote_probe, remote_stat as _rstat
+    from vislang.remote.download import remote_header_hash as _rhash
 
     def folder_script(cmd, kw):
         """Fake ssh: the establish probe (`true`), then the combined probe / ls.
@@ -146,7 +146,7 @@ def main():
 
     clear_remote_caches()
     is_dir = with_fake(folder_script,
-                       lambda: my_inspect.remote_is_dir("u@h:/data/series"))
+                       lambda: inspect.remote_is_dir("u@h:/data/series"))
     check("remote_is_dir True on a directory", is_dir is True)
     check("is_dir dereferences symlinks (-L)",
           any("stat -Lc" in c[0][-1] for c in CALLS), str(CALLS))
@@ -158,7 +158,7 @@ def main():
     check("remote_is_dir False on a regular file",
           with_fake(lambda c, k: Result(0, b"") if c[-1] == "true"
                     else Result(0, b"regular file|27543608|1750000000\nabc  -\n"),
-                    lambda: my_inspect.remote_is_dir("u@h:/data/f.raw")) is False)
+                    lambda: inspect.remote_is_dir("u@h:/data/f.raw")) is False)
 
     print("== probe cache: identity is free after the folder check ==")
     # The folder check is the first thing to touch a remote source. Warming the
@@ -168,7 +168,7 @@ def main():
     with_fake(lambda c, k: Result(0, b"") if c[-1] == "true"
               else Result(0, b"regular file|27543608|1750000000\n"
                              b"d41d8cd98f00b204e9800998ecf8427e  -\n"),
-              lambda: my_inspect.remote_is_dir("u@h:/data/f.raw"))
+              lambda: inspect.remote_is_dir("u@h:/data/f.raw"))
     n_after_probe = len(remote_calls())
 
     def explode(cmd, kw):
@@ -189,14 +189,14 @@ def main():
     clear_remote_caches()
 
     files = with_fake(folder_script,
-                      lambda: my_inspect.remote_timestep_files("u@h:/data/series"))
+                      lambda: inspect.remote_timestep_files("u@h:/data/series"))
     check("timesteps sorted by #N, non-#N and subdirs dropped",
           [lab for lab, _ in files] == [1, 2, 10], str(files))
     check("per-timestep uri rebuilt from the folder uri",
           files[0][1] == "u@h:/data/series/run#1.hdf5", str(files))
     check("trailing slash on the folder uri is handled",
           with_fake(folder_script,
-                    lambda: my_inspect.remote_timestep_files("u@h:/data/series/"))[0][1]
+                    lambda: inspect.remote_timestep_files("u@h:/data/series/"))[0][1]
           == "u@h:/data/series/run#1.hdf5")
 
     def no_ts_script(cmd, kw):
@@ -207,14 +207,14 @@ def main():
         return Result(1, b"")
     try:
         with_fake(no_ts_script,
-                  lambda: my_inspect.remote_timestep_files("u@h:/data/empty"))
+                  lambda: inspect.remote_timestep_files("u@h:/data/empty"))
         check("no #N files raises ValueError", False, "no error raised")
     except ValueError as e:
         check("no #N files raises ValueError", "timestep" in str(e))
 
     print("== push_file ==")
-    real_have = my_download._have_cmd
-    my_download._have_cmd = lambda name: name == "rsync"
+    real_have = download._have_cmd
+    download._have_cmd = lambda name: name == "rsync"
     try:
         ok = with_fake(lambda c, k: Result(0, b""),
                        lambda: push_file(KEY, "/local/env.tar.gz",
@@ -227,7 +227,7 @@ def main():
               with_fake(lambda c, k: Result(1, b""),
                         lambda: push_file(KEY, "/a", "/x/b")) is False)
     finally:
-        my_download._have_cmd = real_have
+        download._have_cmd = real_have
 
     print(f"\nALL {len(PASS)} CHECKS PASSED")
 

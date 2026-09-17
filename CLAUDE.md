@@ -13,7 +13,8 @@ exposed as `vislang://instructions/*` resources) when you need depth.
 ## The model: forms describe a goal; the interpreter decides how
 
 A form does **not** run anything — it builds an AST node. Only a **sink**
-(`render` or `save`) triggers execution. On run, the interpreter (`planner.py`):
+(`render` or `save`) triggers execution. On run, the interpreter
+(`vislang/interpreter/planner.py`):
 
 1. **inspects** the source for its schema,
 2. **static-checks** the request against that schema *before any bulk read*
@@ -48,8 +49,9 @@ or save the range); `save` writes one file per timestep. **`save` preserves the
 source's format** — the output path's extension wins if known
 (`.npz`/`.hdf5`/`.gio`), else the source's original format (HDF5, npz, and
 GenericIO today; npz fallback, with a note, for formats without a writer or for a
-result GenericIO can't hold). Multi-file loading lives in `my_save.py` + `planner._plan_folder` (local)
-/ `planner._plan_remote_folder` (remote, reducing each timestep next to the data).
+result GenericIO can't hold). Multi-file loading lives in `vislang/output/save.py`
++ `planner._plan_folder` (local) / `planner._plan_remote_folder` (remote,
+reducing each timestep next to the data).
 
 ## MCP tools (called directly, not written in a spec)
 
@@ -85,33 +87,48 @@ via `inspect`; the **run path is cache-only** and errors if one is missing.
 
 ## Program flow / where things live
 
-- **Spec → AST**: `dsl_forms/forms.py` (form constructors), `dsl_forms/nodes.py`
-  (node types + the per-run sink registry).
-- **Run**: `mcp_server.py` `run_pipeline` execs the spec, collects sinks, calls
-  `planner.plan_pipeline` per sink.
-- **Plan/execute**: `planner.py` — site dispatch (`_plan_remote` / `_plan_local`),
-  inspect → `validate_narrowing` static check → classify/lower forms → fuse into
-  one `Narrowing` → `materialize` → compress → sink.
-- **Inspect**: `my_inspect.py` `inspect_file` → `adapters.get_adapter` (the trust
-  ladder) → `DatasetInfo` (the format boundary; everything downstream is
-  format-blind). `datasetInfo.py`.
-- **Adapters**: `adapters.py` (Tier-0 readers: yt, HDF5, FITS, GenericIO;
-  `NeedsAdapterError`), `llm_adapter.py` (Tier-1 session-model handshake:
-  `gather_adapter_evidence`, `conform_and_freeze`), `generated_adapters/` (frozen
-  modules), `schema_binding.py` + `binding_cache/` (HDF5 semantics).
+The code is one package, `vislang/`, whose subfolders follow the pipeline. Each
+folder has a `README.md` with a file-by-file map, and each `__init__.py` states
+the rule that layer owns — read those first when working inside a folder.
+
+- **Spec → AST** — `vislang/dsl/`: `forms.py` (form constructors), `nodes.py`
+  (node types + the per-run sink registry), `ast_serialize.py` (AST ⇄ JSON and
+  the strict validator used on the wire).
+- **Run** — `vislang/server/`: `mcp_server.py` `run_pipeline` execs the spec
+  under the sandbox, collects sinks, calls `plan_pipeline` per sink. `cli.py` is
+  the `sieve` terminal twin; both are thin over `cli_core.py`.
+- **Plan/execute** — `vislang/interpreter/`: `planner.py` (site dispatch
+  `_plan_remote` / `_plan_local`, inspect → `validate_narrowing` static check →
+  classify/lower forms → fuse into one `Narrowing` → `materialize` → compress →
+  sink), `narrowing.py` (selection primitives), `load.py` (universal
+  load/materialize), `subset.py`, `compress.py`, `estimate.py`, `explain.py`.
+- **Formats** — `vislang/formats/`: `inspect.py` `inspect_file` →
+  `adapters.get_adapter` (the trust ladder) → `DatasetInfo` in
+  `dataset_info.py` (the format boundary; everything downstream is
+  format-blind). `adapters.py` holds the Tier-0 readers (yt, HDF5, FITS,
+  GenericIO) and `NeedsAdapterError`; `llm_adapter.py` the Tier-1 session-model
+  handshake (`gather_adapter_evidence`, `conform_and_freeze`);
+  `generated_adapters/` the frozen modules; `schema_binding.py` HDF5 semantics.
   → `instructions/adapters.md`, `instructions/soundness.md`.
-- **Narrow/load/output**: `narrowing.py` (selection primitives), `my_load.py`
-  (universal load/materialize), `my_compress.py`, `my_render.py` (headless k3d →
-  browser; `instructions/rendering.md`).
-- **Remote**: `my_download.py` (ssh/rsync/scp/paramiko + probes), `remote_reduce.py`
-  (ship the narrowing prefix next to the data), `vislang_exec.py` (the remote
-  executor), `my_catalog.py` (local extent cache: `need − have = fetch`).
-- **Estimate**: `my_estimate.py`.
-- **Run records**: `vislang_trace.py` (human narration → `.vislang/trace.log`) and
-  `vislang_timing.py` (the same runs as data → `.vislang/timings.jsonl`: per-phase
-  seconds/bytes, ssh round trips, remote job launches, predicted-vs-actual,
-  catalog reuse). `VISLANG_TIMING=0` disables it; `bench/summarize.py` turns the
-  JSONL into tables/CSV (`--csv DIR`).
+- **Sinks** — `vislang/output/`: `render.py` (headless k3d → browser;
+  `instructions/rendering.md`), `save.py` (format-preserving writer).
+- **Remote** — `vislang/remote/`: `download.py` (ssh/rsync/scp + probes),
+  `reduce.py` (ship the narrowing prefix next to the data), `executor.py` (the
+  remote reducer), `hosts.py` (per-host config), `catalog.py` (local extent
+  cache: `need − have = fetch`).
+- **Run records** — `vislang/runtime/`: `trace.py` (human narration →
+  `.vislang/trace.log`) and `timing.py` (the same runs as data →
+  `.vislang/timings.jsonl`: per-phase seconds/bytes, ssh round trips, remote job
+  launches, predicted-vs-actual, catalog reuse). `VISLANG_TIMING=0` disables it;
+  `bench/summarize.py` turns the JSONL into tables/CSV (`--csv DIR`).
+  Also `sandbox.py` (spec code is untrusted — it never runs under a bare `exec`)
+  and `paths.py` (the one place that decides where caches live; import
+  `REPO_ROOT` from it rather than counting `..` from your own `__file__`).
+
+`mcp_server.py`, `cli.py`, and `vislang_exec.py` at the repo root are thin
+launchers, so `.mcp.json`, the `sieve` symlink, and the ssh command the remote
+reducer is invoked with all keep pointing at stable paths. Put logic in the
+package, never in them.
 
 ## Non-negotiable principles
 
@@ -129,8 +146,13 @@ Where the project is headed: `instructions/roadmap.md`.
 
 ## Environment
 
-The MCP server runs under a conda env (`autoviz`); use that interpreter for
-checks. Remote compute targets an HPC host over ssh — see `remote_reduce.py` for
+The MCP server runs under a conda env with the science stack; use that
+interpreter for checks, not a bare `python`. Locally that env is the one
+`.mcp.json` points at (`vislang`); the HPC side has its own (`autoviz`) — the
+two names are unrelated, so read the path rather than assuming. `sieve` picks
+the same interpreter, overridable with `VISLANG_PYTHON`.
+
+Remote compute targets an HPC host over ssh — see `vislang/remote/reduce.py` for
 the `VISLANG_*` env knobs (remote python/repo, srun placement, cache root,
 binding mode).
 

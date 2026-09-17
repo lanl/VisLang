@@ -3,7 +3,7 @@
 
 Every measurement goes through the real `run_pipeline` — the same entry point an
 interactive session uses — so nothing here is a special benchmark path. The
-harness (vislang_timing.py) records each run; `summarize.py` tabulates them.
+harness (timing.py) records each run; `summarize.py` tabulates them.
 
 Three run groups, in order, plus one table derived from them:
 
@@ -180,7 +180,7 @@ def _cut(fields, preds, name):
     determines what a later question can reuse.)
 
     NB the thresholds are NOT fused: planner.py:588 emits one RowMask per
-    threshold and my_load.py:98 applies them in written order."""
+    threshold and load.py:98 applies them in written order."""
     node = f'fields(source("{SNAP}"), {fields!r})'
     for var, op, val in preds:
         node = f'threshold({node}, "{var} {op} {val}")'
@@ -541,7 +541,7 @@ def write_session_md(rows, recs, path):
     lines = [f"# Sieve case study — session of {datetime.now():%Y-%m-%d %H:%M}",
              "",
              "Every row was produced by `run_pipeline` (the same entry point an ",
-             "interactive session uses) and measured by `vislang_timing.py`. ",
+             "interactive session uses) and measured by `timing.py`. ",
              "Bytes labelled *over the wire* are what actually crossed the network; ",
              "*source* is what a whole-file/whole-folder copy would have moved.",
              ""]
@@ -896,7 +896,7 @@ def main():
         shutil.rmtree(ENV["VISLANG_CACHE"], ignore_errors=True)
     os.environ.update(ENV)
 
-    from mcp_server import run_pipeline
+    from vislang.server.mcp_server import run_pipeline
     import summarize
 
     print(f"case study: {len(queries)} query(ies); results -> {RESULTS}"

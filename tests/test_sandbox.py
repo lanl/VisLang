@@ -18,9 +18,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sandbox import execute, SandboxError, NodeHandle, _from_handles
-from dsl_forms import form_namespace, reset_sinks, collected_sinks, leaf_nodes
-from dsl_forms.nodes import (
+from vislang.runtime.sandbox import execute, SandboxError, NodeHandle, _from_handles
+from vislang.dsl import form_namespace, reset_sinks, collected_sinks, leaf_nodes
+from vislang.dsl.nodes import (
     Node, SourceNode, FieldsNode, RegionNode, SubsampleNode, RenderNode,
 )
 

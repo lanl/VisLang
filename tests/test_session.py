@@ -15,8 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["VISLANG_TRACE"] = "0"
 os.environ["VISLANG_TIMING"] = "0"
 
-import my_download
-from my_download import (Connection, master_path, master_alive, close_master,
+from vislang.remote import download
+from vislang.remote.download import (Connection, master_path, master_alive, close_master,
                          open_master, host_reachable, connect_command)
 
 PASS = []
@@ -60,10 +60,10 @@ def main():
     print("== master_path: one socket per RESOLVED endpoint ==")
     # The bug this replaced %C to prevent: `connect` and the auth probe naming
     # different sockets, so a live session reads as no session at all.
-    my_download._SSHCFG_CACHE.clear()
-    my_download._SSHCFG_CACHE["alias"] = ssh_config()
-    my_download._SSHCFG_CACHE["u@h.example.edu"] = ssh_config()
-    my_download._SSHCFG_CACHE["other"] = ssh_config(hostname="other.example.edu")
+    download._SSHCFG_CACHE.clear()
+    download._SSHCFG_CACHE["alias"] = ssh_config()
+    download._SSHCFG_CACHE["u@h.example.edu"] = ssh_config()
+    download._SSHCFG_CACHE["other"] = ssh_config(hostname="other.example.edu")
 
     check("alias and real hostname share one socket",
           master_path("alias") == master_path("u@h.example.edu"),
@@ -75,15 +75,15 @@ def main():
           master_path("alias").startswith(os.path.expanduser("~/.ssh/vislang-cm-")))
     check("under the 104-byte sockaddr limit", len(master_path("alias")) < 104,
           str(len(master_path("alias"))))
-    my_download._SSHCFG_CACHE["altport"] = ssh_config(port="2222")
-    my_download._SSHCFG_CACHE["altuser"] = ssh_config(user="someone")
+    download._SSHCFG_CACHE["altport"] = ssh_config(port="2222")
+    download._SSHCFG_CACHE["altuser"] = ssh_config(user="someone")
     check("port is part of the identity",
           master_path("alias") != master_path("altport"))
     check("user is part of the identity",
           master_path("alias") != master_path("altuser"))
 
     print("== the ambient ssh opts point at that same socket ==")
-    opts = " ".join(my_download._ssh_opts("alias"))
+    opts = " ".join(download._ssh_opts("alias"))
     check("mux ControlPath is the computed one", master_path("alias") in opts)
     check("ambient commands stay BatchMode", "BatchMode=yes" in opts)
     check("ControlMaster=auto so a live master is reused", "ControlMaster=auto" in opts)
@@ -138,7 +138,7 @@ def main():
     check("the timeout says what was being waited on", "dialog" in detail, detail)
 
     ok, detail = with_fake(opened, lambda: open_master("alias", persist="1h"))
-    real_helper = my_download.askpass_helper()
+    real_helper = download.askpass_helper()
     check("the shipped askpass helper is executable",
           real_helper and os.access(real_helper, os.X_OK), str(real_helper))
 
@@ -159,58 +159,58 @@ def main():
           "exit" in CALLS[0][0] and f"ControlPath={master_path('alias')}" in CALLS[0][0])
 
     print("== host_reachable: a network answer, not a credential one ==")
-    real_conn = my_download.socket.create_connection
+    real_conn = download.socket.create_connection
 
     class Sock:
         def __enter__(self): return self
         def __exit__(self, *a): return False
 
     try:
-        my_download.socket.create_connection = lambda addr, timeout=None: Sock()
+        download.socket.create_connection = lambda addr, timeout=None: Sock()
         check("open port -> reachable", host_reachable("alias") is True)
 
         def refuse(addr, timeout=None):
             raise OSError("timed out")
-        my_download.socket.create_connection = refuse
+        download.socket.create_connection = refuse
         check("filtered port -> unreachable", host_reachable("alias") is False)
     finally:
-        my_download.socket.create_connection = real_conn
+        download.socket.create_connection = real_conn
 
     print("== session_check: the single verdict everything shares ==")
-    import remote_reduce
-    real_establish = remote_reduce.establish_connection
-    real_reach = remote_reduce.host_reachable
+    from vislang.remote import reduce
+    real_establish = reduce.establish_connection
+    real_reach = reduce.host_reachable
     try:
-        remote_reduce.establish_connection = lambda s: Connection(
+        reduce.establish_connection = lambda s: Connection(
             user="u", host="h", target="u@h", batch_ok=True)
         check("a live session is no hold",
-              remote_reduce.session_check("ssh://h/data") is None)
+              reduce.session_check("ssh://h/data") is None)
 
-        remote_reduce.establish_connection = lambda s: Connection(
+        reduce.establish_connection = lambda s: Connection(
             user="u", host="h", target="u@h", batch_ok=False)
-        remote_reduce.host_reachable = lambda t, timeout=8.0: True
-        hold = remote_reduce.session_check("ssh://h/data")
-        check("no session -> SessionHold", isinstance(hold, remote_reduce.SessionHold))
+        reduce.host_reachable = lambda t, timeout=8.0: True
+        hold = reduce.session_check("ssh://h/data")
+        check("no session -> SessionHold", isinstance(hold, reduce.SessionHold))
         check("reachable host is a credential problem", hold.reachable is True)
         check("hold carries the connect command",
               hold.connect_cmd == connect_command("u@h"), hold.connect_cmd)
         check("SessionHold is NOT a RemoteUnavailable (no fetch fallback)",
-              not isinstance(hold, remote_reduce.RemoteUnavailable))
+              not isinstance(hold, reduce.RemoteUnavailable))
 
-        remote_reduce.host_reachable = lambda t, timeout=8.0: False
-        hold = remote_reduce.session_check("ssh://h/data")
+        reduce.host_reachable = lambda t, timeout=8.0: False
+        hold = reduce.session_check("ssh://h/data")
         check("unreachable host is flagged as such", hold.reachable is False)
         check("and says so in the reason", "VPN" in hold.reason or "network" in hold.reason)
 
         print("== the handshake and the hold ==")
-        import cli_core
+        from vislang.server import cli_core
         text = cli_core._session_handshake("ssh://h/data")
         check("unreachable handshake does not ask for a password",
               "NEEDS_SESSION" in text and "password" not in text.lower(), text)
         check("unreachable handshake names the network",
               "network" in text and "VPN" in text)
 
-        remote_reduce.host_reachable = lambda t, timeout=8.0: True
+        reduce.host_reachable = lambda t, timeout=8.0: True
         text = cli_core._session_handshake("ssh://h/data")
         check("reachable handshake tells the model to call connect",
               "connect(" in text and "NEEDS_SESSION" in text, text)
@@ -218,12 +218,12 @@ def main():
               "never reaches VisLang" in text)
         check("handshake states nothing was read", "Nothing was read" in text)
     finally:
-        remote_reduce.establish_connection = real_establish
-        remote_reduce.host_reachable = real_reach
+        reduce.establish_connection = real_establish
+        reduce.host_reachable = real_reach
 
     print("== a held run reports NEEDS SESSION and materializes nothing ==")
-    import cli_core
-    import planner
+    from vislang.server import cli_core
+    from vislang.interpreter import planner
     real_plan = planner.plan_pipeline
     try:
         def held_plan(node, dry_run=False, confirm=False):
@@ -245,7 +245,7 @@ def main():
         check("report tells the model to call connect", "connect(host)" in report)
         check("report says nothing was read", "before anything was read" in report)
 
-        import cli
+        from vislang.server import cli
         check("the CLI exits non-zero on a session hold",
               any(report.startswith(s) for s in cli._BAD_STATUSES))
         check("the CLI exits non-zero on a NEEDS_SESSION handshake",
@@ -255,7 +255,7 @@ def main():
         cli_core.plan_pipeline = real_plan
 
     print("== connect accepts whatever spelling the caller has ==")
-    from cli_core import _target_of
+    from vislang.server.cli_core import _target_of
     check("bare host", _target_of("gpu-server") == "gpu-server")
     check("ssh:// URI with a path", _target_of("ssh://gpu-server/scratch/run") == "gpu-server")
     check("ssh:// URI with a user",

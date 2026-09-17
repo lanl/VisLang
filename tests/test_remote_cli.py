@@ -46,11 +46,11 @@ os.environ["VISLANG_REMOTE_REPO"] = REPO
 
 import h5py
 
-import cli
-import my_inspect
-import remote_reduce
-from my_download import Connection
-from my_inspect import inspect_file
+from vislang.server import cli
+from vislang.formats import inspect
+from vislang.remote import reduce
+from vislang.remote.download import Connection
+from vislang.formats.inspect import inspect_file
 
 PY = os.environ.get("VISLANG_TEST_PYTHON", sys.executable)
 EXEC = os.path.join(REPO, "vislang_exec.py")
@@ -80,7 +80,7 @@ def run_cli(argv):
 
 def local_path(uri):
     """Resolve any remote uri form (ssh://host/p or host:/p) to its local path."""
-    return remote_reduce._parse_remote(remote_reduce._normalize_remote(uri))[2]
+    return reduce._parse_remote(reduce._normalize_remote(uri))[2]
 
 
 def fake_establish(remote_source):
@@ -190,16 +190,16 @@ def fake_remote_timestep_files_stat(uri):
 
 
 def install_fakes():
-    remote_reduce.establish_connection = fake_establish
-    remote_reduce.remote_stat = fake_stat
-    remote_reduce.remote_header_hash = fake_header_hash
-    remote_reduce.run_remote = fake_run_remote
-    remote_reduce.transfer = fake_transfer
-    remote_reduce.transfer_dir = fake_transfer_dir
-    my_inspect.remote_is_dir = fake_remote_is_dir
-    my_inspect.remote_timestep_files = fake_remote_timestep_files
-    my_inspect.remote_timestep_files_stat = fake_remote_timestep_files_stat
-    my_inspect._inspect_remote = fake_inspect_remote
+    reduce.establish_connection = fake_establish
+    reduce.remote_stat = fake_stat
+    reduce.remote_header_hash = fake_header_hash
+    reduce.run_remote = fake_run_remote
+    reduce.transfer = fake_transfer
+    reduce.transfer_dir = fake_transfer_dir
+    inspect.remote_is_dir = fake_remote_is_dir
+    inspect.remote_timestep_files = fake_remote_timestep_files
+    inspect.remote_timestep_files_stat = fake_remote_timestep_files_stat
+    inspect._inspect_remote = fake_inspect_remote
 
 
 # --- fixtures ----------------------------------------------------------------

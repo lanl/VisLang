@@ -19,13 +19,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # generic listing (binding may rename variables, e.g. temp -> temperature).
 sys.modules["schema_binding"] = None
 
-from dsl_forms import form_namespace, reset_sinks, collected_sinks
-from dsl_forms.forms import (source, fields, region, subsample, threshold,
+from vislang.dsl import form_namespace, reset_sinks, collected_sinks
+from vislang.dsl.forms import (source, fields, region, subsample, threshold,
                              compress, save, render)
-from planner import plan_pipeline
-from my_inspect import inspect_file
-from my_subset import subset
-from my_load import load, materialize
+from vislang.interpreter.planner import plan_pipeline
+from vislang.formats.inspect import inspect_file
+from vislang.interpreter.subset import subset
+from vislang.interpreter.load import load, materialize
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW = os.path.join(REPO, "csafe_heptane_302x302x302_uint8.raw")
@@ -81,7 +81,7 @@ def main():
         check("glob rejected", False, "glob was accepted")
     except ValueError:
         check("glob rejected", True)
-    import dsl_forms.nodes as N
+    import vislang.dsl.nodes as N
     check("no TimestepNode", not hasattr(N, "TimestepNode"))
     check("ThresholdNode kind", N.ThresholdNode(upstream=None, var="v", op=">",
                                                 value=0.0).kind == "threshold")

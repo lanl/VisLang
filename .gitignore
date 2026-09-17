@@ -15,7 +15,9 @@ alloc-node.sh
 # Virtual environments
 .venv
 
-output/
+# Anchored to the repo root — an unanchored `output/` would also swallow the
+# vislang/output/ package.
+/output/
 bench/results/
 bench/archive-*/out/
 bench/archive-*/cache/

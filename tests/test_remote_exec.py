@@ -20,13 +20,12 @@ import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
-from dsl_forms import reset_sinks
-from dsl_forms.forms import source, subsample, threshold, save
-from ast_serialize import to_plan_json
-from my_inspect import inspect_file
-from planner import plan_pipeline
-import planner
-
+from vislang.dsl import reset_sinks
+from vislang.dsl.forms import source, subsample, threshold, save
+from vislang.dsl.ast_serialize import to_plan_json
+from vislang.formats.inspect import inspect_file
+from vislang.interpreter.planner import plan_pipeline
+from vislang.interpreter import planner
 # vislang_exec runs here as a LOCAL subprocess (the fakes stand in for ssh), so
 # use the interpreter running the test; override with VISLANG_TEST_PYTHON.
 PY = os.environ.get("VISLANG_TEST_PYTHON", sys.executable)
@@ -55,8 +54,8 @@ def main():
     # These tests all target single remote FILES. The planner now probes remote
     # folder-ness before dispatch; stub it False so no real ssh is attempted (the
     # probe itself is unit-tested in test_remote_helpers.py).
-    import my_inspect
-    my_inspect.remote_is_dir = lambda uri: False
+    from vislang.formats import inspect
+    inspect.remote_is_dir = lambda uri: False
 
     print("== vislang_exec: the reducer entry point, run locally ==")
     reset_sinks()

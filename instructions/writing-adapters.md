@@ -42,7 +42,7 @@ def read_array(filepath, location):
 
 **Do NOT** write `load()`, and do NOT subsample or select inside `read_array`.
 Variable resolution, region/subsample/threshold, and selection bookkeeping are
-universal framework code (`my_load.py` + `narrowing.py`), shared by every
+universal framework code (`vislang/interpreter/load.py` + `narrowing.py`), shared by every
 adapter. `DatasetInfo` is the format boundary: once `inspect` fills it,
 everything downstream is format-blind.
 

@@ -40,6 +40,6 @@ ssh -L 8080:localhost:8080 <user>@<node> -J <user>@<login-host>
 then open http://localhost:8080/.
 
 ## Gotchas
-- Editing `my_render.py`/`mcp_server.py` does NOT hot-reload the running MCP
+- Editing `vislang/output/render.py` / `vislang/server/mcp_server.py` does NOT hot-reload the running MCP
   server — reconnect it (`/mcp`) to load changes.
 - Only one process can hold port 8080; kill stray viewers before re-rendering.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn `.vislang/timings.jsonl` into the Case Study tables.
 
-The harness (vislang_timing.py) records one JSON object per run. This reads them
+The harness (timing.py) records one JSON object per run. This reads them
 back and prints the four tables the paper needs, or writes them as CSV:
 
   runs      one row per pipeline: site, route, source vs wire bytes, the
@@ -903,7 +903,7 @@ def main():
 
     path = args.file
     if not path:
-        from vislang_timing import timings_file
+        from vislang.runtime.timing import timings_file
         path = timings_file()
     if not os.path.exists(path):
         print(f"no timings at {path} — run a spec first (VISLANG_TIMING=1 is the "

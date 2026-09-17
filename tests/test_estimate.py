@@ -15,9 +15,9 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datasetInfo import DatasetInfo
-from narrowing import Narrowing, AxisRange
-import my_estimate as E
+from vislang.formats.dataset_info import DatasetInfo
+from vislang.interpreter.narrowing import Narrowing, AxisRange
+import vislang.interpreter.estimate as E
 
 PASS = []
 _MB = 1024 ** 2

@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vislang"
+version = "0.1.0"
+description = "A declarative DSL for reading, narrowing, compressing, and rendering scientific data"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+
+# The engine itself. The science stack that the format adapters reach for is
+# deliberately optional — VisLang raises a clear NeedsAdapterError rather than
+# guessing when a reader is missing, so a partial install is a usable install.
+dependencies = [
+    "numpy",
+    "mcp>=2",                       # v2 renamed FastMCP -> MCPServer
+    "pydantic-monty>=0.0.18,<0.0.19",  # 0.0.19 dropped MontyRepl
+]
+
+[project.optional-dependencies]
+hdf5 = ["h5py", "hdf5plugin"]
+fits = ["astropy"]
+render = ["k3d", "matplotlib"]
+# Remote work shells out to the system ssh/rsync/scp — no Python SSH library.
+# yt and pygio (GenericIO) are conda-installed in practice; they come from the
+# environment rather than from pip.
+all = ["h5py", "hdf5plugin", "astropy", "k3d", "matplotlib"]
+
+[project.scripts]
+sieve = "vislang.server.cli:main"
+vislang-mcp = "vislang.server.mcp_server:mcp.run"
+
+[tool.setuptools.packages.find]
+include = ["vislang*"]
+
+[tool.setuptools.package-data]
+# Frozen, verified adapters are loaded by file path at runtime, not imported as
+# a subpackage — they must still ship with the package.
+"vislang.formats" = ["generated_adapters/*.py"]

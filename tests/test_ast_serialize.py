@@ -12,11 +12,11 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dsl_forms import reset_sinks, collected_sinks
-from dsl_forms.forms import (source, fields, region, subsample, threshold,
+from vislang.dsl import reset_sinks, collected_sinks
+from vislang.dsl.forms import (source, fields, region, subsample, threshold,
                              compress, save, render, timesteps)
-from dsl_forms.nodes import upstream_of
-from ast_serialize import (to_plan, to_plan_json, from_plan, from_plan_json,
+from vislang.dsl.nodes import upstream_of
+from vislang.dsl.ast_serialize import (to_plan, to_plan_json, from_plan, from_plan_json,
                            PlanValidationError, PLAN_VERSION)
 
 PASS = []
