@@ -71,11 +71,26 @@ Error-bounded compression of the named variables (SPERR/Zstd, in-memory).
 Storage only — it does **not** cheapen a render.
 
 ## save(node, path) -> (sink)
-Write the materialized result to disk, **preserving the source's format**. The
-output format follows `path`'s extension when it's a known one (`.npz`,
-`.hdf5`/`.h5`, `.gio`); with no recognized extension it defaults to the source's
-original format (HDF5, npz, and GenericIO today; other formats fall back to
-`.npz` with a note until a writer exists). GenericIO output is a single
+Write the materialized result to disk. The output format follows `path`'s
+extension when it's a known one (`.npz`, `.hdf5`/`.h5`, `.gio`, `.vti`, `.vtp`,
+`.vtk`, `.vtkhdf`); with no recognized extension it **preserves the source's
+format** (HDF5, npz, GenericIO, and VTK today; other formats fall back to `.npz`
+with a note until a writer exists).
+
+**An extension is a conversion request.** `save(box, "roi.vti")` over an HDF5
+source writes VTK — that is how you hand a narrowed result to ParaView. Two
+limits: conversion never **resamples** (a grid cannot become a point set or the
+reverse — that is a computation, not a format change, and it raises), and a
+format read through a generated adapter can be converted *out of* but never
+*into* (writers are trusted-library only).
+
+**VTK targets.** `.vti` holds a grid, `.vtp` a point set, and `.vtk`/`.vtkhdf`
+either. A cropped or strided grid records where it was cut, so the output lands
+in the right place in world space and ROIs from different timesteps line up.
+Unstructured meshes (`.vtu`) are not supported in either direction — narrowing
+one needs connectivity-aware `region`/`subsample`.
+
+GenericIO output is a single
 unpartitioned file with **no extension** (its snapshots are named by convention),
 and it needs equal-length 1-D columns of a pygio-writable dtype plus the box
 geometry from the source header — a result that can't satisfy that (a grid, an
@@ -83,7 +98,11 @@ unsupported dtype, a header with no `phys_scale`) degrades to `.npz` with a note
 saying why, rather than inventing the missing metadata. An explicit `.gio` path
 raises instead of degrading. A **folder (timeseries)** source writes one file per
 timestep into the `path` directory, named `timestep#N.<ext>` — itself a valid
-timeseries folder.
+timeseries folder. A series converts the same way a single file does: an
+extension on the path names the per-timestep format and the directory takes the
+stem, so `save(series, "roi.vti")` writes `roi/timestep#0.vti`,
+`roi/timestep#1.vti`, … The whole folder commits to one format before anything
+is written, so a series is never a mix.
 
 ## render(node, cmap=None, opacity=None) -> (sink)
 Serve the headless k3d browser viewer; prints its URL. Renders everything the

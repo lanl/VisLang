@@ -15,6 +15,22 @@ might do it right or might not."
 - **May not**: read the data bytes itself, hand-parse a byte layout, or have its
   output trusted without a check.
 
+## Readers may be generated; writers may not
+
+The trust ladder is **asymmetric on purpose: writers are Tier-0 only.**
+
+Reading has a clean oracle — whether library L parses file F is a fact about F's
+bytes, and `conform_and_freeze` settles it against the real file. Writing has no
+equivalent. A generated writer could only be trusted through a round-trip check
+(write, read back, compare every array and every piece of metadata), which is a
+separate and much larger gate than the one we have. So the Tier-1 contract is
+exactly `inspect` + `read_array` — there is no writer function to generate.
+
+The consequence is a one-way door, and it is the right one: a format read
+through a verified adapter can be converted **out of** freely, because once
+`read_array` has passed its gate the data is plain numpy behind `DatasetInfo`
+and every layer above is format-blind. It can never be converted **into**.
+
 ## Two kinds of determinism
 1. **Runtime determinism** — the *freeze* step. After the first verified
    generation, the path is pure frozen code forever; no LLM at runtime.

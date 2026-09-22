@@ -21,6 +21,7 @@ import copy
 import numpy as np
 
 from vislang.formats.adapters import get_adapter_for_info, _resolve_variables, build_selection_info
+from vislang.formats.dataset_info import narrowed_geometry
 from vislang.interpreter.narrowing import (narrowing_from_dimensions, build_row_mask, row_mask_from,
                        voxel_mask_from, post_op_read_vars,
                        RowMask, RowSample, VoxelMask)
@@ -88,6 +89,11 @@ def materialize(dataset_info, narrowing):
     loaded.loaded = True
     loaded.variables = variables
     loaded.selection_info = build_selection_info(loaded, variables, narrowing)
+    # Track where the block we just read sits in the source. Without this a
+    # cropped grid would be written out at the source's origin and land in the
+    # wrong place in world space — and two timesteps' ROIs would not align.
+    loaded.geometry = narrowed_geometry(getattr(loaded, 'geometry', None),
+                                        getattr(narrowing, 'grid_ranges', None))
     return loaded
 
 

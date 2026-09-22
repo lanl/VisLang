@@ -12,8 +12,12 @@ downstream is format-blind.
 ## The trust ladder
 - **Tier 0 — installed, hand-written readers (full trust).** `yt` first (it
   auto-detects most simulation formats with proper fields/units), then magic-byte
-  fallbacks: HDF5 (h5py), FITS (astropy), GenericIO/HACC (pygio). Registry order
-  is `[yt, HDF5, FITS, GenericIO]`; first `can_handle` wins.
+  fallbacks: VTK (pyvista), HDF5 (h5py), FITS (astropy), GenericIO/HACC (pygio).
+  Registry order is `[yt, VTK, HDF5, FITS, GenericIO]`; first `can_handle` wins.
+  VTK precedes HDF5 because `.vtkhdf` *is* HDF5 underneath and `HDF5Adapter`
+  matches that magic regardless of extension — `VTKAdapter` only claims an
+  HDF5-magic file that actually has a `/VTKHDF` root group, so plain HDF5 is
+  unaffected.
 - **Tier 1 — no built-in reader, but a trusted library exists.** `get_adapter`
   raises `NeedsAdapterError` and the `inspect` tool returns a `NEEDS_ADAPTER`
   handshake. The **session model** (not a separate API) identifies the format and
@@ -39,4 +43,11 @@ the **session model** proposes a JSON binding (data, not code) that MUST pass
 generic listing works without it. No exec, no run-and-pray. Guide:
 `vislang://instructions/writing-bindings`.
 
-See `vislang://instructions/soundness` for why it works this way.
+## Readers ladder up; writers do not
+
+The ladder above is for **reading**. Writing has no Tier 1: `save()` dispatches
+to hand-written writers only (npz, HDF5, GenericIO, VTK), because a generated
+writer has no deterministic oracle the way a generated reader does. A format you
+can only read through a Tier-1 adapter can still be *converted out of* — past
+`DatasetInfo` nothing knows what a file format is — it just cannot be written
+back. See `vislang://instructions/soundness` for why it works this way.

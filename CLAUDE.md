@@ -45,13 +45,25 @@ file per timestep, named `…#N` (N = timestep). This holds whether the folder i
 ssh, then its `#N` files are mapped over next to the data). The interpreter maps
 the rest of the chain over the timesteps; `timesteps(node, start, stop)` picks an
 inclusive `#N` range. `render` over a series isn't supported (select one timestep,
-or save the range); `save` writes one file per timestep. **`save` preserves the
-source's format** — the output path's extension wins if known
-(`.npz`/`.hdf5`/`.gio`), else the source's original format (HDF5, npz, and
-GenericIO today; npz fallback, with a note, for formats without a writer or for a
-result GenericIO can't hold). Multi-file loading lives in `vislang/output/save.py`
-+ `planner._plan_folder` (local) / `planner._plan_remote_folder` (remote,
-reducing each timestep next to the data).
+or save the range); `save` writes one file per timestep. Multi-file loading lives
+in `vislang/output/save.py` + `planner._plan_folder` (local) /
+`planner._plan_remote_folder` (remote, reducing each timestep next to the data).
+
+**`save` converts on request, else preserves the source's format.** The output
+path's extension wins if known (`.npz`/`.hdf5`/`.gio`/`.vti`/`.vtp`/`.vtk`/
+`.vtkhdf`), else the source's original format (HDF5, npz, GenericIO, and VTK
+today; npz fallback, with a note, for formats without a writer or for a result
+the target can't hold). So **an extension IS the conversion request** —
+including over a timeseries, where it names the per-timestep format and the
+directory takes the stem (`save(series, "roi.vti")` → `roi/timestep#N.vti`).
+Two rules: **writers are Tier-0 only** (convert *out of* an LLM-read format,
+never *into* one — there is no oracle for a generated writer), and conversion
+**never resamples** (grid↔points raises; that is a computation, not a format
+change). VTK covers grids (ImageData/Rectilinear/Structured) and point sets
+(PolyData); `.vtu` is refused in both directions. A cropped grid carries
+`DatasetInfo.geometry` (origin+spacing, optional and never synthesized, shifted
+by the narrowing in `materialize`), so VTK output lands where the cut actually
+was and ROIs across timesteps align.
 
 ## MCP tools (called directly, not written in a spec)
 
@@ -105,7 +117,8 @@ the rule that layer owns — read those first when working inside a folder.
 - **Formats** — `vislang/formats/`: `inspect.py` `inspect_file` →
   `adapters.get_adapter` (the trust ladder) → `DatasetInfo` in
   `dataset_info.py` (the format boundary; everything downstream is
-  format-blind). `adapters.py` holds the Tier-0 readers (yt, HDF5, FITS,
+  format-blind — it also owns `geometry` and its narrowing algebra).
+  `adapters.py` holds the Tier-0 readers (yt, VTK, HDF5, FITS,
   GenericIO) and `NeedsAdapterError`; `llm_adapter.py` the Tier-1 session-model
   handshake (`gather_adapter_evidence`, `conform_and_freeze`);
   `generated_adapters/` the frozen modules; `schema_binding.py` HDF5 semantics.

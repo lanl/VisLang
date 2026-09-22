@@ -19,23 +19,54 @@ The static check *is* the "verify the query against the schema before any read"
 idea — typed against `DatasetInfo`, raising on a missing axis/variable or an
 out-of-bounds range with no bulk read. See `vislang://instructions/soundness`.
 
+## Format conversion and VTK — now realized
+`save()` converts as well as preserves: an extension on the sink path is the
+conversion request (`save(box, "roi.vti")`), including over a timeseries, where
+it names the per-timestep format inside the output folder. VTK is a Tier-0
+format on both ends — grids (ImageData/Rectilinear/Structured) and point sets
+(PolyData); unstructured meshes are refused, since narrowing one needs
+connectivity-aware `region`/`subsample`.
+
+This needed **no interpreter change**: the narrowing layer was already
+format-blind and branches on modality, not filetype. What it did need was
+`DatasetInfo.geometry` (origin + spacing, optional, never synthesized) and for
+`materialize` to shift it by the narrowing it applied, so a cropped block reports
+where in the source it came from and lands in the right place in world space.
+
+Two rules to keep: writers are **Tier-0 only** (convert out of an LLM-read
+format, never into one — `vislang://instructions/soundness`), and conversion
+never **resamples** (grid↔points is a computation, not a format change).
+
 ## Remaining work (staged)
 Forms that parse and static-check but aren't materialized yet (they raise a clear
 message), and known optimizations:
 - **World-space `region`** on grids (physical coords via origin/spacing/extent) —
-  index-space works today. Keep `AxisRange` interpretation-agnostic so this is a
-  converter in front, not a change to the physical layer.
+  index-space works today. `DatasetInfo.geometry` now carries the origin/spacing
+  this needs, so it is a converter in front of `AxisRange`, not a change to the
+  physical layer. Keep `AxisRange` interpretation-agnostic.
+- **VTK extent pushdown**: the XML readers support `UpdateExtent`, so a region
+  could push into the read instead of read-full-then-slice. Until then
+  `VTKAdapter.supports_strided_read` stays False and `VTK` stays out of
+  `estimate._READ_REDUCIBLE`, so the cost estimate keeps telling the truth.
+- **Rectilinear / curvilinear output** (`.vtr` / `.vts`): needs per-axis or
+  explicit point coordinates, which `geometry` does not yet carry. Deliberately
+  not in `_EXT_FORMAT` rather than accepted-then-failed.
+- **Remote conversion as a costed choice**: conversion runs at the local sink
+  today, because a `save()` is often assembled from cached extents plus a fresh
+  fetch and a remotely-converted file cannot join that assembly. It can still be
+  the better plan when there is no cache reuse and no local suffix work — the
+  wire container is uncompressed npz, so a compressed VTK artifact is smaller.
+  Make it a planner decision with a cost-model gate, and measure both paths.
 - **yt cropped covering-grid**: build the covering grid over the cropped edges so a
   region pushes into yt instead of read-full-then-crop.
-- **Remote compute** (`REMOTE_COMPUTE_PLAN.md`): push the narrowing prefix to the
-  data over ssh (Apptainer reducer), keep a local extent catalog so incremental
-  requests fetch only the delta. Timesteps (in-file step groups or a series
-  form) are out for now — `source` is strictly single-file.
+- **Provenance into outputs**: `geometry` is the first half of the record (where
+  in the source a result came from). Slots exist — HDF5 attributes, VTK
+  `vtkFieldData`, a reserved npz key; GenericIO has none, which is one more
+  reason it is the weakest target.
 
 ## Rendering
-- Port the particle/point path to a headless k3d renderer too (today it still uses
-  the trame `render_server`, blank on GL-less nodes).
 - Optionally restore live, camera-preserving updates on top of the k3d snapshot.
+  (The particle/point path is already headless k3d — `render_points`.)
 
 ## Guiding constraints (unchanged)
 Keep the soundness gate (`vislang://instructions/soundness`) in front of every new

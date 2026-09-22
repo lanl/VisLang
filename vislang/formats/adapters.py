@@ -13,7 +13,8 @@ import os
 import copy
 import numpy as np
 
-from vislang.formats.dataset_info import DatasetInfo
+from vislang.formats.dataset_info import (DatasetInfo, geometry_from_edges,
+                                          uniform_geometry)
 from vislang.interpreter.narrowing import (  # selection primitives now live in narrowing.py
     TAKE_ALL, Narrowing, narrowing_from_dimensions, apply_selection,
     _get_particle_indices, _get_grid_step,
@@ -615,6 +616,12 @@ class YTAdapter(FormatAdapter):
 
         info = DatasetInfo(filepath, self.name, variables,
                            dimensions=dimensions, attributes=attributes)
+        # yt states the domain box and its cell counts, which is exactly a
+        # uniform geometry. Absent either, geometry stays None (index space).
+        if 'grid' in dimensions:
+            info.geometry = geometry_from_edges(attributes.get('domain_left_edge'),
+                                                attributes.get('domain_right_edge'),
+                                                attributes.get('domain_dimensions'))
         # Token per variable: the field name + whether this dataset is grid-
         # structured (so read_array knows to build a covering grid vs all_data).
         is_grid = 'grid' in dimensions
@@ -643,13 +650,146 @@ class YTAdapter(FormatAdapter):
 
 
 # ---------------------------------------------------------------------------
+class VTKAdapter(FormatAdapter):
+    """VTK datasets, read through pyvista.
+
+    Scope is the models that map onto a modality the interpreter already has:
+    ImageData / RectilinearGrid / StructuredGrid are IJK-addressable and present
+    as a grid; PolyData and other point sets present as particles. An
+    UnstructuredGrid is refused rather than flattened — narrowing it correctly
+    means preserving or rebuilding cell connectivity, which `region`/`subsample`
+    have no way to express today, and silently dropping the cells would hand
+    back a point cloud the user did not ask for.
+
+    No strided pushdown yet: the XML readers can do it via UpdateExtent, but we
+    read whole and slice, so the flag stays False and the cost estimator keeps
+    telling the truth about bytes read."""
+
+    name = "VTK"
+    supports_strided_read = False
+    supports_column_pushdown = False
+
+    _EXTENSIONS = ('.vti', '.vtp', '.vtr', '.vts', '.vtu', '.vtk', '.vtkhdf')
+    _HDF5_MAGIC = b'\x89HDF\r\n\x1a\n'
+
+    @classmethod
+    def can_handle(cls, filepath):
+        ext = os.path.splitext(filepath)[1].lower()
+        if ext == '.vtkhdf':
+            return True
+        try:
+            with open(filepath, 'rb') as f:
+                head = f.read(512)
+        except OSError:
+            return False
+        # A .vtkhdf is HDF5 underneath, so recognizing it by magic alone would
+        # also claim every plain HDF5 file. Require the VTKHDF root group.
+        if head[:8] == cls._HDF5_MAGIC:
+            return cls._is_vtkhdf(filepath)
+        if b'# vtk DataFile Version' in head:          # legacy ASCII/binary
+            return True
+        if b'<VTKFile' in head and b'type=' in head:   # XML
+            return True
+        return ext in cls._EXTENSIONS
+
+    @staticmethod
+    def _is_vtkhdf(filepath):
+        try:
+            import h5py
+            with h5py.File(filepath, 'r') as f:
+                return 'VTKHDF' in f
+        except Exception:
+            return False
+
+    @staticmethod
+    def _read(filepath):
+        import pyvista as pv
+        return pv.read(filepath)
+
+    def inspect(self, filepath):
+        mesh = self._read(filepath)
+        kind = type(mesh).__name__
+        if kind in ('UnstructuredGrid',):
+            raise UnsupportedFormatError(
+                f"{os.path.basename(filepath)} is a vtkUnstructuredGrid. VisLang "
+                f"reads VTK grids (ImageData/Rectilinear/Structured) and point "
+                f"sets (PolyData); narrowing an unstructured mesh needs "
+                f"connectivity-aware region/subsample, which is not implemented.")
+
+        attributes = {"vtk_dataset_type": kind,
+                      "n_points": int(mesh.n_points),
+                      "n_cells": int(mesh.n_cells)}
+        variables, itemsizes, dimensions = [], {}, {}
+        geometry = None
+
+        structured = hasattr(mesh, 'dimensions') and kind != 'PolyData'
+        if structured:
+            shape = tuple(int(d) for d in mesh.dimensions)
+            dimensions['grid'] = shape
+            attributes['vtk_dimensions'] = list(shape)
+            if kind == 'ImageData':
+                geometry = uniform_geometry(mesh.origin, mesh.spacing)
+                attributes['vtk_origin'] = [float(v) for v in mesh.origin]
+                attributes['vtk_spacing'] = [float(v) for v in mesh.spacing]
+        else:
+            dimensions['particles'] = int(mesh.n_points)
+
+        for name in mesh.point_data.keys():
+            arr = mesh.point_data[name]
+            variables.append(str(name))
+            itemsizes[str(name)] = int(np.asarray(arr).dtype.itemsize)
+            attributes[f"{name}_shape"] = (list(dimensions['grid']) if structured
+                                           else [int(mesh.n_points)])
+
+        # A point set's coordinates live in mesh.points, not in point_data, so
+        # expose them as real variables — detect_positions then finds them the
+        # same way it does for any other point format.
+        if not structured:
+            for axis in ('x', 'y', 'z'):
+                if axis not in variables:
+                    variables.append(axis)
+                    itemsizes[axis] = int(np.asarray(mesh.points).dtype.itemsize)
+
+        if not variables:
+            raise UnsupportedFormatError(
+                f"{os.path.basename(filepath)} has no point data arrays to read")
+
+        info = DatasetInfo(filepath, self.name, variables, dimensions=dimensions,
+                           attributes=attributes, itemsizes=itemsizes)
+        info.geometry = geometry
+        return info
+
+    def read_array(self, filepath, location, selection):
+        mesh = self._read(filepath)
+        name = str(location)
+        if name in mesh.point_data:
+            arr = np.asarray(mesh.point_data[name])
+            shape = getattr(mesh, 'dimensions', None)
+            if type(mesh).__name__ != 'PolyData' and shape is not None:
+                # VTK numbers points x-fastest; the pipeline's axes are
+                # (x, y, z) = (0, 1, 2). Fortran order is that correspondence.
+                arr = arr.reshape(tuple(int(d) for d in shape), order='F')
+        elif name in ('x', 'y', 'z'):
+            arr = np.asarray(mesh.points)[:, 'xyz'.index(name)]
+        else:
+            raise ValueError(f"{name!r} is not a point-data array in {filepath}")
+        return apply_selection(arr, selection)
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 # yt first: it recognizes most simulation formats (incl. sim-HDF5 like AREPO/
 # Gadget/SWIFT) and reads them with proper fields/units. The specific magic-byte
 # adapters below are the fallback for files yt does not claim (plain HDF5,
 # observational FITS, GenericIO).
-REGISTRY = [YTAdapter, HDF5Adapter, AstropyAdapter, GenericIOAdapter]
+#
+# VTK sits BEFORE HDF5 on purpose: a .vtkhdf file is HDF5 underneath, and
+# HDF5Adapter.can_handle matches that magic regardless of extension, so with the
+# other order every .vtkhdf would be read as an anonymous HDF5 tree. VTKAdapter
+# only claims an HDF5-magic file when it actually has a /VTKHDF root group, so
+# putting it first costs plain HDF5 files nothing.
+REGISTRY = [YTAdapter, VTKAdapter, HDF5Adapter, AstropyAdapter, GenericIOAdapter]
 
 _BY_NAME = {a.name: a for a in REGISTRY}
 

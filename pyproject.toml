@@ -27,10 +27,16 @@ dependencies = [
 hdf5 = ["h5py", "hdf5plugin"]
 fits = ["astropy"]
 render = ["k3d", "matplotlib"]
+# VTK is a SINK-side dependency (and a reader for .vti/.vtp/.vtkhdf sources).
+# It is needed where results are written and opened — a workstation running
+# ParaView — not on the compute node: the remote reducer ships its result as a
+# transient npz and conversion happens at the local sink. Do not add this to the
+# remote environment's requirements.
+vtk = ["pyvista", "vtk"]
 # Remote work shells out to the system ssh/rsync/scp — no Python SSH library.
 # yt and pygio (GenericIO) are conda-installed in practice; they come from the
 # environment rather than from pip.
-all = ["h5py", "hdf5plugin", "astropy", "k3d", "matplotlib"]
+all = ["h5py", "hdf5plugin", "astropy", "k3d", "matplotlib", "pyvista", "vtk"]
 
 [project.scripts]
 sieve = "vislang.server.cli:main"

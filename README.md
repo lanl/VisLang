@@ -48,7 +48,7 @@ Available in a spec with no imports:
 | `threshold(node, "var > v")` | keep cells or particles matching a predicate |
 | `timesteps(node, start, stop)` | an inclusive range over a series |
 | `compress(node, variables, error_bound)` | error-bounded compression |
-| `save(node, path)` | **sink** — write out, preserving the source format |
+| `save(node, path)` | **sink** — write out; an extension converts, else preserve |
 | `render(node, cmap=, opacity=)` | **sink** — serve a viewer to the browser |
 
 Written order is the promise: `threshold` then `subsample` samples the
@@ -62,10 +62,35 @@ Full semantics live in [instructions/dsl-reference.md](instructions/dsl-referenc
 ```bash
 pip install -e .              # the engine
 pip install -e ".[all]"       # plus the optional format and render stack
+pip install -e ".[vtk]"       # just the VTK reader/writer (pyvista + vtk)
 ```
+
+`[vtk]` is needed where results are written and opened — a workstation running
+ParaView — not on the compute node: the remote reducer ships its result as a
+transient npz and conversion happens at the local sink.
 
 `yt` and `pygio` (GenericIO) are conda packages in practice and come from your
 environment. Missing readers are reported clearly rather than worked around.
+
+**GenericIO writing needs an MPI-enabled pygio.** `write_genericio` lives only in
+pygio's `pygio_impl` extension, which its CMake builds *only* inside
+`if(MPI_FOUND)` — and `find_package(MPI)` does not find a conda MPI unaided, so
+a default build silently yields a read-only pygio and still reports success.
+Build it with the hint:
+
+```bash
+git clone https://git.cels.anl.gov/hacc/genericio.git && cd genericio
+python -m pip wheel . --no-deps -w ./wheels \
+    --config-settings=cmake.define.MPI_HOME="$CONDA_PREFIX" \
+    --config-settings=cmake.define.CMAKE_C_FLAGS="-Dfdopen=fdopen"
+```
+
+Look for `-- Found MPI: TRUE` in the output. The second flag is macOS-only: the
+vendored zlib 1.2.8 in `thirdparty/blosc` defines `fdopen` to `NULL` under
+`TARGET_OS_MAC` (written for *classic* Mac OS), which clobbers the SDK's own
+declaration. Writing does **not** require `mpirun` — MPI singleton init gives a
+one-rank `COMM_WORLD` in a plain `python` process, which is exactly the single
+unpartitioned file `save()` produces.
 
 ## Using it
 

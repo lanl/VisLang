@@ -7,7 +7,8 @@ Covers: the format/extension resolution table, the GenericIO round-trip through
 a real spec (single file and timeseries folder), an explicit extension winning
 over preservation, and the degrade-with-a-reason path for results GenericIO
 cannot hold. The GenericIO cases self-skip where the installed pygio is
-read-only (no MPI build) — writing is impossible there by construction.
+read-only (no MPI build) — writing is impossible there by construction; see the
+README for building pygio with MPI so they run.
 """
 
 import os
@@ -60,7 +61,7 @@ def particles(n=100, offset=0.0):
 
 def make_gio(path, n=100, offset=0.0):
     """Write a synthetic GenericIO snapshot with the writer under test."""
-    save_mod._write_genericio(path, particles(n, offset), PHYS)
+    save_mod._write_genericio(path, loaded_info("GenericIO", particles(n, offset), PHYS))
     return path
 
 
@@ -96,17 +97,20 @@ def test_resolve():
 # Blockers: what GenericIO cannot hold, and how save() reacts
 # ---------------------------------------------------------------------------
 def test_blockers():
+    def gio_blocker(data, attrs):
+        return save_mod._genericio_blocker(loaded_info("GenericIO", data, attrs))
+
     check("blocker_grid_is_not_columns",
-          "3-D" in save_mod._genericio_blocker({"rho": np.zeros((4, 4, 4), np.float32)}, PHYS))
+          "3-D" in gio_blocker({"rho": np.zeros((4, 4, 4), np.float32)}, PHYS))
     check("blocker_bad_dtype",
-          "dtype uint8" in save_mod._genericio_blocker({"v": np.zeros(4, np.uint8)}, PHYS))
+          "dtype uint8" in gio_blocker({"v": np.zeros(4, np.uint8)}, PHYS))
     check("blocker_unequal_lengths",
-          "unequal" in save_mod._genericio_blocker(
+          "unequal" in gio_blocker(
               {"a": np.zeros(4, np.float32), "b": np.zeros(5, np.float32)}, PHYS))
     check("blocker_missing_phys_scale",
-          "phys_scale" in save_mod._genericio_blocker({"a": np.zeros(4, np.float32)}, {}))
+          "phys_scale" in gio_blocker({"a": np.zeros(4, np.float32)}, {}))
     check("no_blocker_for_writable_columns",
-          save_mod._genericio_blocker(particles(8), PHYS) is None
+          gio_blocker(particles(8), PHYS) is None
           or save_mod._pygio_write_reason() is not None)
 
     # A grid from a GenericIO-typed source degrades to npz, saying why.

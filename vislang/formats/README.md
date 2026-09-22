@@ -6,8 +6,8 @@ format is; everything downstream is format-blind.
 | File | What it holds |
 |---|---|
 | `inspect.py` | `inspect_file` / `inspect_source` — schema only, no bulk read |
-| `adapters.py` | the Tier-0 trusted readers (yt, HDF5, FITS, GenericIO) and `NeedsAdapterError` |
-| `dataset_info.py` | `DatasetInfo`, the format-neutral schema every layer above reads |
+| `adapters.py` | the Tier-0 trusted readers (yt, VTK, HDF5, FITS, GenericIO) and `NeedsAdapterError` |
+| `dataset_info.py` | `DatasetInfo`, the format-neutral schema every layer above reads, plus `geometry` and its narrowing algebra |
 | `llm_adapter.py` | the Tier-1 handshake: gather evidence, conform a proposed reader, freeze it |
 | `schema_binding.py` | semantic bindings for HDF5 files that only expose a generic tree |
 | `generated_adapters/` | frozen, verified adapter modules, loaded by path at run time |
@@ -20,6 +20,11 @@ Readers are chosen by a trust ladder, never by inspecting bytes and hoping:
 2. a verified, frozen adapter from `generated_adapters/`
 3. headerless raw — and only through a size-checked filename convention
 4. otherwise raise `NeedsAdapterError`
+
+This ladder is for **reading**. Writing has no Tier 1 — `save()` dispatches to
+hand-written writers only — because a generated writer has no deterministic
+oracle the way a generated reader does. A Tier-1 format can be converted *out
+of* (past `DatasetInfo` nothing knows what a format is), never *into*.
 
 Tiers 2 and 3 are why the handshake exists. A session model may *propose* a
 reader or a binding; it never gets to bless one. `conform_and_freeze` runs the

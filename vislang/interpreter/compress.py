@@ -28,7 +28,11 @@ def compress(
           .compression_info      — ratios, errors, methods per variable
     """
     if dataset_info.filetype != 'HDF5':
-        raise ValueError(f"compress() only supports HDF5 datasets, got {dataset_info.filetype}")
+        raise ValueError(
+            f"compress() only supports HDF5 sources, but this one is "
+            f"{dataset_info.filetype}. The compressor writes through h5py's "
+            f"SPERR/Zstd filters, so the source must be HDF5 for now; narrow "
+            f"with region()/subsample() instead to cut the result down.")
 
     if not dataset_info.loaded:
         raise ValueError("Data must be loaded before compression. Call load() first.")
