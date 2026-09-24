@@ -53,6 +53,7 @@ import os
 import numpy as np
 
 import vislang.runtime.timing as timing        # per-phase seconds/bytes -> timings.jsonl
+import vislang.runtime.provenance as provenance  # the derivation record -> the artifact
 from vislang.formats.dataset_info import DatasetInfo
 from vislang.remote.catalog import ExtentCatalog, make_source_id
 from vislang.remote.download import (establish_connection, transfer, transfer_dir,
@@ -577,8 +578,18 @@ def remote_reduce(src, middle, confirm=False):
         if st is None:
             raise RemoteUnavailable(f"cannot stat {remote_path} on {host}")
         size, mtime = st
-        sid = make_source_id(norm, size, mtime,
-                             remote_header_hash(conn, remote_path) or "")
+        header = remote_header_hash(conn, remote_path) or ""
+        sid = make_source_id(norm, size, mtime, header)
+    # The same three facts the catalog keys on, recorded so an output can say
+    # whether its source has changed since. `id_uri` is stored verbatim because
+    # the id hashes that exact string — scp-style here, a plain path locally.
+    provenance.note_source(site="remote", identity={
+        "method": "size+mtime+head64k-md5", "source_id": sid, "id_uri": norm,
+        "size": size, "mtime": mtime, "mtime_precision_s": 1,
+        "head_md5": header or None, "tail_md5": None,
+        "content_sha256": None,
+        "caveat": ("a rewrite in the same second, at the same size, with an "
+                   "unchanged head is not detected")})
     # source_bytes is the denominator of the reduction factor: how much a
     # whole-file fetch would have moved, against what actually crossed.
     timing.note(host=host, source_bytes=size, source_id=sid[:8])

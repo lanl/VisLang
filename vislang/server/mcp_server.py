@@ -9,7 +9,7 @@ from mcp.server.mcpserver import MCPServer
 from vislang.runtime.paths import REPO_ROOT
 from vislang.server.cli_core import (do_inspect, do_execute, do_estimate_render_cost,
                                      do_submit_adapter, do_submit_binding,
-                                     do_connect, do_disconnect)
+                                     do_connect, do_disconnect, do_provenance)
 
 # --- Guidance surfaced to the model -----------------------------------------
 # The repo's root CLAUDE.md is the always-loaded index (Claude Code auto-loads
@@ -127,6 +127,21 @@ def submit_binding(filepath: str, binding_json: str) -> str:
     executed — bindings are inert declarative data.
     """
     return do_submit_binding(filepath, binding_json)
+
+
+@mcp.tool()
+def provenance(filepath: str, spec_only: bool = False) -> str:
+    """Read the derivation record a Sieve output carries: where its data came
+    from, what was done to it, and which Sieve wrote it.
+
+    Read-only. Works on any file or timeseries folder `save()` produced,
+    whichever way the record was stored — an attribute inside the file, or the
+    companion `.<name>.sieve-prov.json` beside it. The report also verifies the
+    source against the identity recorded at write time and says whether it has
+    changed since. `spec_only=True` returns just the embedded spec text, which
+    can be written to spec.py and re-run.
+    """
+    return do_provenance(filepath, spec_only=spec_only)
 
 
 @mcp.tool()

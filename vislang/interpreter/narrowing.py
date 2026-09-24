@@ -20,6 +20,7 @@ old behavior from a legacy `selected_dimensions` dict, so `load()` reads
 byte-identically to before.
 """
 
+import os
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -111,6 +112,44 @@ class VoxelMask:
 
 
 # ---------------------------------------------------------------------------
+# Random row selection — seeded, so a spec is reproducible
+# ---------------------------------------------------------------------------
+# A fractional subsample draws rows at random. Left unseeded, the same spec over
+# the same data yields different rows every run, which makes such a spec
+# irreproducible by any means — including re-running it by hand. One generator
+# is resolved per process and its seed is recorded in the provenance record, so
+# separate samples stay statistically independent while each one can be
+# reproduced exactly from its record. Integer strides never reach this.
+_rng = None
+_seed = None
+
+
+def sampling_seed():
+    """The seed in force, resolving one on first use. `VISLANG_SAMPLE_SEED`
+    pins it, which is how a rerun reproduces an earlier draw."""
+    global _rng, _seed
+    if _rng is None:
+        env = os.environ.get("VISLANG_SAMPLE_SEED")
+        _seed = int(env) if env not in (None, "") else int.from_bytes(os.urandom(8), "big")
+        _rng = np.random.default_rng(_seed)
+    return _seed
+
+
+def sampling_rng():
+    sampling_seed()
+    return _rng
+
+
+def reset_sampling(seed=None):
+    """Re-resolve the generator, optionally at a known seed (tests, rerun)."""
+    global _rng, _seed
+    _rng, _seed = None, None
+    if seed is not None:
+        os.environ["VISLANG_SAMPLE_SEED"] = str(seed)
+    return sampling_seed()
+
+
+# ---------------------------------------------------------------------------
 # Legacy dict -> indices (verbatim from the old adapters.Selection helpers, so
 # the back-compat path reproduces prior reads exactly)
 # ---------------------------------------------------------------------------
@@ -126,11 +165,11 @@ def _get_particle_indices(dimensions, total_particles):
         if not 0 < selection <= 1:
             raise ValueError(f"Float selection must be between 0 and 1, got {selection}")
         n_select = int(total_particles * selection)
-        return np.random.choice(total_particles, size=n_select, replace=False)
+        return sampling_rng().choice(total_particles, size=n_select, replace=False)
     elif isinstance(selection, int):
         if selection > total_particles:
             raise ValueError(f"Cannot select {selection} particles from {total_particles}")
-        return np.random.choice(total_particles, size=selection, replace=False)
+        return sampling_rng().choice(total_particles, size=selection, replace=False)
     else:
         raise ValueError(f"Invalid dimension selection type: {type(selection)}")
 

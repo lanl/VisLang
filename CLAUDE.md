@@ -77,6 +77,8 @@ was and ROIs across timesteps align.
 - **`estimate_render_cost(filepath)`** — predict browser payload + disk-read cost
   and recommend a narrowing, metadata only.
 - **`run_pipeline(spec_path)`** — execute `spec.py`.
+- **`provenance(filepath, spec_only=False)`** — read the derivation record an
+  output carries, and check whether its source has changed since.
 
 ## The LLM lives in *this* session — no external API
 
@@ -129,6 +131,13 @@ the rule that layer owns — read those first when working inside a folder.
   `reduce.py` (ship the narrowing prefix next to the data), `executor.py` (the
   remote reducer), `hosts.py` (per-host config), `catalog.py` (local extent
   cache: `need − have = fetch`).
+- **Provenance** — `vislang/runtime/provenance.py`: the derivation record every
+  `save()` attaches to its output (source + identity, the spec, the lowered
+  narrowing, per-variable lineage, producer versions). Embedded in HDF5/netCDF
+  attributes, VTK field data or an npz key; a `.<name>.sieve-prov.json` beside
+  the file where the format has no slot (GenericIO). Read it with
+  `sieve provenance <file>`; re-execute it with `sieve rerun <file>`.
+  `VISLANG_PROVENANCE=0` disables it. → `instructions/provenance.md`
 - **Run records** — `vislang/runtime/`: `trace.py` (human narration →
   `.vislang/trace.log`) and `timing.py` (the same runs as data →
   `.vislang/timings.jsonl`: per-phase seconds/bytes, ssh round trips, remote job

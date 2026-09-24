@@ -33,10 +33,16 @@ render = ["k3d", "matplotlib"]
 # transient npz and conversion happens at the local sink. Do not add this to the
 # remote environment's requirements.
 vtk = ["pyvista", "vtk"]
+# netCDF-4 output. A netCDF-4 file IS an HDF5 file — the library adds named
+# dimensions, _NCProperties and the `history` convention on top — so `.nc`
+# output stays readable by h5py whether or not this is installed. Needed only to
+# WRITE it.
+netcdf = ["netCDF4"]
 # Remote work shells out to the system ssh/rsync/scp — no Python SSH library.
 # yt and pygio (GenericIO) are conda-installed in practice; they come from the
 # environment rather than from pip.
-all = ["h5py", "hdf5plugin", "astropy", "k3d", "matplotlib", "pyvista", "vtk"]
+all = ["h5py", "hdf5plugin", "astropy", "k3d", "matplotlib", "pyvista", "vtk",
+       "netCDF4"]
 
 [project.scripts]
 sieve = "vislang.server.cli:main"

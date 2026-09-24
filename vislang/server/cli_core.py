@@ -296,6 +296,7 @@ def do_execute(spec_path, confirm=False, force_dry=False):
     from vislang.runtime.trace import session_banner, log_run
     from vislang.remote.download import clear_remote_caches
     import vislang.runtime.timing as timing
+    import vislang.runtime.provenance as provenance
     session_banner()                       # delimit this session in the log (once)
     # Connection auth and per-path identity (size/mtime/header hash) are cached
     # for the duration of ONE run and re-read on the next: within a run the facts
@@ -306,7 +307,11 @@ def do_execute(spec_path, confirm=False, force_dry=False):
     # One timings.jsonl record per run — the machine-readable twin of the prose
     # report (timing.py). `meta` is the open record: the status below and
     # every phase/counter inside plan_pipeline land in it.
-    with timing.run(spec_path, spec_code=spec_code, confirm=confirm) as meta:
+    # The derivation record that travels with each output (provenance.py). Opened
+    # here rather than derived from `meta` because timing short-circuits entirely
+    # under VISLANG_TIMING=0 and would take provenance down with it.
+    with timing.run(spec_path, spec_code=spec_code, confirm=confirm) as meta, \
+            provenance.run(spec_path, spec_code=spec_code):
         reset_sinks()
         try:
             ctx = execute(spec_code, form_namespace())
@@ -447,3 +452,171 @@ def do_submit_binding(filepath, binding_json):
         return (f"BINDING REJECTED: {type(e).__name__}: {e}\n\n"
                 f"Fix the binding and submit it again.")
     return "BINDING ACCEPTED — verified and frozen.\n\n" + str(info)
+
+
+# ---------------------------------------------------------------------------
+# Provenance: read a record back, and re-execute the spec it carries
+# ---------------------------------------------------------------------------
+def _verify_source(rec):
+    """(status, detail) comparing the recorded source identity against the file
+    as it stands now. Remote sources are not probed — that would need a live
+    session, and this command must stay cheap and offline."""
+    from vislang.runtime import provenance
+    src = rec.get("source") or {}
+    ident = src.get("identity") or {}
+    uri, site = src.get("uri"), src.get("site")
+    if not ident:
+        return "UNKNOWN", "no identity recorded"
+    if site == "remote" or is_remote(str(uri or "")):
+        return "UNVERIFIABLE", "remote source; not probed"
+    path = src.get("read_from") or uri
+    if not path or not os.path.exists(path):
+        return "MISSING", f"{path} is gone"
+    diffs = provenance.compare_identity(ident, provenance.local_identity(path))
+    if not diffs:
+        return "UNCHANGED", ident.get("method", "")
+    return "CHANGED", "; ".join(f"{f}: {a} -> {b}" for f, a, b in diffs)
+
+
+def do_provenance(path, as_json=False, spec_only=False):
+    """Print the derivation record for a Sieve output, wherever it is stored."""
+    from vislang.runtime import provenance
+    rec = provenance.record_for(path)
+    if rec is None:
+        return (f"ERROR: no provenance record in {path}\n\n"
+                f"Records are written by `sieve execute`; a file produced some "
+                f"other way, or before provenance existed, carries none.")
+    if spec_only:
+        spec = (rec.get("transform") or {}).get("spec")
+        return spec or "ERROR: this record carries no spec text"
+    if as_json:
+        return provenance.to_json(rec)
+
+    prod, run = rec.get("producer") or {}, rec.get("run") or {}
+    src, tr = rec.get("source") or {}, rec.get("transform") or {}
+    out = rec.get("output") or {}
+    status, detail = _verify_source(rec)
+    dirty = " (uncommitted changes)" if prod.get("commit_dirty") else ""
+    lines = [
+        f"{os.path.basename(path)} — {rec.get('summary') or ''}",
+        f"  written  {rec.get('created')} by sieve {prod.get('version')} "
+        f"({prod.get('commit')}){dirty}",
+        f"  format   {out.get('format')}"
+        + (f", via {out.get('embedding')}" if out.get("embedding") else "")
+        + (f"  [degraded from {out['degraded_from']}]" if out.get("degraded_from") else ""),
+        "",
+        f"  source   {src.get('uri')}",
+        f"           {status}  {detail}",
+        "",
+        f"  did      {tr.get('summary')}",
+    ]
+    low = tr.get("lowered") or {}
+    if low.get("grid_ranges"):
+        lines.append(f"  read     grid_ranges={low['grid_ranges']}")
+    if low.get("post_ops"):
+        lines.append(f"  after    {low['post_ops']}")
+    if tr.get("seed") is not None:
+        lines.append(f"  seed     {tr['seed']}  (random subsample; rerun reproduces it)")
+    variables = rec.get("variables") or {}
+    if variables:
+        lines += ["", "  variables"]
+        for name, v in list(variables.items())[:20]:
+            shape = "×".join(str(s) for s in v.get("shape") or [])
+            of = "×".join(str(s) for s in v.get("source_shape") or [])
+            lines.append(f"    {name:<24} {shape}"
+                         + (f"  of {of}" if of else "")
+                         + f"  [{v.get('origin')}]")
+    chain = rec.get("derived_from") or []
+    if chain:
+        lines += ["", f"  derived through {len(chain)} earlier step(s):"]
+        for anc in chain:
+            lines.append(f"    <- {((anc.get('source') or {}).get('uri'))}")
+    spec = tr.get("spec")
+    lines += ["", f"  spec     {len((spec or '').splitlines())} lines embedded "
+                  f"(sha {run.get('spec_sha')}) — see --spec"]
+    return "\n".join(lines)
+
+
+def do_rerun(path, out=None, new_source=None, force=False, dry_run=False,
+             confirm=False):
+    """Re-execute the spec embedded in a Sieve output."""
+    import json as _json
+    from vislang.runtime import provenance
+    from vislang.dsl.ast_serialize import from_plan, PlanValidationError
+
+    rec = provenance.record_for(path)
+    if rec is None:
+        return f"ERROR: no provenance record in {path}"
+    plan = (rec.get("transform") or {}).get("plan")
+    if not plan:
+        why = (rec.get("transform") or {}).get("plan_error") or "no plan recorded"
+        return f"ERROR: {path} is not re-runnable: {why}"
+
+    status, detail = _verify_source(rec)
+    if status == "CHANGED" and not force:
+        return (f"Status: SOURCE CHANGED\n\n"
+                f"{(rec.get('source') or {}).get('uri')}\n  {detail}\n\n"
+                f"Re-running would produce a different result under the same "
+                f"provenance. Pass --force to proceed (the new output records "
+                f"the new identity), or --source to point at the moved data.")
+    if status == "MISSING" and not new_source:
+        return (f"ERROR: the source is gone — {detail}\n\n"
+                f"Pass --source <uri> if it moved.")
+
+    plan = _json.loads(_json.dumps(plan))          # don't mutate the record
+    chain = plan.get("chain") or []
+    if new_source and chain:
+        chain[0]["uri"] = new_source
+    target = out or (rec.get("output") or {}).get("path")
+    if chain and chain[-1].get("kind") == "save":
+        # A dry run writes nothing, so the overwrite guard does not apply to it.
+        if (not dry_run and not out and not force
+                and os.path.abspath(target) == os.path.abspath(path)):
+            return (f"ERROR: rerunning would overwrite {path}, the file holding "
+                    f"the record. Pass --out <path>, or --force.")
+        chain[-1]["path"] = target
+
+    # The seed that produced the original draw, so a fractional subsample comes
+    # back identical rather than merely statistically similar.
+    seed = (rec.get("transform") or {}).get("seed")
+    if seed is not None:
+        os.environ["VISLANG_SAMPLE_SEED"] = str(seed)
+
+    # Rebuilding a plan registers its sink as a module-level side effect. Reset
+    # before, and again after: this may be running inside a long-lived MCP
+    # process, where a stray registration would be collected by the next run.
+    reset_sinks()
+    try:
+        terminal = from_plan(plan)
+    except PlanValidationError as e:
+        reset_sinks()
+        return f"ERROR: the embedded plan is not valid: {e}"
+    reset_sinks()
+
+    if dry_run:
+        from vislang.dsl.ast_serialize import describe_plan
+        return (f"Status: OK (dry run)\nSpec: {path}\n\n"
+                f"would run: {describe_plan(plan)}\n"
+                f"source:    {status}  {detail}")
+
+    if force and status == "CHANGED":
+        # Extents cached against the old bytes would otherwise answer the rerun.
+        try:
+            from vislang.remote.catalog import ExtentCatalog
+            from vislang.runtime.paths import cache_root
+            sid = ((rec.get("source") or {}).get("identity") or {}).get("source_id")
+            if sid:
+                ExtentCatalog(cache_root()).invalidate(sid)
+        except Exception:
+            pass
+
+    import vislang.runtime.timing as timing
+    import vislang.runtime.provenance as prov
+    spec_text = (rec.get("transform") or {}).get("spec")
+    reset_sinks()
+    with timing.run(f"rerun:{path}", spec_code=spec_text), \
+            prov.run(f"rerun:{path}", spec_code=spec_text) as prun:
+        prun["rerun_of"] = {"record_id": rec.get("record_id"), "from": path}
+        _, _, text = _run_one(terminal, dry_run=False, confirm=confirm)
+    reset_sinks()
+    return f"Status: OK (rerun of {os.path.basename(path)})\n\n{text}"

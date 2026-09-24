@@ -36,6 +36,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(
 # the local planner froze when it built this plan. A cache miss falls back to
 # the generic listing; no generated code ever runs here.
 os.environ.setdefault("VISLANG_BINDING_CACHE_ONLY", "1")
+# The reducer writes a TRANSIENT npz that is pulled and deleted; a provenance
+# record here would describe a temp sink and a cluster-local path. Nothing opens
+# a provenance run on this side, so records are already suppressed — this is the
+# second lock, so a future refactor that does open one still cannot emit.
+os.environ.setdefault("VISLANG_PROVENANCE", "0")
 
 META_BEGIN = "===VISLANG_META_BEGIN==="
 META_END = "===VISLANG_META_END==="

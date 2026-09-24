@@ -401,3 +401,45 @@ def from_plan_json(text):
     except (ValueError, TypeError) as e:
         raise PlanValidationError(f"plan is not valid JSON: {e}") from e
     return from_plan(plan)
+
+
+def describe_plan(plan):
+    """One line describing a plan, rendered from the WIRE DICT rather than from
+    AST nodes, so a provenance reader can regenerate it with no interpreter
+    state in scope.
+
+    Distinct from `planner._describe_ast`, which serves the run trace and is
+    lossy for this purpose: it shortens the source to a basename and renders a
+    sink as the bare word `save`. Here the source and the destination are the
+    two things a reader most needs."""
+    if not plan:
+        return None
+    parts = []
+    for step in plan.get("chain") or []:
+        kind = step.get("kind")
+        if kind == "source":
+            parts.append(f"source({step.get('uri')})")
+        elif kind == "fields":
+            parts.append("fields[" + ",".join(step.get("keep") or []) + "]")
+        elif kind == "region":
+            parts.append("region{" + ",".join(
+                f"{a}:({lo},{hi})" for a, lo, hi in step.get("ranges") or []) + "}")
+        elif kind == "subsample":
+            per = step.get("per_axis") or []
+            parts.append(f"subsample({step.get('uniform')})" if not per else
+                         "subsample{" + ",".join(f"{a}:{f}" for a, f in per) + "}")
+        elif kind == "threshold":
+            parts.append(f"threshold({step.get('var')}"
+                         f"{step.get('op')}{step.get('value')})")
+        elif kind == "timesteps":
+            parts.append(f"timesteps({step.get('start')},{step.get('stop')})")
+        elif kind == "compress":
+            parts.append("compress[" + ",".join(step.get("variables") or [])
+                         + f"]@{step.get('error_bound')}")
+        elif kind == "save":
+            parts.append(f"save({step.get('path')})")
+        elif kind == "render":
+            parts.append(f"render(cmap={step.get('cmap')})")
+        else:
+            parts.append(str(kind))
+    return " → ".join(parts)

@@ -246,8 +246,18 @@ class HDF5Adapter(FormatAdapter):
         itemsizes = {}
 
         with h5py.File(filepath, 'r') as f:
+            # netCDF-4 is HDF5 underneath, and netcdf-c materializes every
+            # DIMENSION a file declares as a dataset of its own. Listing those
+            # as variables would invent fields nobody stored — so skip them, but
+            # only in a file that says it is netCDF (the _NCProperties stamp
+            # netcdf-c writes). A hand-built HDF5 that uses dimension scales for
+            # real data is untouched.
+            is_netcdf4 = '_NCProperties' in f.attrs
+
             def collect_datasets(name, obj):
                 if isinstance(obj, h5py.Dataset):
+                    if is_netcdf4 and obj.attrs.get('CLASS') == b'DIMENSION_SCALE':
+                        return
                     variables.append(name)
                     dataset_shapes[name] = obj.shape
                     itemsizes[name] = obj.dtype.itemsize   # header metadata, no read
@@ -256,6 +266,9 @@ class HDF5Adapter(FormatAdapter):
             for key in f.attrs:
                 val = f.attrs[key]
                 attributes[key] = val.item() if hasattr(val, 'item') else val
+            # A provenance record on the source becomes the `derived_from`
+            # ancestry of whatever we write next, so a chain of narrowings keeps
+            # its trail back to the original file.
 
         for var, shape in dataset_shapes.items():
             attributes[f"{var}_shape"] = shape

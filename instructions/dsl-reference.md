@@ -73,7 +73,7 @@ Storage only — it does **not** cheapen a render.
 ## save(node, path) -> (sink)
 Write the materialized result to disk. The output format follows `path`'s
 extension when it's a known one (`.npz`, `.hdf5`/`.h5`, `.gio`, `.vti`, `.vtp`,
-`.vtk`, `.vtkhdf`); with no recognized extension it **preserves the source's
+`.vtk`, `.vtkhdf`, `.nc`); with no recognized extension it **preserves the source's
 format** (HDF5, npz, GenericIO, and VTK today; other formats fall back to `.npz`
 with a note until a writer exists).
 
@@ -103,6 +103,11 @@ extension on the path names the per-timestep format and the directory takes the
 stem, so `save(series, "roi.vti")` writes `roi/timestep#0.vti`,
 `roi/timestep#1.vti`, … The whole folder commits to one format before anything
 is written, so a series is never a mix.
+
+**Every output carries a provenance record** — source, identity, the spec, and
+the narrowing the interpreter actually ran — embedded in the file where the
+format allows, in a `.<name>.sieve-prov.json` beside it where it does not. Read
+it with `sieve provenance <file>`. See `vislang://instructions/provenance`.
 
 ## render(node, cmap=None, opacity=None) -> (sink)
 Serve the headless k3d browser viewer; prints its URL. Renders everything the

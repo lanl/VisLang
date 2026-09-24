@@ -59,10 +59,21 @@ message), and known optimizations:
   Make it a planner decision with a cost-model gate, and measure both paths.
 - **yt cropped covering-grid**: build the covering grid over the cropped edges so a
   region pushes into yt instead of read-full-then-crop.
-- **Provenance into outputs**: `geometry` is the first half of the record (where
-  in the source a result came from). Slots exist — HDF5 attributes, VTK
-  `vtkFieldData`, a reserved npz key; GenericIO has none, which is one more
-  reason it is the weakest target.
+- **Full-content source hashing** is opt-in (`--hash`, sha256) and unbuilt in the
+  CLI surface; the default identity is size + mtime + head/tail md5. The gap it
+  leaves — a same-second, same-size rewrite with unchanged ends — is stated in
+  every record rather than only in docs.
+
+## Provenance — now realized
+Every output carries its derivation: source URI and a change-detecting identity,
+the spec text, the serialized plan, the *lowered* narrowing, per-variable
+lineage, and the producing Sieve's version and commit. Embedded in HDF5/netCDF
+attributes, VTK field data or a reserved npz key; a dot-prefixed JSON companion
+where the container has no slot (GenericIO). `sieve provenance` reads it back and
+verifies the source; `sieve rerun` re-executes the embedded spec, refusing when
+the source has changed. Fractional `subsample` is now seeded and the seed
+recorded, so a rerun reproduces the same rows.
+→ `instructions/provenance.md`
 
 ## Rendering
 - Optionally restore live, camera-preserving updates on top of the k3d snapshot.

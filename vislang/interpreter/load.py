@@ -23,7 +23,7 @@ import numpy as np
 from vislang.formats.adapters import get_adapter_for_info, _resolve_variables, build_selection_info
 from vislang.formats.dataset_info import narrowed_geometry
 from vislang.interpreter.narrowing import (narrowing_from_dimensions, build_row_mask, row_mask_from,
-                       voxel_mask_from, post_op_read_vars,
+                       voxel_mask_from, post_op_read_vars, sampling_rng,
                        RowMask, RowSample, VoxelMask)
 
 
@@ -112,7 +112,9 @@ def _apply_post_ops(data, post_ops, positions):
                 index = slice(None, None, op.factor)
             else:
                 k = max(1, int(round(n * op.factor)))
-                index = np.sort(np.random.choice(n, size=k, replace=False))
+                # Seeded, for the same reason the pushdown path is: an unseeded
+                # draw makes the spec that produced this output unreproducible.
+                index = np.sort(sampling_rng().choice(n, size=k, replace=False))
             for var in list(data):
                 arr = data[var]
                 if getattr(arr, 'ndim', 0) in (1, 2) and arr.shape[0] == n:

@@ -34,6 +34,7 @@ import os
 import re
 
 import vislang.runtime.timing as timing        # per-phase seconds/bytes -> timings.jsonl
+import vislang.runtime.provenance as provenance  # the derivation record -> the artifact
 from vislang.dsl.nodes import SourceNode, upstream_of
 from vislang.formats.inspect import inspect_file
 from vislang.interpreter.load import materialize
@@ -327,12 +328,17 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
 
     # One measured record per sink (vislang_timing): the forms as written, the
     # site chosen, and every phase timed inside it. No-op when timing is off.
+    # The provenance scope is opened from `terminal`, not from `src`: on the
+    # whole-file and whole-folder fallbacks the planner is re-entered with the
+    # LOCAL pulled copy as its source, so only the terminal still carries the
+    # URI the spec actually named.
     with timing.pipeline(kind=(sink.kind if sink is not None else terminal.kind),
                          uri=src.uri, forms=[n.kind for n in middle],
                          dry_run=bool(dry_run or sink is None),
                          ts_range=([max(n.start for n in ts_nodes),
                                     min(n.stop for n in ts_nodes)]
-                                   if ts_nodes else None)):
+                                   if ts_nodes else None)), \
+            provenance.pipeline(terminal):
         # A FOLDER source is a timeseries: map the single-file chain over its
         # timestep files (named `…#N`). This holds for a remote folder as much as a
         # local one — we detect it locally with an os.path check, or remotely with a
@@ -724,9 +730,15 @@ def _plan_local(src, middle, sink, terminal, dry_run, source_uri, steps, confirm
         timing.note(source_bytes=os.path.getsize(source_uri))
     except OSError:
         pass
+    # Local sources have no identity anywhere else in the system — the catalog's
+    # is computed only on the remote reduce paths — so this is where a locally
+    # read file gets one.
+    provenance.note_source(read_from=source_uri, info=info, site="local",
+                           identity=provenance.local_identity(source_uri))
     steps.append(_describe_schema(info, source_uri))
     with timing.phase("lower"):
         narrowing, pending_compress = _lower(info, middle, steps)
+    provenance.note_lowered(narrowing)
 
     # The sink (the action). A dangling leaf has none — it can only dry-run.
     if sink is not None:

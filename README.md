@@ -106,7 +106,14 @@ ln -s "$(pwd)/sieve" ~/.local/bin/sieve
 sieve inspect /path/to/data.hdf5    # schema only, no bulk read
 sieve estimate spec.py              # the plan and predicted cost
 sieve execute spec.py               # run it
+sieve provenance out.nc             # what produced this output
+sieve rerun out.nc --out new.nc     # re-execute its embedded spec
 ```
+
+Every output carries a record of how it was made — source, identity,
+transformation, and the spec itself — embedded in the file where the format
+allows and in a companion file where it does not. See
+[instructions/provenance.md](instructions/provenance.md).
 
 Both front ends call the same engine in `vislang/server/cli_core.py`.
 

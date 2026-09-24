@@ -19,8 +19,15 @@ def inspect(filepath):
         # First pass: identify particle count and separate variables from attributes
         particle_count = None
         for name in array_names:
+            # Reserved: provenance and its flat companions are metadata, not
+            # data. Skipping them keeps them out of `variables` (where they
+            # would pollute fields()) and out of the attribute branch below
+            # (where a text value would be coerced to float).
+            if name.startswith("sieve_"):
+                continue
+
             arr = data[name]
-            
+
             # If it's a large 1-D array, it's likely particle data
             if arr.ndim == 1 and arr.size > 1000:
                 variables.append(name)
@@ -28,11 +35,14 @@ def inspect(filepath):
                     particle_count = int(arr.size)
             # If it's a scalar or very small array, treat as attribute
             elif arr.ndim == 0 or (arr.ndim == 1 and arr.size == 1):
-                # Convert to JSON-serializable type
-                if arr.ndim == 0:
-                    attributes[name] = float(arr.item())
-                else:
-                    attributes[name] = float(arr[0])
+                # Convert to JSON-serializable type. Not everything small is a
+                # number — a one-element string array used to raise here and
+                # take inspect() down with it.
+                scalar = arr.item() if arr.ndim == 0 else arr[0]
+                try:
+                    attributes[name] = float(scalar)
+                except (TypeError, ValueError):
+                    attributes[name] = str(scalar)
             else:
                 # For other cases, include as variable
                 variables.append(name)
