@@ -554,6 +554,38 @@ def test_derived_from_chain():
           [(a.get("source") or {}).get("uri") for a in chain])
 
 
+def test_chain_through_netcdf():
+    """netCDF stores the record as fixed-length NC_CHAR, which h5py reads back as
+    BYTES — where its own variable-length attributes come back as str. Chaining
+    silently produced an empty ancestry until both spellings were decoded."""
+    try:
+        import netCDF4  # noqa: F401
+    except Exception:
+        skip("chain_through_netcdf", "netCDF4 not installed")
+        return
+    if have_h5py():
+        skip("chain_through_netcdf", "h5py not installed")
+        return
+    d = os.path.join(TMP, "ncchain")
+    os.makedirs(d, exist_ok=True)
+    src = make_grid(os.path.join(d, "orig.hdf5"), (16, 16, 16))
+    first = os.path.join(d, "a.nc")
+    run_spec(lambda: save(region(source(src), x=(0, 12)), first))
+    second = os.path.join(d, "b.nc")
+    run_spec(lambda: save(region(source(first), x=(0, 6)), second))
+
+    # The attribute really is bytes on this path — assert the cause, not just
+    # the symptom, so a future refactor cannot quietly reintroduce it.
+    from vislang.formats.inspect import inspect_file
+    raw = inspect_file(first).attributes.get("sieve_provenance")
+    check("nc_record_reads_back_as_bytes", isinstance(raw, bytes), type(raw))
+
+    chain = (provenance.record_for(second) or {}).get("derived_from") or []
+    check("nc_chain_reaches_the_original",
+          any((a.get("source") or {}).get("uri") == src for a in chain),
+          [(a.get("source") or {}).get("uri") for a in chain])
+
+
 if __name__ == "__main__":
     print("provenance")
     test_identity()
@@ -571,4 +603,5 @@ if __name__ == "__main__":
     test_netcdf_coords_from_geometry()
     test_cli_provenance_and_rerun()
     test_derived_from_chain()
+    test_chain_through_netcdf()
     print(f"\n{len(PASS)} passed, {len(SKIP)} skipped  (artifacts in {TMP})")

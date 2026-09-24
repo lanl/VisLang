@@ -506,6 +506,11 @@ def _inherited(loaded):
         prior = (getattr(loaded, "attributes", None) or {}).get(REC_ATTR)
         if not prior:
             return []
+        # h5py hands back a str for its own variable-length attributes but bytes
+        # for the fixed-length NC_CHAR ones netCDF writes, so both spellings of
+        # "a record was here" have to decode.
+        if isinstance(prior, bytes):
+            prior = prior.decode("utf-8", "replace")
         parent = json.loads(prior) if isinstance(prior, str) else prior
         chain = [{k: parent.get(k) for k in
                   ("record_id", "created", "producer", "source", "transform",
