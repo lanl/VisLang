@@ -17,7 +17,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vislang.remote.catalog import ExtentCatalog, make_source_id
+from vislang.remote.catalog import ExtentCatalog, make_source_id, SCHEMA_VERSION
 
 PASS = []
 
@@ -44,11 +44,28 @@ def main():
     cat = ExtentCatalog(root=root)
 
     # -- schema round-trip ----------------------------------------------------
+    # store_schema stamps the entry with SCHEMA_VERSION, so the round-trip is
+    # "everything stored comes back", not dict equality.
     schema = {"variables": ["a", "b", "c"], "dimensions": {"grid": [200, 60, 30]},
               "positions": None}
     cat.store_schema(sid, schema)
-    check("schema_roundtrip", cat.schema(sid) == schema)
+    got = cat.schema(sid)
+    check("schema_roundtrip", got is not None
+          and all(got.get(k) == v for k, v in schema.items()))
+    check("schema_stamped", got.get("schema_version") == SCHEMA_VERSION)
     check("schema_unknown_none", cat.schema("deadbeefdeadbeef") is None)
+
+    # A schema frozen by an older build reads as a MISS, so the caller
+    # re-inspects instead of inheriting its gaps (a v1 entry had no
+    # `attributes`, which made a GenericIO save refuse for a file whose header
+    # holds a box size). `stale_schema` still surfaces it for the one caller
+    # with no way to re-inspect.
+    old_sid = "0123456789abcdef"
+    cat._manifest["schemas"][old_sid] = dict(schema)        # unstamped == v1
+    cat._save_manifest()
+    reopened = ExtentCatalog(root=root)
+    check("schema_stale_is_miss", reopened.schema(old_sid) is None)
+    check("schema_stale_recoverable", reopened.stale_schema(old_sid) is not None)
 
     # -- exact store/lookup ---------------------------------------------------
     key = {"grid_ranges": [[0, 100, 2], [0, 60, 1], [0, 30, 1]]}
@@ -189,7 +206,9 @@ def main():
 
     # -- persistence across instances ------------------------------------------
     cat2 = ExtentCatalog(root=root)
-    check("reopen_schema", cat2.schema(sid) == schema)
+    reopened_schema = cat2.schema(sid)
+    check("reopen_schema", reopened_schema is not None
+          and all(reopened_schema.get(k) == v for k, v in schema.items()))
     check("reopen_lookup", np.array_equal(cat2.lookup(sid, "a", key), a2))
     check("reopen_containment", np.array_equal(cat2.lookup(sid, "d", req),
                                                orig[0:100:2, 10:50:2, ::3]))

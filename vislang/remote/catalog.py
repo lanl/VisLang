@@ -33,6 +33,24 @@ import numpy as np
 _MANIFEST = "catalog.json"
 _EXTENT_DIR = "extents"
 
+# Shape version for a CACHED SCHEMA. Bump this whenever inspect starts capturing
+# a field that downstream code relies on, so schemas frozen by an older build are
+# treated as misses and re-inspected instead of being reused forever.
+#
+# A schema is keyed by source_id — uri+size+mtime — which tracks the FILE, not
+# the code that read it. So when v1 grew `attributes` (GenericIO's phys_scale and
+# dtypes), every already-cached schema kept answering without them: a
+# format-preserving save refused with "no phys_scale in the source header" for a
+# file whose header has one, and the estimator fell back to 4 B/element. The file
+# hadn't changed, so nothing ever invalidated the entry.
+#
+#   1  variables, dimensions, positions, filetype
+#   2  + attributes (GenericIO phys_scale/dtypes; needed to write the format back)
+#   3  same shape; v2 entries written after a remote reduce lost `attributes`
+#      (the reducer's report omitted them and overwrote the login-node schema)
+SCHEMA_VERSION = 3
+_SCHEMA_VERSION_KEY = "schema_version"
+
 
 def make_source_id(uri, size, mtime, header_hash=""):
     """Stable short identity for a remote source without hashing its bytes."""
@@ -161,12 +179,36 @@ class ExtentCatalog:
     # -- schema ---------------------------------------------------------------
 
     def store_schema(self, source_id, schema):
-        """schema = {"variables": [...], "dimensions": {...}, "positions": [...]|None}."""
-        self._manifest["schemas"][source_id] = schema
+        """schema = {"variables": [...], "dimensions": {...}, "positions": [...]|None,
+        "filetype": str, "attributes": {...}} — stamped with SCHEMA_VERSION so a
+        later build can tell what this entry was allowed to contain."""
+        entry = dict(schema or {})
+        entry[_SCHEMA_VERSION_KEY] = SCHEMA_VERSION
+        self._manifest["schemas"][source_id] = entry
         self._save_manifest()
 
     def schema(self, source_id):
-        return self._manifest["schemas"].get(source_id)
+        """The cached schema, or None when there is none — or when the one on disk
+        predates SCHEMA_VERSION. An outdated entry is reported as a MISS rather
+        than returned partially filled: the caller then re-inspects (metadata
+        only, no bulk read) and stores a complete one. Returning it would be
+        worse than having nothing, because a missing field reads downstream as a
+        fact about the file ("this header has no box size") instead of a fact
+        about the cache."""
+        entry = self._manifest["schemas"].get(source_id)
+        if not isinstance(entry, dict):
+            return None
+        if entry.get(_SCHEMA_VERSION_KEY, 1) < SCHEMA_VERSION:
+            return None
+        return entry
+
+    def stale_schema(self, source_id):
+        """The cached entry whatever its version, for the one caller that has no
+        way to re-inspect (a fully-cached folder, assembled with no connection
+        open). Everything it is missing is genuinely missing, so the caller must
+        say so rather than pass the gap off as a property of the data."""
+        entry = self._manifest["schemas"].get(source_id)
+        return entry if isinstance(entry, dict) else None
 
     # -- extents --------------------------------------------------------------
 

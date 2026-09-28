@@ -201,6 +201,10 @@ def _run_single(text, out):
             "dimensions": dict(info.dimensions or {}),
             "positions": list(info.positions) if info.positions else None,
             "filetype": info.filetype,
+            # The caller stores this schema over the login-node one, so leaving
+            # attributes out erased GenericIO's phys_scale/dtypes from the catalog
+            # and the loaded result — and a .gio save of it then refused.
+            "attributes": _jsonable_attrs(info.attributes),
         },
         "steps": result["steps"],
         "saved_variables": saved,

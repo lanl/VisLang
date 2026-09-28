@@ -416,6 +416,16 @@ def _catalog_schema(schema):
     return {k: v for k, v in (schema or {}).items() if k != "itemsizes"}
 
 
+def _keep_attributes(schema, known):
+    """`schema` (a reducer's report) with `known`'s attributes filled in when it
+    has none. A remote checkout older than this build reports its schema without
+    `attributes`; storing that over the login-node schema would erase header
+    facts (GenericIO's phys_scale/dtypes) that a format-preserving save needs."""
+    if not schema or schema.get("attributes") or not (known or {}).get("attributes"):
+        return schema
+    return {**schema, "attributes": known["attributes"]}
+
+
 def _prime_schema(conn, remote_path, catalog, sid, steps):
     """Fetch the schema from the LOGIN NODE (metadata only, no allocation, no
     bulk read) and store it, so the very first run of a file can size its own
@@ -665,8 +675,8 @@ def remote_reduce(src, middle, confirm=False):
     fetched = {}
     if want is None or missing:
         meta, fetched = _run_remote_prefix(conn, remote_path, src, prefix, missing, steps)
-        catalog.store_schema(sid, _catalog_schema(meta["schema"]))
-        schema = meta["schema"]
+        schema = _keep_attributes(meta["schema"], schema)
+        catalog.store_schema(sid, _catalog_schema(schema))
         for var, arr in fetched.items():
             catalog.store(sid, var, key, arr)
     else:
@@ -964,7 +974,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         if meta is None or not meta.get("ok", False):
             detail = (meta or {}).get("error") or err.strip()[-_ERR_TAIL:] or f"rc={rc}"
             raise RuntimeError(f"remote folder delta failed: {detail}")
-        schema = meta.get("schema")
+        schema = _keep_attributes(meta.get("schema"), schema0)
 
         pull_dir = os.path.join(cache_root(), f"folderpull_{tag}")
         remote_out = meta.get("outdir", routdir)
@@ -995,6 +1005,19 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         for label in per:
             schema = catalog.schema(per[label]["sid"])
             if schema:
+                break
+    if schema is None:
+        # Nothing current. There is no connection open here to re-inspect with,
+        # so fall back to an outdated entry rather than failing a run whose data
+        # is already on local disk — and say that it is outdated, because the
+        # fields it lacks (GenericIO's phys_scale) would otherwise look like
+        # facts about the source instead of gaps in the cache.
+        for label in per:
+            schema = catalog.stale_schema(per[label]["sid"])
+            if schema:
+                steps.append("NOTE: cached schema predates this build "
+                             "(no attributes); a format-preserving save may "
+                             "degrade. Re-run with the source reachable to refresh.")
                 break
     if schema is None:
         raise RemoteUnavailable("no cached schema for a fully-cached folder")

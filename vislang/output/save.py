@@ -277,6 +277,15 @@ def _genericio_blocker(loaded):
     if not data:
         return "no arrays to write"
     if _phys3(attrs.get("phys_scale")) is None:
+        # Distinguish "the header has no box" from "nothing ever read the
+        # header". A remote result carries the source's attributes forward from
+        # the cached schema, so an entry frozen before inspect captured them
+        # arrives here indistinguishable from a genuinely box-less file — and
+        # blaming the source sends the reader to look at the wrong thing.
+        if attrs.get("remote_reduced") and "dtypes" not in attrs:
+            return ("the remote schema reached here without header attributes, "
+                    "so the box size is unknown (it may well be in the file); "
+                    "re-run with the source reachable to re-inspect it")
         return "no phys_scale (box size) in the source header"
     lengths = set()
     for name, arr in data.items():
