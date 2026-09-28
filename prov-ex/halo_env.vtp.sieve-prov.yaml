@@ -1,0 +1,83 @@
+# EXPLORATION NOTES (not part of a real record):
+#  - The spec is the halo-neighbourhood cut from commit 83b535e's spec.py,
+#    extended with threshold, a random subsample, compress, and a .vtp save.
+#  - Real, from that spec: the source path, halo tag and box, and the
+#    225,888 rows the box keeps on partition #3 (from its comment).
+#    Everything else is made up but kept consistent: 93,301 of those rows
+#    pass the tag test, and 25% of them is the 23,325 output rows (a
+#    fraction keeps int(rows * fraction)). The input size is 95,812,407
+#    rows × 40 bytes plus a 2,528-byte header, as for vts56.gio.
+#  - A .vtp record is embedded in the file (VTK field data). This YAML is how
+#    that record would read if exported, so the output fingerprint has no
+#    file-byte hash: a file can't hold a hash of itself.
+
+format: sieve-provenance/2
+result_summary: |
+  23,325 rows × 6 columns (from a 3.8 GB input)
+    float32  x, y, z, vx, vy, vz   (vx, vy, vz lossy, within 1.0)
+
+logical:
+  spec: |
+    # MiraTitanU STEP279 -- the surroundings of halo 11521140891.
+    # Particles in a 30-unit box around its centre (524.9862, 174.5147, 781.4316)
+    # that are NOT halo members; a random quarter; velocities compressed.
+    # Partitions are disjoint by halo, so #3 holds this one whole.
+    src = source(
+        "ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/"
+        "MiraTitanU/Grid/M000/L2100/HACC000/analysis/Halos/b0168/Halopart/"
+        "STEP279/m000-279.bighaloparticles#3"
+    )
+
+    env = fields(src, ["x", "y", "z", "vx", "vy", "vz"])
+    env = region(env, x=(509.99, 539.99), y=(159.51, 189.51), z=(766.43, 796.43))
+    env = threshold(env, "fof_halo_tag != 11521140891")
+    env = subsample(env, 0.25)
+    env = compress(env, ["vx", "vy", "vz"], 1.0)
+
+    save(env, "/Users/agoosh11/Projects/VisLang/unOrg/halo_env.vtp")
+  input:
+    uri: ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/MiraTitanU/Grid/M000/L2100/HACC000/analysis/Halos/b0168/Halopart/STEP279/m000-279.bighaloparticles#3
+    format: genericio
+    columns: [x, y, z, vx, vy, vz, id, fof_halo_tag]
+    fingerprint: {size: 3832498808, mtime: "2026-08-14T09:12:30-07:00", head64k_sha256: 5e0b7a1c93d4f268}
+  resolved:
+    subsample_random_seed: "8731640492587113207"
+    compress_mode: {vx: absolute, vy: absolute, vz: absolute}
+  output:
+    format: vtp
+    rows: 23325
+    columns: {x: float32, y: float32, z: float32, vx: float32, vy: float32, vz: float32}
+    fingerprint: {data_sha256: d27a90c3f41e6b85}
+  sieve: {version: 0.1.0, commit: 0153def}
+  libraries: {pygio: 0.1.dev1+g17c4e7b6b, numpy: 2.5.2, h5py: 3.14.0, hdf5plugin: 5.1.0, vtk: 9.5.2}
+
+  explanation: |
+    Steps
+      1. fields     keep x, y, z, vx, vy, vz; drop id, fof_halo_tag
+      2. region     keep rows with
+                      x between 509.99 and 539.99
+                      y between 159.51 and 189.51
+                      z between 766.43 and 796.43
+      3. threshold  keep rows where fof_halo_tag != 11521140891
+                    (read for this test only; not in the output)
+      4. subsample  keep a random 25% of the rows
+      5. compress   vx, vy, vz with SPERR, absolute error bound 1.0
+                    (mode "auto" chose absolute for each)
+      6. save       write VTK PolyData, converted from GenericIO:
+                    x, y, z as point coordinates, vx, vy, vz as
+                    point data
+
+    Values: x, y, z exact; vx, vy, vz within 1.0 of the source.
+
+realization:
+  at: "2026-09-29T10:41:05-07:00"
+  took_s: 23
+  by: agoosh11@Kajis-MacBook-Pro.local
+  columns_from:
+    remote:
+      columns: [x, y, z, vx, vy, vz]
+      read: {columns: [x, y, z, vx, vy, vz, fof_halo_tag], then: [region, threshold, subsample]}
+      fetched_bytes: 559800
+  compress: {codec: sperr, max_error: {vx: 0.91, vy: 0.88, vz: 0.94}}
+  env: {python: 3.12.14, platform: macOS-26.0.1}
+  run: 7e5a31c08b2d

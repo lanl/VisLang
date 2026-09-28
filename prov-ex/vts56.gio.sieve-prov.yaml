@@ -1,0 +1,63 @@
+# EXPLORATION NOTES (not part of a real record):
+#  - head64k_sha256 values are placeholders: neither file is here to hash, so
+#    they are the old head64k_md5 values cut to 16 characters.
+#  - data_sha256 is not computed today; its value is made up.
+#  - input.format, input.columns and output.rows/columns are new fields;
+#    their values are real, taken from this run.
+#  - realization describes a hypothetical partial cache hit: an earlier run
+#    cached x, y, z at stride 5, and this run took every 2nd cached row.
+#    remote.read is assumed (today's remote records leave the fused read out).
+
+format: sieve-provenance/2
+result_summary: |
+  18,630,890 rows × 8 columns, 745 MB (from a 7.5 GB input)
+    float32  x, y, z, vx, vy, vz
+    int64    id, fof_halo_tag
+
+logical:
+  spec: |
+    # MiraTitanU M000 HACC000, STEP499 big-halo particles, partition #3.
+    # 186.3M particles, 8 columns (~7.5 GB); stride 10 -> ~18.6M particles.
+    src = source(
+        "ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/"
+        "MiraTitanU/Grid/M000/L2100/HACC000/analysis/Halos/b0168/Halopart/"
+        "STEP499/m000-499.bighaloparticles#3"
+    )
+
+    save(subsample(src, 10), "/Users/agoosh11/Projects/VisLang/unOrg/vts56.gio")
+  input:
+    uri: ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/MiraTitanU/Grid/M000/L2100/HACC000/analysis/Halos/b0168/Halopart/STEP499/m000-499.bighaloparticles#3
+    format: genericio
+    columns: [x, y, z, vx, vy, vz, id, fof_halo_tag]
+    fingerprint: {size: 7452415560, mtime: "2026-09-03T13:41:48-07:00", head64k_sha256: 80de913e860f41c3}
+  output:
+    format: genericio
+    rows: 18630890
+    columns: {x: float32, y: float32, z: float32, vx: float32, vy: float32, vz: float32, id: int64, fof_halo_tag: int64}
+    fingerprint: {size: 745238128, head64k_sha256: 4b9c38e13b76c388, data_sha256: 9c41d07e2b6a58f3}
+  sieve: {version: 0.1.0, commit: 6bb169f, uncommitted_changes: true}
+  libraries: {pygio: 0.1.dev1+g17c4e7b6b, numpy: 2.5.2}
+
+  explanation: |
+    Steps
+      1. subsample  keep every 10th row: rows 0, 10, 20, …
+      2. save       write one GenericIO file
+
+    Values: all exact.
+
+realization:
+  at: "2026-09-28T12:07:18-07:00"
+  took_s: 4
+  by: agoosh11@Kajis-MacBook-Pro.local
+  columns_from:
+    cache:
+      columns: [x, y, z]
+      cached: {stride: 5, by_run: 1f07b2c9e4aa, at: "2026-09-27T16:22:03-07:00"}
+      then: {stride: 2}
+      yields: {stride: 10}
+    remote:
+      columns: [vx, vy, vz, id, fof_halo_tag]
+      read: {stride: 10}
+      fetched_bytes: 521664920
+  env: {python: 3.12.14, platform: macOS-26.0.1}
+  run: 2c26a3d1369a
