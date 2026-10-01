@@ -354,9 +354,23 @@ def main():
         out_all2 = os.path.join(TMP, "series_out2")
         n_execs1, n_man1 = len(EXECS), len(MANIFESTS)
         reset_sinks()
-        res = plan_pipeline(save(subsample(threshold(fields(source(folder_uri),
-                            ["density", "temperature"]), "density >= 500"), 3), out_all2))
+        # Run under an open provenance record (as cli_core does), so the folder
+        # record's per-site grouping is exercised on the mixed cache+remote run.
+        from vislang.runtime import provenance
+        with provenance.run("spec.py", spec_code="# folder delta\n"):
+            res = plan_pipeline(save(subsample(threshold(fields(source(folder_uri),
+                                ["density", "temperature"]), "density >= 500"), 3),
+                                out_all2))
         check("delta run: one remote job", len(EXECS) == n_execs1 + 1)
+        rec = provenance.record_for(out_all2)
+        check("delta run: folder record written", rec is not None)
+        cf = rec["realization"]["columns_from"]
+        check("delta run: record groups cache and remote",
+              cf.get("remote", {}).get("columns") == ["temperature"]
+              and "cache" in cf, cf)
+        check("delta run: record fingerprints every timestep",
+              sorted(rec["logical"]["input"]["timesteps"]) == sorted(labels),
+              rec["logical"]["input"])
         check("delta run: manifest asks ONLY temperature (density served from catalog)",
               MANIFESTS[-1] == {str(t): ["temperature"] for t in labels},
               str(MANIFESTS[-1:]))

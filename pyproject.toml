@@ -21,6 +21,7 @@ dependencies = [
     "numpy",
     "mcp>=2",                       # v2 renamed FastMCP -> MCPServer
     "pydantic-monty>=0.0.18,<0.0.19",  # 0.0.19 dropped MontyRepl
+    "pyyaml",                       # provenance records are YAML (read back + self-check)
 ]
 
 [project.optional-dependencies]

@@ -1,8 +1,9 @@
 # Provenance record examples
 
-Hand-written records exploring a more readable provenance format,
-`sieve-provenance/2`. Nothing writes this format yet. Today's records are
-JSON in the layout of `vts56.gio.sieve-prov.json` (schema 1).
+Hand-written records that designed the provenance format,
+`sieve-provenance/2`. Sieve now writes this format for every `save()`
+(`vislang/runtime/provenance.py`; reference: `instructions/provenance.md`).
+Where a written record differs from these files, see "As implemented" below.
 
 - `vts56.gio.sieve-prov.yaml` is the same `vts56.gio` record, redesigned.
   Its realization section imagines a partial cache hit.
@@ -120,13 +121,29 @@ What the spec left open, recorded because a rerun needs it:
   at row 0. A value cut such as `threshold` would make the groups depend on
   each other, since all of them must keep the same rows.
 
+## As implemented
+
+What a written record does differently from these hand-written files:
+
+- **Hashes, ids and versions are quoted** (`data_sha256: "d27a90c3f41e6b85"`),
+  as "Why YAML" asks, so a hex value that happens to be all digits stays a
+  string. Names and formats stay plain.
+- **The explanation says what the code does.** A point `region` keeps its
+  edges (`>=` and `<=`), so it reads "keep rows with (bounds inclusive)". A
+  `.vtp` stores x, y, z as point coordinates *and* keeps every column,
+  x, y, z included, as point data.
+- **Grids** record `output.shape` instead of `rows`, and `output.geometry`
+  when the source stated one.
+- **`columns_from`** has one group per site: `local`, `cache`, `remote`, or
+  `fetched_whole_file`. The `cached` / `then` / `yields` breakdown in the
+  `vts56` example is not built yet.
+- **Ancestry** is `input.derived_from`: the parent output's `data_sha256`.
+- **Legacy `.vtk`** keeps its record in a companion file. Its reader scans
+  field data for keywords such as `DIMENSIONS`.
+
 ## Open questions
 
-- `data_sha256` isn't computed today, and linking records by it depends on
-  it existing.
-- Remote records don't record the fused read (`lowered`) today.
 - `uncommitted_changes: true` means the commit doesn't identify the build.
   A hash of the diff would at least show whether two records share a build.
-- Unchecked assumptions in the halo example: whether a point `region`
-  includes its edges, how x, y, z map into a `.vtp`, and whether SPERR's
-  absolute bound is guaranteed.
+- Whether SPERR's absolute bound is guaranteed. `realization.compress`
+  records the measured maximum error, so a record can at least be checked.

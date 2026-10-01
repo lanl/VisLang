@@ -323,12 +323,19 @@ def _executor_cmd(rout, plan_path=None, jobid=None, folder=False,
             f"`sieve connect <host>` reports what is missing.")
     flag = "--outdir" if folder else "--out"
     man = f" --manifest {manifest_path}" if manifest_path else ""   # catalog delta
+    # The run's sampling seed travels too, so a random subsample drawn next to
+    # the data is the one the local record names — not one the remote process
+    # picked for itself.
+    from vislang.interpreter.narrowing import sampling_seed
+    fwd = {"VISLANG_SAMPLE_SEED": str(sampling_seed())}
+    if os.environ.get("VISLANG_NO_BINDING"):
+        fwd["VISLANG_NO_BINDING"] = "1"
     if jobid is None:
-        env = "VISLANG_NO_BINDING=1 " if os.environ.get("VISLANG_NO_BINDING") else ""
+        env = "".join(f"{k}={v} " for k, v in fwd.items())
         return f"{env}{py} {repo}/vislang_exec.py --stdin {flag} {rout}{man}"
     # srun mode: run as a step in the held allocation, plan from a staged file.
     srun_args = os.environ.get("VISLANG_SRUN_ARGS", "--overlap -n1")
-    export = "ALL,VISLANG_NO_BINDING=1" if os.environ.get("VISLANG_NO_BINDING") else "ALL"
+    export = ",".join(["ALL"] + [f"{k}={v}" for k, v in fwd.items()])
     return (f"srun --jobid={jobid} {srun_args} --export={export} "
             f"{py} {repo}/vislang_exec.py --plan {plan_path} {flag} {rout}{man}")
 
@@ -566,6 +573,31 @@ def _reduce_estimate(src, key, schema, missing, conn, steps, narrowing=None):
     return est
 
 
+def _note_remote_provenance(schema, prefix, have, fetched, missing):
+    """Tell the record what the remote read was and how each column arrived:
+    from the local extent catalog, or read next to the data. The read lists
+    every column the remote touched — a threshold reads its variable even when
+    the output drops it — and the forms it ran there, in written order."""
+    if not provenance.active():
+        return
+    provenance.note_source(columns=(schema or {}).get("variables"),
+                           filetype=(schema or {}).get("filetype"))
+    groups = {}
+    if have:
+        groups["cache"] = {"columns": list(have)}
+    if fetched:
+        read_cols = list(missing or fetched)
+        for n in prefix:
+            if n.kind == "threshold" and n.var not in read_cols:
+                read_cols.append(n.var)
+        groups["remote"] = {
+            "columns": list(fetched),
+            "read": {"columns": read_cols,
+                     "then": [n.kind for n in prefix if n.kind != "fields"]},
+            "fetched_bytes": int(sum(a.nbytes for a in fetched.values()))}
+    provenance.note_columns_from(groups)
+
+
 def remote_reduce(src, middle, confirm=False):
     """Run the narrowing prefix of `middle` on the remote host of src.uri.
     Returns (loaded DatasetInfo, steps, CostEstimate|None). Raises
@@ -590,16 +622,10 @@ def remote_reduce(src, middle, confirm=False):
         size, mtime = st
         header = remote_header_hash(conn, remote_path) or ""
         sid = make_source_id(norm, size, mtime, header)
-    # The same three facts the catalog keys on, recorded so an output can say
-    # whether its source has changed since. `id_uri` is stored verbatim because
-    # the id hashes that exact string — scp-style here, a plain path locally.
-    provenance.note_source(site="remote", identity={
-        "method": "size+mtime+head64k-md5", "source_id": sid, "id_uri": norm,
-        "size": size, "mtime": mtime, "mtime_precision_s": 1,
-        "head_md5": header or None, "tail_md5": None,
-        "content_sha256": None,
-        "caveat": ("a rewrite in the same second, at the same size, with an "
-                   "unchanged head is not detected")})
+    # The same three facts the catalog keys on, recorded as the input's
+    # fingerprint so an output can say exactly which bytes it came from.
+    provenance.note_source(site="remote",
+                           fingerprint=provenance.fingerprint(size, mtime, header))
     # source_bytes is the denominator of the reduction factor: how much a
     # whole-file fetch would have moved, against what actually crossed.
     timing.note(host=host, source_bytes=size, source_id=sid[:8])
@@ -705,6 +731,7 @@ def remote_reduce(src, middle, confirm=False):
                            "site": "remote"}
     total = sum(a.nbytes for a in data.values())
     timing.note(result_bytes=int(total), fetched_vars=len(fetched))
+    _note_remote_provenance(schema, prefix, have, fetched, missing)
     steps.append(f"assembled {len(data)} var(s), {total / 1e6:.1f} MB "
                  f"({len(have)} cached, {len(fetched)} fetched)")
     return info, steps, estimate
@@ -897,6 +924,12 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
             if missing:
                 manifest[str(label)] = missing
 
+    if provenance.active():
+        provenance.note_source(site="remote")
+        provenance.note_timesteps([
+            {"label": label, "uri": uri, "fingerprint": provenance.fingerprint(size, mtime)}
+            for label, uri, size, mtime in files])
+
     n = len(files)
     union_missing = sorted({v for vs in manifest.values() for v in vs})
     total_pairs = n * len(project)                      # (timestep, variable) extents needed
@@ -1040,6 +1073,20 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         for c in compresses:                            # compress is a LOCAL suffix (lossy; keep extents raw)
             loaded = _compress(loaded, list(c.variables), c.error_bound, c.mode)
         per_step.append((label, loaded))
+
+    if provenance.active():
+        provenance.note_source(columns=schema.get("variables"),
+                               filetype=schema.get("filetype"))
+        groups = {}
+        if reused_pairs:
+            groups["cache"] = {"columns": list(project),
+                               "extents_reused": f"{reused_pairs} of {total_pairs}"}
+        if fetched:
+            groups["remote"] = {
+                "columns": union_missing,
+                "read": {"then": [n.kind for n in narrow_prefix]},
+                "fetched_bytes": int(sum(a.nbytes for a in fetched.values()))}
+        provenance.note_columns_from(groups)
 
     from vislang.output.save import save_timeseries
     with timing.phase("sink_save_timeseries", n=len(per_step)):

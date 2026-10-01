@@ -264,11 +264,14 @@ class HDF5Adapter(FormatAdapter):
 
             f.visititems(collect_datasets)
             for key in f.attrs:
+                if key == "sieve_provenance":
+                    # The record links to its parent by data_sha256 (read via
+                    # provenance.record_for), so it never needs to ride along
+                    # as a source attribute — where a whole record would bloat
+                    # the schema the remote catalog stores.
+                    continue
                 val = f.attrs[key]
                 attributes[key] = val.item() if hasattr(val, 'item') else val
-            # A provenance record on the source becomes the `derived_from`
-            # ancestry of whatever we write next, so a chain of narrowings keeps
-            # its trail back to the original file.
 
         for var, shape in dataset_shapes.items():
             attributes[f"{var}_shape"] = shape

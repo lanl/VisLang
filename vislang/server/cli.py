@@ -13,16 +13,13 @@ shell scripts and CI.
     sieve render-cost heptane_302x302x302.raw     # per-file render payload estimate
     sieve submit-adapter FILE adapter.py          # verify+freeze a reader you wrote
     sieve submit-binding FILE binding.json        # verify+freeze an HDF5 binding
-    sieve provenance roi.nc [--spec|--json]       # what produced this output
-    sieve rerun roi.nc --out roi2.nc              # re-execute its embedded spec
 """
 import argparse
 import sys
 
 from vislang.server.cli_core import (do_inspect, do_estimate, do_execute,
                       do_estimate_render_cost, do_submit_adapter,
-                      do_submit_binding, do_connect, do_disconnect,
-                      do_provenance, do_rerun)
+                      do_submit_binding, do_connect, do_disconnect)
 
 # A report is "bad" (non-zero exit) when it starts with one of these markers or
 # holds the run. The reports are prose for humans/LLMs; this is the thin machine
@@ -33,7 +30,7 @@ _BAD_PREFIXES = ("ERROR", "NEEDS_ADAPTER", "NEEDS_SESSION", "ADAPTER REJECTED",
                  "NOT CONNECTED")
 _BAD_STATUSES = ("Status: FAILED", "Status: BUILD FAILED",
                  "Status: NEEDS CONFIRM", "Status: NEEDS ALLOCATION",
-                 "Status: NEEDS SESSION", "Status: SOURCE CHANGED")
+                 "Status: NEEDS SESSION")
 
 
 def _emit(report):
@@ -85,21 +82,6 @@ def build_parser():
     pa.add_argument("filepath", help="the real file the adapter must read")
     pa.add_argument("module", help="path to the adapter .py module")
 
-    pp = sub.add_parser("provenance", help="print the derivation record for an output")
-    pp.add_argument("path", help="a file (or timeseries folder) Sieve wrote")
-    pp.add_argument("--json", action="store_true", help="dump the raw record")
-    pp.add_argument("--spec", action="store_true",
-                    help="print only the embedded spec, for inspection or re-running")
-
-    prr = sub.add_parser("rerun", help="re-execute the spec embedded in an output")
-    prr.add_argument("path", help="a file Sieve wrote")
-    prr.add_argument("--out", help="write here instead of the recorded path")
-    prr.add_argument("--source", help="read from here instead (the data moved)")
-    prr.add_argument("--force", action="store_true",
-                     help="proceed even though the source changed")
-    prr.add_argument("--dry-run", action="store_true", help="plan only")
-    prr.add_argument("--confirm", action="store_true", help="accept the cost budget")
-
     pb = sub.add_parser("submit-binding", help="verify+freeze an HDF5 semantic binding")
     pb.add_argument("filepath", help="the HDF5 file the binding describes")
     pb.add_argument("binding", help="path to the binding .json")
@@ -124,13 +106,6 @@ def main(argv=None):
             report = do_estimate_render_cost(args.filepath)
         elif args.cmd == "submit-adapter":
             report = do_submit_adapter(args.filepath, _read(args.module))
-        elif args.cmd == "provenance":
-            report = do_provenance(args.path, as_json=args.json,
-                                   spec_only=args.spec)
-        elif args.cmd == "rerun":
-            report = do_rerun(args.path, out=args.out, new_source=args.source,
-                              force=args.force, dry_run=args.dry_run,
-                              confirm=args.confirm)
         elif args.cmd == "submit-binding":
             report = do_submit_binding(args.filepath, _read(args.binding))
         else:                                   # unreachable: argparse requires cmd

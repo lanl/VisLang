@@ -1,5 +1,11 @@
 # Running the remote path, and how provenance comes together
 
+> **Out of date on provenance.** The provenance sections below describe the
+> first record format (JSON, schema 1) and the `sieve provenance` / `sieve
+> rerun` commands, which have since been removed. Records are now YAML
+> (`sieve-provenance/2`); see `instructions/provenance.md`. The remote-path
+> walkthrough is unaffected.
+
 Walkthrough against the Nyx dataset on gpu-server, plus what each piece is doing.
 The interpreter internals (narrowing, lowering, fusion) are treated as known and
 skipped; AST serialization gets more room, since it turns up inside the record.

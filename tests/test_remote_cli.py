@@ -348,6 +348,25 @@ def main():
                   np.array_equal(z["density"], DENS[DENS >= 500][::3]), repr(z["density"][:5]))
         check("execute report status OK", out.startswith("Status: OK"), out[:80])
 
+        # The record says how each column arrived, and fingerprints the remote
+        # source from the same probe the catalog keys on.
+        from vislang.runtime import provenance
+        rec = provenance.record_for(out_npz)
+        check("remote record written", rec is not None)
+        lg, rz = rec["logical"], rec["realization"]
+        check("remote record input uri is authored", lg["input"]["uri"] == file_uri,
+              lg["input"])
+        fp = lg["input"].get("fingerprint") or {}
+        check("remote record fingerprints the source",
+              fp.get("size") and fp.get("mtime") and fp.get("head64k_sha256"), fp)
+        grp = (rz.get("columns_from") or {}).get("remote") or {}
+        check("remote record columns_from.remote",
+              grp.get("columns") == ["density"]
+              and grp.get("read", {}).get("then") == ["threshold", "subsample"]
+              and grp.get("fetched_bytes", 0) > 0, rz.get("columns_from"))
+        check("remote record explains the threshold",
+              "keep rows where density >= 500" in lg["explanation"], lg["explanation"])
+
         print("== sieve execute <missing spec>: clean error, exit 1 ==")
         code, out = run_cli(["execute", os.path.join(TMP, "nope.py")])
         check("missing spec exit 1", code == 1, f"code={code}")

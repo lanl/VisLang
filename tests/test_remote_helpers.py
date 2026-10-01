@@ -103,11 +103,12 @@ def main():
                     lambda: remote_stat(KEY, "/f")) is None)
 
     print("== remote_header_hash ==")
-    md5 = "d41d8cd98f00b204e9800998ecf8427e"
-    got = with_fake(lambda c, k: Result(0, f"{md5}  -\n".encode()),
+    sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    got = with_fake(lambda c, k: Result(0, f"{sha}  -\n".encode()),
                     lambda: remote_header_hash(KEY, "/data/f.raw", nbytes=1024))
-    check("header hash parsed", got == md5)
+    check("header hash parsed", got == sha)
     check("head -c present", "head -c 1024" in remote_calls()[0][0][-1])
+    check("header hash is sha256", "sha256sum" in remote_calls()[0][0][-1])
 
     print("== run_remote ==")
     rc, so, se = with_fake(lambda c, k: Result(3, b"out", b"err"),
@@ -152,7 +153,7 @@ def main():
           any("stat -Lc" in c[0][-1] for c in CALLS), str(CALLS))
     check("is_dir asks for type+size+mtime+hash in ONE command",
           sum(1 for c in CALLS if "stat -Lc" in c[0][-1]) == 1
-          and "md5sum" in remote_calls()[-1][0][-1], str(CALLS))
+          and "sha256sum" in remote_calls()[-1][0][-1], str(CALLS))
 
     clear_remote_caches()
     check("remote_is_dir False on a regular file",

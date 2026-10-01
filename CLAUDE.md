@@ -131,12 +131,14 @@ the rule that layer owns — read those first when working inside a folder.
   `reduce.py` (ship the narrowing prefix next to the data), `executor.py` (the
   remote reducer), `hosts.py` (per-host config), `catalog.py` (local extent
   cache: `need − have = fetch`).
-- **Provenance** — `vislang/runtime/provenance.py`: the derivation record every
-  `save()` attaches to its output (source + identity, the spec, the lowered
-  narrowing, per-variable lineage, producer versions). Embedded in HDF5/netCDF
-  attributes, VTK field data or an npz key; a `.<name>.sieve-prov.json` beside
-  the file where the format has no slot (GenericIO). Read it with
-  `sieve provenance <file>`; re-execute it with `sieve rerun <file>`.
+- **Provenance** — `vislang/runtime/provenance.py`: the YAML record
+  (`sieve-provenance/2`, laid out as `prov-ex/`) every `save()` attaches to its
+  output: the spec, the input's fingerprint, the output's `data_sha256`, the
+  Sieve build, and an explanation rendered from fixed per-form templates (never
+  by a model). Embedded in HDF5/netCDF attributes, VTK field data or an npz
+  key; a `.<name>.sieve-prov.yaml` beside the file where the format has no safe
+  slot (GenericIO, legacy `.vtk`). A derived output links its parent by
+  `data_sha256`. Read it with the `provenance` MCP tool.
   `VISLANG_PROVENANCE=0` disables it. → `instructions/provenance.md`
 - **Run records** — `vislang/runtime/`: `trace.py` (human narration →
   `.vislang/trace.log`) and `timing.py` (the same runs as data →

@@ -59,21 +59,30 @@ message), and known optimizations:
   Make it a planner decision with a cost-model gate, and measure both paths.
 - **yt cropped covering-grid**: build the covering grid over the cropped edges so a
   region pushes into yt instead of read-full-then-crop.
-- **Full-content source hashing** is opt-in (`--hash`, sha256) and unbuilt in the
-  CLI surface; the default identity is size + mtime + head/tail md5. The gap it
-  leaves — a same-second, same-size rewrite with unchanged ends — is stated in
-  every record rather than only in docs.
+- **Full-content source hashing** is unbuilt; the input fingerprint is size +
+  mtime + a sha256 of the first 64 KiB. The gap it leaves — a same-second,
+  same-size rewrite with an unchanged head — is stated in
+  `instructions/provenance.md`.
 
-## Provenance — now realized
-Every output carries its derivation: source URI and a change-detecting identity,
-the spec text, the serialized plan, the *lowered* narrowing, per-variable
-lineage, and the producing Sieve's version and commit. Embedded in HDF5/netCDF
-attributes, VTK field data or a reserved npz key; a dot-prefixed JSON companion
-where the container has no slot (GenericIO). `sieve provenance` reads it back and
-verifies the source; `sieve rerun` re-executes the embedded spec, refusing when
-the source has changed. Fractional `subsample` is now seeded and the seed
-recorded, so a rerun reproduces the same rows.
-→ `instructions/provenance.md`
+## Provenance — now realized (`sieve-provenance/2`)
+Every output carries a YAML record split into `logical` (the spec, the input's
+fingerprint, choices resolved at run time, the output's `data_sha256`, the
+Sieve build, and an explanation rendered from per-form templates) and
+`realization` (when, by whom, how each column arrived). Embedded in HDF5/netCDF
+attributes, VTK field data or a reserved npz key; a dot-prefixed YAML companion
+where the container has no safe slot. A derived output links its parent by
+`data_sha256`. Fractional `subsample` is seeded once per run and the seed
+recorded. → `instructions/provenance.md`
+
+Still open:
+- `columns_from` reports one group per site. The mixed cache-then-stride
+  groups sketched in `prov-ex/vts56.gio.sieve-prov.yaml` (`cached`, `then`,
+  `yields`) need the catalog to report what it reused per column.
+- The remote extent catalog does not key on the sampling seed, so a cached
+  random subsample can disagree with the seed its record names.
+- The no-`fields()` remote folder batch pulls a directory the remote wrote
+  under a detached run, so that output carries no record.
+- Specs with loops: record an *elaborated*, loop-free spec per output.
 
 ## Rendering
 - Optionally restore live, camera-preserving updates on top of the k3d snapshot.

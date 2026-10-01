@@ -136,10 +136,10 @@ def provenance(filepath: str, spec_only: bool = False) -> str:
 
     Read-only. Works on any file or timeseries folder `save()` produced,
     whichever way the record was stored — an attribute inside the file, or the
-    companion `.<name>.sieve-prov.json` beside it. The report also verifies the
-    source against the identity recorded at write time and says whether it has
-    changed since. `spec_only=True` returns just the embedded spec text, which
-    can be written to spec.py and re-run.
+    companion `.<name>.sieve-prov.yaml` beside it. Returns the record's own
+    YAML (`sieve-provenance/2`), which is written to be read as-is.
+    `spec_only=True` returns just the spec text, which can be written to
+    spec.py and re-run.
     """
     return do_provenance(filepath, spec_only=spec_only)
 

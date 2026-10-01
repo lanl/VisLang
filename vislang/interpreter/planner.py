@@ -732,13 +732,14 @@ def _plan_local(src, middle, sink, terminal, dry_run, source_uri, steps, confirm
         pass
     # Local sources have no identity anywhere else in the system — the catalog's
     # is computed only on the remote reduce paths — so this is where a locally
-    # read file gets one.
-    provenance.note_source(read_from=source_uri, info=info, site="local",
-                           identity=provenance.local_identity(source_uri))
+    # read file gets its fingerprint (and, if it is itself a Sieve output, the
+    # link to that output's record).
+    if provenance.active():
+        provenance.note_source(read_from=source_uri, info=info, site="local",
+                               fingerprint=provenance.file_fingerprint(source_uri))
     steps.append(_describe_schema(info, source_uri))
     with timing.phase("lower"):
         narrowing, pending_compress = _lower(info, middle, steps)
-    provenance.note_lowered(narrowing)
 
     # The sink (the action). A dangling leaf has none — it can only dry-run.
     if sink is not None:
@@ -814,6 +815,7 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
     # Plan + estimate off timestep 0 (metadata only); folder cost scales × N steps.
     with timing.phase("inspect", uri=files[0][1], n_timesteps=len(files)):
         info0 = inspect_file(files[0][1], positions=src.positions)
+    provenance.note_source(info=info0, site="local")
     with timing.phase("lower"):
         narrowing0, _ = _lower(info0, middle, [])
     estimate = estimate_plan_cost(info=info0, narrowing=narrowing0, site='local',
@@ -839,6 +841,12 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
     if _gate(held, estimate, confirm, steps):
         return held
 
+    # Each step's fingerprint — 64 KiB read per file — so the folder record can
+    # say exactly which inputs it was made from.
+    if provenance.active():
+        provenance.note_timesteps([
+            {"label": lab, "uri": p, "fingerprint": provenance.file_fingerprint(p),
+             "derived_from": provenance.parent_link(p)} for lab, p in files])
     per_step = []
     with timing.phase("materialize_timeseries", n=len(files)) as _m:
         total = 0

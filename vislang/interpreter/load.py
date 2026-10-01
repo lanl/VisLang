@@ -128,6 +128,8 @@ def _apply_post_ops(data, post_ops, positions):
                 if getattr(arr, 'shape', None) == mask.shape:
                     if not np.issubdtype(arr.dtype, np.floating):
                         arr = arr.astype(np.float32)   # ints can't hold NaN
+                        from vislang.runtime import provenance
+                        provenance.note_cast(var)      # the record says so
                     arr[~mask] = np.nan
                     data[var] = arr
         else:

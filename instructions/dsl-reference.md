@@ -104,10 +104,11 @@ stem, so `save(series, "roi.vti")` writes `roi/timestep#0.vti`,
 `roi/timestep#1.vti`, … The whole folder commits to one format before anything
 is written, so a series is never a mix.
 
-**Every output carries a provenance record** — source, identity, the spec, and
-the narrowing the interpreter actually ran — embedded in the file where the
-format allows, in a `.<name>.sieve-prov.json` beside it where it does not. Read
-it with `sieve provenance <file>`. See `vislang://instructions/provenance`.
+**Every output carries a provenance record** — a YAML document with the spec,
+the input's fingerprint, the output's `data_sha256`, and a plain-words
+explanation of each step — embedded in the file where the format allows, in a
+`.<name>.sieve-prov.yaml` beside it where it does not. Read it with the
+`provenance` tool. See `vislang://instructions/provenance`.
 
 ## render(node, cmap=None, opacity=None) -> (sink)
 Serve the headless k3d browser viewer; prints its URL. Renders everything the

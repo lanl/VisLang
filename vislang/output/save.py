@@ -36,7 +36,6 @@ result is itself a valid timeseries folder that source()/timesteps() can read
 back.
 """
 
-import json
 import os
 
 import numpy as np
@@ -72,8 +71,8 @@ _GIO_DTYPES = {np.dtype(t) for t in
 # built before the write (it needs only the resolved path and format) and hung
 # on `loaded.provenance`, because a VTK dataset has to have its field data set
 # BEFORE it is serialized — there is no reopening an XML file to add it. A
-# writer that embeds calls `_embedded(loaded, how)`; whatever is left unclaimed
-# falls back to a companion file.
+# writer that embeds calls `_embedded(loaded)`; a record left unclaimed falls
+# back to a companion file.
 
 PROV_KEY = "sieve_provenance"
 
@@ -83,109 +82,78 @@ def _prov(loaded):
     return getattr(loaded, "provenance", None)
 
 
-def _embedded(loaded, how):
+def _embedded(loaded):
     """Record that this artifact carries its record internally."""
-    rec = _prov(loaded)
-    if rec is not None:
-        rec.setdefault("output", {})["embedding"] = how
+    loaded.provenance_embedded = True
 
 
-def _ascii(s):
-    """VTK's string arrays reject non-ASCII outright, and HDF5 attributes are
-    happier without it. The record's own JSON is already escaped by json.dumps;
-    this is for the flat human-facing companions, which carry the summary's
-    arrows."""
-    return str(s).encode("ascii", "backslashreplace").decode("ascii")
+def _prov_blob(loaded, ascii=False):
+    """(record as YAML text, {"history": line}) for embedding, or (None, {}).
 
-
-def _prov_blob(loaded, how):
-    """(compact json, flat scalar attrs) for embedding, or (None, {}).
-
-    `how` is stamped into the record BEFORE it is serialized — otherwise the
-    copy written into the file would claim it was not embedded, while only the
-    in-memory object knew better."""
+    `ascii=True` for containers that refuse anything else (VTK string arrays)."""
     rec = _prov(loaded)
     if rec is None:
         return None, {}
     from vislang.runtime import provenance
-    _embedded(loaded, how)
-    flat = {"sieve_version": (rec.get("producer") or {}).get("version") or "",
-            "sieve_source": (rec.get("source") or {}).get("uri") or "",
-            "sieve_source_id": ((rec.get("source") or {}).get("identity")
-                                or {}).get("source_id") or "",
-            # CF-style: newest first, prepending anything the source carried, so
-            # a chain of processing steps stays visible to ordinary tooling.
-            "history": _history(loaded, rec)}
-    return provenance.to_json(rec, indent=None), {k: _ascii(v)
-                                                  for k, v in flat.items()}
+    # CF-style: newest first, prepending anything the source carried, so a
+    # chain of processing steps stays visible to ordinary tooling.
+    flat = {"history": _history(loaded, rec)}
+    return provenance.to_yaml(rec, ascii=ascii), flat
 
 
 def _history(loaded, rec):
-    line = (f"{rec.get('created')}: sieve {(rec.get('producer') or {}).get('version')}"
-            f" ({(rec.get('producer') or {}).get('commit')}): "
-            f"{(rec.get('transform') or {}).get('summary')}")
+    logical = rec.get("logical") or {}
+    sieve = logical.get("sieve") or {}
+    what = (rec.get("result_summary") or "").split("\n")[0]
+    line = (f"{(rec.get('realization') or {}).get('at')}: sieve "
+            f"{sieve.get('version')} ({sieve.get('commit')}): {what}")
     prior = (getattr(loaded, "attributes", None) or {}).get("history")
+    if isinstance(prior, bytes):
+        prior = prior.decode("utf-8", "replace")
     return f"{line}\n{prior}" if prior else line
 
 
 def _write_npz(out, loaded):
-    blob, flat = _prov_blob(loaded, "npz-key")
+    blob, _ = _prov_blob(loaded)
     extra = {}
     if blob is not None:
-        # Reserved keys, skipped by the npz reader so they never surface as
-        # variables. np.savez needs arrays, hence the 0-d wrapper.
+        # A reserved key, skipped by the npz reader so it never surfaces as a
+        # variable. np.savez needs arrays, hence the 0-d wrapper.
         extra[PROV_KEY] = np.array(blob)
-        extra.update({k: np.array(str(v)) for k, v in flat.items()})
+        _embedded(loaded)
     np.savez(out, **loaded.data, **extra)
 
 
 def _write_hdf5(out, loaded):
     import h5py
-    blob, flat = _prov_blob(loaded, "hdf5-attrs")
+    blob, flat = _prov_blob(loaded)
     with h5py.File(out, "w") as f:
         for name, arr in loaded.data.items():
-            dset = f.create_dataset(name, data=np.asarray(arr))  # "/" -> groups
-            _hdf5_var_attrs(dset, loaded, name)
+            f.create_dataset(name, data=np.asarray(arr))   # "/" -> groups
         if blob is not None:
-            _hdf5_attach(f, blob, flat, out)
+            _attach_attrs(f.attrs, blob, flat, out, loaded)
 
 
-def _hdf5_var_attrs(dset, loaded, name):
-    """Per-variable lineage, as attributes on the dataset itself."""
-    rec = _prov(loaded)
-    if rec is None:
-        return
-    import json as _json
-    v = (rec.get("variables") or {}).get(name) or {}
-    for key, attr in (("source_variable", "sieve_source_variable"),
-                      ("source_shape", "sieve_source_shape"),
-                      ("origin", "sieve_origin")):
-        if v.get(key) is not None:
-            dset.attrs[attr] = (v[key] if not isinstance(v[key], (list, dict))
-                                else _json.dumps(v[key]))
-
-
-# HDF5 rejects an attribute much past 64 KiB (the object header message cap).
-# A record that large goes to a companion file and leaves a pointer behind —
-# never a dataset, which would surface as a phantom variable on read-back.
+# HDF5 rejects an attribute much past 64 KiB (the object header message cap),
+# and netCDF-4 is HDF5 underneath. A record that large goes to a companion file
+# and leaves a pointer behind — never a dataset, which would surface as a
+# phantom variable on read-back.
 _ATTR_MAX = 60_000
 
 
-def _hdf5_attach(f, blob, flat, out):
-    import json as _json
-    if len(blob) > _ATTR_MAX:
-        f.attrs[PROV_KEY] = _json.dumps(
-            {"sieve_provenance": 1, "truncated": True,
-             "sidecar": os.path.basename(_sidecar_name(out))})
-    else:
-        f.attrs[PROV_KEY] = blob
-    for k, v in flat.items():
-        f.attrs[k] = v
-
-
-def _sidecar_name(out):
+def _attach_attrs(attrs, blob, flat, out, loaded, setter=None):
+    """Put the record (or, if it is too big, a pointer to its companion file)
+    into an attribute set. Only a record that actually fits counts as embedded,
+    so an oversized one still gets its companion written by _finish_provenance."""
     from vislang.runtime import provenance
-    return provenance.sidecar_path(out)
+    put = setter or attrs.__setitem__
+    if len(blob.encode("utf-8")) > _ATTR_MAX:
+        put(PROV_KEY, provenance.stub_text(out))
+    else:
+        put(PROV_KEY, blob)
+        _embedded(loaded)
+    for k, v in flat.items():
+        put(k, v)
 
 
 # Run in a child process (see _write_genericio). argv: cols.npz, out, meta-json.
@@ -403,12 +371,18 @@ def _write_vtk(out, loaded):
     # Field data is arrays not tied to points or cells — where a VTK dataset
     # carries its metadata. Must be set before serialization; there is no
     # reopening an XML file to add it.
-    blob, flat = _prov_blob(
-        loaded, "vtkhdf-attrs" if ext == ".vtkhdf" else "vtk-fielddata")
+    # VTK's string arrays reject non-ASCII outright, hence the ASCII rendering.
+    #
+    # Legacy `.vtk` gets no record in-file: its reader's information pass scans
+    # the file's words for keywords (DIMENSIONS, SPACING, ORIGIN), field data
+    # included, so a spec comment like `# dimensions 302 302 302` would be read
+    # as the grid's shape. Free text cannot ride safely there; the companion
+    # file takes it.
+    blob, _ = (None, {}) if ext == ".vtk" else _prov_blob(loaded, ascii=True)
     if blob is not None:
         mesh.field_data[PROV_KEY] = np.array([blob])
-        for k, v in flat.items():
-            mesh.field_data[k] = np.array([str(v)])
+        if ext != ".vtkhdf":
+            _embedded(loaded)    # .vtkhdf claims it only once the attach lands
 
     if ext == ".vtkhdf":
         # pyvista's save() rejects .vtkhdf for ImageData (it is PolyData-only
@@ -420,20 +394,20 @@ def _write_vtk(out, loaded):
         if not writer.Write():
             raise RuntimeError(f"vtkHDFWriter failed to write {out}")
         if blob is not None:
-            _vtkhdf_attach(out, blob, flat, loaded)
+            _vtkhdf_attach(out, blob, loaded)
         return
     mesh.save(out)
 
 
-def _vtkhdf_attach(out, blob, flat, loaded):
+def _vtkhdf_attach(out, blob, loaded):
     """Write the record into a .vtkhdf after VTK has closed it.
 
     vtkHDFWriter emits no FieldData group at all for ImageData (PolyData is
     fine), so anything set on the mesh is silently dropped for grids. A .vtkhdf
     is HDF5 underneath, so we reopen and attach directly. Both a FieldData
     dataset — picked up by readers that look there — and a plain attribute,
-    which nothing can drop. Failure falls back to a companion file rather than
-    losing the record."""
+    which nothing can drop. Failure leaves the record unclaimed, so the
+    companion file takes over rather than losing it."""
     try:
         import h5py
         with h5py.File(out, "r+") as f:
@@ -443,15 +417,9 @@ def _vtkhdf_attach(out, blob, flat, loaded):
                 del fd[PROV_KEY]
             fd.create_dataset(PROV_KEY, data=np.array([blob],
                                                       dtype=h5py.string_dtype()))
-            grp.attrs[PROV_KEY] = blob
-            for k, v in flat.items():
-                grp.attrs[k] = str(v)
-    except Exception as e:
-        # Clear the optimistic marker so the companion file takes over.
-        rec = _prov(loaded)
-        if rec is not None:
-            rec.setdefault("output", {})["embedding"] = None
-            rec["output"]["embedding_error"] = f"{type(e).__name__}: {e}"
+            _attach_attrs(grp.attrs, blob, {}, out, loaded)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -494,10 +462,9 @@ def _write_netcdf4(out, loaded):
     """Write as netCDF-4: named dimensions, coordinate variables where geometry
     is known, and the provenance record as conventional attributes."""
     from netCDF4 import Dataset
-    blob, flat = _prov_blob(loaded, "netcdf4-attrs")
+    blob, flat = _prov_blob(loaded)
     model, _ = _vtk_model(loaded)
     geom = getattr(loaded, "geometry", None) or {}
-    rec = _prov(loaded)
 
     with Dataset(out, "w", format="NETCDF4") as ds:
         if model == "uniform":
@@ -533,24 +500,10 @@ def _write_netcdf4(out, loaded):
             var = ds.createVariable(vname, arr.dtype, dims)
             var[...] = arr
             if vname != name:
-                var.sieve_source_variable = name
-            if rec is not None:
-                _nc_var_attrs(var, rec, name)
+                var.sieve_source_variable = name    # data, not provenance
 
         if blob is not None:
-            ds.setncattr(PROV_KEY, blob)
-            for k, v in flat.items():
-                ds.setncattr(k, v)
-
-
-def _nc_var_attrs(var, rec, name):
-    v = (rec.get("variables") or {}).get(name) or {}
-    if v.get("source_variable") and not hasattr(var, "sieve_source_variable"):
-        var.sieve_source_variable = str(v["source_variable"])
-    if v.get("source_shape"):
-        var.sieve_source_shape = json.dumps(v["source_shape"])
-    if v.get("origin"):
-        var.sieve_origin = str(v["origin"])
+            _attach_attrs(None, blob, flat, out, loaded, setter=ds.setncattr)
 
 
 # Writer format key -> the writer. Every entry takes (out, loaded).
@@ -598,7 +551,7 @@ def _resolve(path, source_filetype):
     return fmt, out, False
 
 
-def _begin_provenance(loaded, out, fmt, requested, degraded_from=None, label=None):
+def _begin_provenance(loaded, out, fmt, step=None, degraded_from=None):
     """Build the record and hang it on `loaded` so the writer can embed it.
 
     Returns None whenever no run is open — which is what keeps the remote
@@ -606,9 +559,10 @@ def _begin_provenance(loaded, out, fmt, requested, degraded_from=None, label=Non
     files."""
     try:
         from vislang.runtime import provenance
-        rec = provenance.record(loaded, out, fmt, requested=requested,
-                                degraded_from=degraded_from, label=label)
+        rec = provenance.record(loaded, out, fmt, step=step,
+                                degraded_from=degraded_from)
         loaded.provenance = rec
+        loaded.provenance_embedded = False
         return rec
     except Exception:
         return None                   # provenance must never break a save
@@ -622,10 +576,8 @@ def _finish_provenance(loaded, out):
         return ""
     try:
         from vislang.runtime import provenance
-        how = (rec.get("output") or {}).get("embedding")
-        if how:
-            err = (rec.get("output") or {}).get("embedding_error")
-            return f"; provenance in-file{f' ({err})' if err else ''}"
+        if getattr(loaded, "provenance_embedded", False):
+            return "; provenance in-file"
         side = provenance.write_sidecar(out, rec)
         # The companion file is dot-prefixed and therefore invisible in `ls`, so
         # the save message has to name it or nobody learns it exists.
@@ -634,25 +586,27 @@ def _finish_provenance(loaded, out):
         return ""
     finally:
         loaded.provenance = None
+        loaded.provenance_embedded = False
 
 
 def read_embedded(path):
-    """Pull an embedded record out of `path`, or None.
+    """The record text embedded in `path`, or None.
 
     Sniffs by extension then by content, so a caller never has to know which
-    container it is holding."""
+    container it is holding. A pointer to a companion file comes back as-is;
+    provenance.record_text follows it."""
     ext = os.path.splitext(path)[1].lower()
     try:
         if ext == ".npz":
             with np.load(path, allow_pickle=False) as z:
                 if PROV_KEY in z.files:
-                    return json.loads(str(z[PROV_KEY]))
+                    return str(z[PROV_KEY])
             return None
         if ext in (".vti", ".vtp", ".vtk", ".vtr", ".vts"):
             import pyvista as pv
             fd = pv.read(path).field_data
             if PROV_KEY in fd:
-                return json.loads(str(np.asarray(fd[PROV_KEY])[0]))
+                return str(np.asarray(fd[PROV_KEY])[0])
             return None
         # HDF5-family: plain HDF5, netCDF-4 and .vtkhdf are all HDF5 underneath,
         # so one reader covers all three — the record is a root attribute, or a
@@ -665,10 +619,15 @@ def read_embedded(path):
                 raw = holder.attrs.get(PROV_KEY)
                 if raw is None:
                     continue
-                rec = json.loads(raw if isinstance(raw, str) else raw.decode())
-                if rec.get("truncated"):
-                    return None            # the companion file holds the real one
-                return rec
+                # h5py hands back a str for its own variable-length attributes,
+                # bytes for the fixed-length NC_CHAR ones netCDF writes for
+                # ASCII text, and a one-element array for the NC_STRING it
+                # writes for anything else.
+                if isinstance(raw, np.ndarray):
+                    raw = raw.reshape(-1)[0] if raw.size else None
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8", "replace")
+                return None if raw is None else str(raw)
     except Exception:
         return None
     return None
@@ -692,7 +651,7 @@ def save_loaded(loaded, path):
         if blocker is not None:
             if explicit:
                 raise ValueError(f"cannot write {out} as VTK: {blocker}")
-            degraded = fmt
+            degraded = "VTK"
             fmt, out, _ = _resolve(path, "npz")
             note = f" (cannot write VTK: {blocker}; wrote npz)"
     elif fmt == "genericio":
@@ -703,7 +662,7 @@ def save_loaded(loaded, path):
                 # why provenance is handled at BOTH exits. A hook placed only
                 # after the writer dispatch would miss the one format that has no
                 # in-file slot at all.
-                _begin_provenance(loaded, out, "genericio", path)
+                _begin_provenance(loaded, out, "genericio")
                 _write_genericio(out, loaded)
                 extra = _finish_provenance(loaded, out)
                 print(f"[save] wrote {len(loaded.data)} array(s) as genericio "
@@ -715,10 +674,10 @@ def save_loaded(loaded, path):
                 blocker = f"{type(e).__name__}: {e}"   # never lose the result
         elif explicit:
             raise ValueError(f"cannot write {out} as GenericIO: {blocker}")
-        degraded = fmt
+        degraded = "GenericIO"
         fmt, out, _ = _resolve(path, "npz")            # degrade, saying why
         note = f" (cannot write GenericIO: {blocker}; wrote npz)"
-    _begin_provenance(loaded, out, fmt, path, degraded_from=degraded)
+    _begin_provenance(loaded, out, fmt, degraded_from=degraded)
     _WRITERS[fmt](out, loaded)
     note += _finish_provenance(loaded, out)
     print(f"[save] wrote {len(loaded.data)} array(s) as {fmt} -> {out}{note}")
@@ -753,6 +712,7 @@ def save_timeseries(per_step, path, source_filetype):
     os.makedirs(path, exist_ok=True)
 
     note = ""
+    degraded = None
     if fmt == "npz" and not explicit and source_filetype not in (None, "npz"):
         note = f" (no writer for {source_filetype}; wrote npz)"
     elif fmt in ("genericio", "vtk"):
@@ -772,20 +732,24 @@ def save_timeseries(per_step, path, source_filetype):
         if blocker:
             if explicit:
                 raise ValueError(f"cannot write {path}/ as {label_fmt}: {blocker}")
+            degraded = label_fmt
             fmt, ext = "npz", _FORMAT_EXT["npz"]
             note = f" (cannot write {label_fmt}: {blocker}; wrote npz)"
 
     for label, loaded in per_step:
         step_out = os.path.join(path, f"timestep#{label}{ext}")
         # Each step embeds its own record where the format allows, so a single
-        # file lifted out of the folder still carries one.
-        _begin_provenance(loaded, step_out, fmt, path, label=f"timestep#{label}")
+        # file lifted out of the folder still carries one. Where it cannot
+        # (GenericIO), the folder record below lists the step: a companion file
+        # per step would be enumerated by timeseries discovery.
+        _begin_provenance(loaded, step_out, fmt, step=label, degraded_from=degraded)
         _WRITERS[fmt](step_out, loaded)
         loaded.provenance = None
-    # Plus ONE folder-level record. A companion file per step would be
-    # enumerated by timeseries discovery and break the folder.
-    last = per_step[-1][1]
-    _begin_provenance(last, path, fmt, path, label=f"{len(per_step)} timestep(s)")
-    note += _finish_provenance(last, path)
+    # Plus ONE folder-level record, naming every step in and out.
+    from vislang.runtime import provenance
+    side = provenance.write_sidecar(
+        path, provenance.record_series(per_step, path, fmt, degraded_from=degraded))
+    if side:
+        note += f"; provenance -> {os.path.basename(side)}"
     print(f"[save] wrote {len(per_step)} timestep(s) as {fmt} -> {path}/{note}")
     return path

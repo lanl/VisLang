@@ -79,7 +79,7 @@ def remote_probe(connection, remote_path):
     Those were three separate ssh invocations. One command answers all of it, and
     the answer is cached for the rest of the run so the second asker pays nothing.
 
-    Returns {'kind', 'size', 'mtime', 'header_md5', 'nbytes'} or None. `-L`
+    Returns {'kind', 'size', 'mtime', 'header_sha256', 'nbytes'} or None. `-L`
     throughout: a symlink is a way of naming data, not a kind of data, so every
     fact here is the target's."""
     if not connection.batch_ok:
@@ -93,14 +93,14 @@ def remote_probe(connection, remote_path):
     # the hash is meaningless there and no caller uses it.
     out = _ssh_query(connection.target,
                      f"stat -Lc '%F|%s|%Y' {q}; head -c {_HEADER_BYTES} {q} "
-                     f"2>/dev/null | md5sum")
+                     f"2>/dev/null | sha256sum")
     if not out:
         return None
     lines = [ln for ln in out.splitlines() if ln.strip()]
     try:
         kind, size, mtime = lines[0].split("|")
         info = {"kind": kind.strip(), "size": int(size), "mtime": int(float(mtime)),
-                "header_md5": (lines[1].split()[0] if len(lines) > 1 else None),
+                "header_sha256": (lines[1].split()[0] if len(lines) > 1 else None),
                 "nbytes": _HEADER_BYTES}
     except (IndexError, ValueError):
         return None
@@ -604,8 +604,9 @@ def remote_stat(connection, remote_path):
 
 
 def remote_header_hash(connection, remote_path, nbytes=_HEADER_BYTES):
-    """md5 of just the file's first nbytes — cheap identity for the catalog
-    without hashing a multi-GB file. None if unavailable.
+    """sha256 of just the file's first nbytes — cheap identity for the catalog
+    (and the provenance record's input fingerprint) without hashing a multi-GB
+    file. None if unavailable.
 
     Served from `remote_probe`'s cache when this run already probed the path AND
     asked for the same window; a different `nbytes` is a different question, so it
@@ -613,10 +614,10 @@ def remote_header_hash(connection, remote_path, nbytes=_HEADER_BYTES):
     if not connection.batch_ok:
         return None
     hit = _PROBE_CACHE.get((connection.target, remote_path))
-    if hit is not None and hit.get("nbytes") == int(nbytes) and hit.get("header_md5"):
-        return hit["header_md5"]
+    if hit is not None and hit.get("nbytes") == int(nbytes) and hit.get("header_sha256"):
+        return hit["header_sha256"]
     out = _ssh_query(connection.target,
-                     f"head -c {int(nbytes)} {shlex.quote(remote_path)} | md5sum")
+                     f"head -c {int(nbytes)} {shlex.quote(remote_path)} | sha256sum")
     return out.split()[0] if out else None
 
 
