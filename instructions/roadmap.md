@@ -64,6 +64,25 @@ message), and known optimizations:
   same-size rewrite with an unchanged head — is stated in
   `instructions/provenance.md`.
 
+## Per-timestep regions — v1 realized
+`region(series, center={N: …} | track="f.csv", size=S)` cuts each timestep with
+its own box (centre ± size/2, index space on grids, world space on points),
+checked for coverage before any read and recorded per timestep in provenance.
+Follow-ups:
+- **Non-`#N` timeseries naming**: the wildfire run (`output.N.vts`) and HACC
+  (per-step directories, where `#N` is a rank partition) are not `#N` folders;
+  today they need a symlink folder. A naming pattern on `source()` would remove
+  that step (local listing and the remote `find` both need it).
+- **Periodic wrap-around** for cosmology boxes (a halo across the box edge needs
+  a box in two pieces, which `BBox` cannot express).
+- **Superset reuse for moving boxes**: the catalog keys each timestep on its
+  centre and reuses only exact matches; a grown box could slice a cached one.
+- **Geometry on the catalog route**: per-timestep `DatasetInfo` built from the
+  cached schema carries no `geometry`, so grid boxes saved on that route land at
+  the index origin (an existing gap, sharper now that boxes move).
+- **Curvilinear output** (`.vts`) so terrain-following grids keep their point
+  positions through the crop.
+
 ## Provenance — now realized (`sieve-provenance/2`)
 Every output carries a YAML record split into `logical` (the spec, the input's
 fingerprint, choices resolved at run time, the output's `data_sha256`, the

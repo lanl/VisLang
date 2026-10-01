@@ -37,6 +37,37 @@ Crop to a per-axis range.
 - **Point data:** a **world-coordinate** bounding box on the coordinate variables
   (`info.positions`) — keep points whose coords fall in the box.
 
+### A box that moves per timestep: region(node, center=..., size=...) | region(node, track=..., size=...)
+Over a **folder (timeseries)**, give each timestep its own box by its centre:
+```python
+box = region(series, center={279: (524.99, 174.51, 781.43),
+                             300: (526.10, 175.02, 780.88)}, size=30)
+box = region(series, track="halo_track.csv", size=30)      # the same, from a file
+```
+- The box is **centre ± size/2**, in the coordinates `region` already uses:
+  **cell indices on grids**, **world coordinates on point data**.
+- `center` maps the `#N` timestep label to `(x, y)` or `(x, y, z)`. `size` is
+  one number or one per coordinate; `None` keeps that axis whole, and an axis
+  the centre leaves out is kept whole (a fire tracked on `(x, y)` keeps every
+  vertical level).
+- `track` is a CSV with header `step,x,y` or `step,x,y,z` (blank lines and `#`
+  comments allowed), one row per timestep, path relative to the working
+  directory. The planner reads it once, before any data read, inlines its rows
+  into the plan (so a remote run never needs the file) and records its sha256
+  in provenance.
+- Give exactly one of axis ranges, `center=` or `track=`; `size` only goes with
+  the latter two. A single-file source raises — use a fixed `region(x=…)`.
+- **Checked before any bulk read:** every selected timestep needs a centre (drop
+  timesteps with `timesteps(...)`; a track longer than the selection is fine),
+  and a centre for a timestep that is not in the folder raises.
+- A grid box crossing the edge is **clipped** to the grid and the clip is
+  reported; a box with nothing left raises. Point boxes are not clipped, and
+  periodic wrap-around (a halo straddling a cosmology box edge) is not handled.
+- The dry run lists each timestep's box; every output's provenance records them
+  under `resolved.region_boxes`. Over a remote folder the extent catalog keys
+  each timestep on its own centre, so it reuses a cached box only on an exact
+  match.
+
 ## subsample(node, factor) | subsample(node, x=…, y=…, z=…) -> node
 Reduce resolution. A factor is an **int stride** (keep every f-th) or a **float
 fraction** in (0,1]. A single `factor` is uniform; per-axis `x=/y=/z=` is for

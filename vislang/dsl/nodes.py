@@ -42,9 +42,23 @@ class FieldsNode(Node):
 
 @dataclass(frozen=True)
 class RegionNode(Node):
+    # A fixed box (`ranges`: (axis, lo, hi) per axis), OR a box that moves with
+    # the timestep: `centers` rows (label, cx, cy[, cz]) plus a per-axis `size`
+    # (None = keep that axis whole). `track` names the CSV the centres came from
+    # and `track_sha` its hash; the planner inlines the rows before any read, so
+    # the plan carries data, never a path the remote cannot see.
     upstream: Node
-    ranges: tuple
+    ranges: tuple = ()
+    centers: tuple = ()
+    size: tuple = ()
+    track: str = None
+    track_sha: str = None
     kind = "region"
+
+    @property
+    def per_step(self):
+        """True when the box differs per timestep (centres or a track file)."""
+        return bool(self.centers) or self.track is not None
 
 
 @dataclass(frozen=True)

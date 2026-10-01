@@ -327,6 +327,28 @@ def note_timesteps(steps):
         pass
 
 
+def note_region_box(label, boxes):
+    """The concrete box a per-timestep region resolved to at timestep `label`:
+    boxes is [(ranges, clipped_axes)], one per moving region in the chain."""
+    if _pipe is None:
+        return
+    try:
+        _pipe.setdefault("region_boxes", {})[int(label)] = [
+            {"box": {a: [lo, hi] for a, lo, hi in ranges},
+             **({"clipped": list(clipped)} if clipped else {})}
+            for ranges, clipped in boxes]
+    except Exception:
+        pass
+
+
+def note_region_track(tracks):
+    """Track files the planner read for per-timestep regions: [{path, sha256}].
+    Noted after resolution, because the plan stashed at scope open predates it."""
+    if _pipe is None or not tracks:
+        return
+    _pipe["region_track"] = list(tracks)
+
+
 def note_columns_from(groups):
     """How each output column arrived: {group: {columns, ...}} — `cache`,
     `remote`, `local`, `fetched_whole_file`. Realization, not logic."""
@@ -471,6 +493,18 @@ def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
             drop = [c for c in avail if c not in keep]
             head = f"keep {_names(keep)}" + (f"; drop {_names(drop)}" if drop else "")
             avail = keep
+        elif kind == "region" and "centers" in step:
+            size = ", ".join("whole" if v is None else _num(v)
+                             for v in step.get("size") or [])
+            head = (f"keep a box of size ({size}) centred on each timestep's "
+                    f"own centre")
+            src = (f"centres from {os.path.basename(step['track'])}"
+                   if step.get("track") else
+                   f"{len(step.get('centers') or [])} centres given in the spec")
+            more = [f"  {src}; "
+                    + ("index space, clipped to the grid" if grid
+                       else "world coordinates")
+                    + "; the box per timestep is under resolved.region_boxes"]
         elif kind == "region":
             ranges = step.get("ranges") or []
             if grid:
@@ -743,6 +777,18 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
              and comp[v].get("method") == "SPERR"}
     if modes:
         resolved["compress_mode"] = modes
+    boxes = _pipe.get("region_boxes") or {}
+    if boxes:
+        labels = [int(lab) for lab, _ in per_step if lab is not None]
+        mine = {lab: boxes[lab] for lab in labels if lab in boxes}
+        if mine:
+            # One moving region is the common case: flatten its list so the
+            # record reads `#279: {box: {x: [lo, hi], …}}`.
+            resolved["region_boxes"] = {lab: (v[0] if len(v) == 1 else v)
+                                        for lab, v in mine.items()}
+    tracks = _pipe.get("region_track") or []
+    if tracks:
+        resolved["region_track"] = tracks[0] if len(tracks) == 1 else tracks
 
     # --- output ------------------------------------------------------------
     out = {"format": out_fmt}

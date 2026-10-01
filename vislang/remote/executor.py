@@ -246,16 +246,22 @@ def _run_folder(text, outdir):
     return 0
 
 
-def _reroot(narrowing_nodes, path, positions, keep):
+def _reroot(narrowing_nodes, path, positions, keep, label=None, info=None):
     """Re-root the folder's narrowing forms (region/subsample/threshold, already
     validated) onto ONE timestep file, ending in a projection to `keep`. Used by
-    the catalog delta path to fetch just the missing variables of one timestep."""
-    from vislang.dsl.nodes import (SourceNode, RegionNode, SubsampleNode,
+    the catalog delta path to fetch just the missing variables of one timestep.
+    A per-timestep region becomes timestep `label`'s own box first (`info` is
+    that file's schema, which decides grid-vs-points and the grid to clip to)."""
+    import dataclasses
+    from vislang.dsl.nodes import (SourceNode, SubsampleNode,
                                  ThresholdNode, FieldsNode)
+    if any(nn.kind == "region" and nn.per_step for nn in narrowing_nodes):
+        from vislang.interpreter.planner import _boxes_at
+        narrowing_nodes, _ = _boxes_at(info, narrowing_nodes, label, [])
     node = SourceNode(uri=path, positions=positions)
     for nn in narrowing_nodes:
         if nn.kind == "region":
-            node = RegionNode(upstream=node, ranges=nn.ranges)
+            node = dataclasses.replace(nn, upstream=node)
         elif nn.kind == "subsample":
             node = SubsampleNode(upstream=node, uniform=nn.uniform, per_axis=nn.per_axis)
         elif nn.kind == "threshold":
@@ -293,6 +299,7 @@ def _run_folder_delta(text, manifest_path, outdir):
     src_node = chain[0]
     narrowing = [n for n in chain[1:]
                  if n.kind in ("region", "subsample", "threshold")]
+    moving = any(n.kind == "region" and n.per_step for n in narrowing)
 
     try:
         manifest = _json.loads(open(manifest_path).read())
@@ -314,14 +321,17 @@ def _run_folder_delta(text, manifest_path, outdir):
             if path is None:
                 return _fail(f"manifest names timestep #{label} not present in "
                              f"{src_node.uri}")
-            if schema is None:
+            info = None
+            if schema is None or moving:
                 info = inspect_file(path, positions=src_node.positions)
+            if schema is None:
                 schema = {"variables": list(info.variables),
                           "dimensions": dict(info.dimensions or {}),
                           "positions": list(info.positions) if info.positions else None,
                           "filetype": info.filetype}
             reset_sinks()
-            terminal_file = save(_reroot(narrowing, path, src_node.positions, keep), tmp)
+            terminal_file = save(_reroot(narrowing, path, src_node.positions, keep,
+                                         label=label, info=info), tmp)
             try:
                 held = _held_reason(plan_pipeline(terminal_file, dry_run=False,
                                                   confirm=_CONFIRMED))

@@ -81,7 +81,13 @@ def _ser_fields(n):
 
 
 def _ser_region(n):
-    return {"kind": "region", "ranges": [_as_list(r) for r in n.ranges]}
+    out = {"kind": "region", "ranges": [_as_list(r) for r in n.ranges]}
+    if n.per_step:
+        # A moving box: the centre table travels inline (the planner resolves a
+        # track file before shipping). A fixed box keeps the old shape exactly.
+        out.update(centers=[_as_list(r) for r in n.centers],
+                   size=_as_list(n.size), track=n.track, track_sha=n.track_sha)
+    return out
 
 
 def _ser_subsample(n):
@@ -131,6 +137,11 @@ _STEP_KEYS = {
     "timesteps": frozenset(("kind", "start", "stop")),
 }
 
+# keys a kind MAY carry on top of _STEP_KEYS (absent = the old wire shape)
+_OPTIONAL_KEYS = {
+    "region": frozenset(("centers", "size", "track", "track_sha")),
+}
+
 
 # ---------------------------------------------------------------------------
 # validate: per-kind checks; `where` prefixes every error with chain position
@@ -168,7 +179,41 @@ def _val_fields(s, where):
         _fail(where, f"'keep' must be a non-empty list of strings, got {keep!r}")
 
 
+def _val_region_per_step(s, where):
+    if s["ranges"]:
+        _fail(where, "a region has either 'ranges' or 'centers', not both")
+    if set(s) != _STEP_KEYS["region"] | _OPTIONAL_KEYS["region"]:
+        _fail(where, "a per-timestep region needs centers, size, track and track_sha")
+    centers, size, track = s["centers"], s["size"], s["track"]
+    if track is not None and not (isinstance(track, str) and track):
+        _fail(where, f"'track' must be a path string or null, got {track!r}")
+    if s["track_sha"] is not None and not isinstance(s["track_sha"], str):
+        _fail(where, f"'track_sha' must be a string or null, got {s['track_sha']!r}")
+    if not _is_seq(centers) or (not centers and track is None):
+        _fail(where, f"'centers' must be a list of [label, x, y(, z)] rows, got {centers!r}")
+    ndim = None
+    for r in centers:
+        if not _is_seq(r) or len(r) not in (3, 4):
+            _fail(where, f"each centre must be [label, x, y(, z)], got {r!r}")
+        if isinstance(r[0], bool) or not isinstance(r[0], int):
+            _fail(where, f"centre label must be an integer, got {r[0]!r}")
+        if not all(_is_num(c) for c in r[1:]):
+            _fail(where, f"centre coordinates must be numbers, got {r!r}")
+        if ndim is not None and len(r) - 1 != ndim:
+            _fail(where, "every centre needs the same number of coordinates")
+        ndim = len(r) - 1
+    if len({r[0] for r in centers}) != len(centers):
+        _fail(where, "a timestep label appears in more than one centre")
+    if not _is_seq(size) or not size or not all(
+            v is None or (_is_num(v) and v > 0) for v in size):
+        _fail(where, f"'size' must be a list of positive numbers or nulls, got {size!r}")
+    if ndim is not None and len(size) != ndim:
+        _fail(where, f"'size' has {len(size)} entries for {ndim}-D centres")
+
+
 def _val_region(s, where):
+    if set(s) & _OPTIONAL_KEYS["region"]:
+        return _val_region_per_step(s, where)
     ranges = s["ranges"]
     if not _is_seq(ranges) or not ranges:
         _fail(where, f"'ranges' must be a non-empty list, got {ranges!r}")
@@ -288,9 +333,10 @@ def _validate_plan(plan):
             _fail(where, f"chain must start with a source, got {kind!r}")
         if i > 0 and kind == "source":
             _fail(where, "source is only allowed at the head of the chain")
-        if set(step) != _STEP_KEYS[kind]:
+        allowed = _STEP_KEYS[kind] | _OPTIONAL_KEYS.get(kind, frozenset())
+        if not _STEP_KEYS[kind] <= set(step) <= allowed:
             missing = sorted(_STEP_KEYS[kind] - set(step))
-            extra = sorted(set(step) - _STEP_KEYS[kind])
+            extra = sorted(set(step) - allowed)
             _fail(where, f"({kind}) bad keys: missing {missing}, unknown {extra}")
         _VALIDATORS[kind](step, f"{where} ({kind})")
 
@@ -309,6 +355,10 @@ def _build_fields(s, up):
 
 
 def _build_region(s, up):
+    if "centers" in s:
+        return RegionNode(upstream=up, centers=tuple(tuple(r) for r in s["centers"]),
+                          size=tuple(s["size"]), track=s["track"],
+                          track_sha=s["track_sha"])
     return RegionNode(upstream=up, ranges=tuple(tuple(r) for r in s["ranges"]))
 
 
@@ -421,6 +471,10 @@ def describe_plan(plan):
             parts.append(f"source({step.get('uri')})")
         elif kind == "fields":
             parts.append("fields[" + ",".join(step.get("keep") or []) + "]")
+        elif kind == "region" and step.get("centers") is not None:
+            src = f",track={step['track']}" if step.get("track") else ""
+            parts.append(f"region{{center×{len(step['centers'])},"
+                         f"size={step.get('size')}{src}}}")
         elif kind == "region":
             parts.append("region{" + ",".join(
                 f"{a}:({lo},{hi})" for a, lo, hi in step.get("ranges") or []) + "}")

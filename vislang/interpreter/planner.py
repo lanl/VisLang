@@ -35,7 +35,7 @@ import re
 
 import vislang.runtime.timing as timing        # per-phase seconds/bytes -> timings.jsonl
 import vislang.runtime.provenance as provenance  # the derivation record -> the artifact
-from vislang.dsl.nodes import SourceNode, upstream_of
+from vislang.dsl.nodes import SourceNode, RegionNode, upstream_of
 from vislang.formats.inspect import inspect_file
 from vislang.interpreter.load import materialize
 from vislang.interpreter.compress import compress as _compress
@@ -80,6 +80,9 @@ def _describe_ast(chain):
             parts.append(f"source({os.path.basename(n.uri.rstrip('/')) or n.uri})")
         elif k == "fields":
             parts.append(f"fields[{','.join(n.keep)}]")
+        elif k == "region" and n.per_step:
+            from vislang.interpreter.track import describe
+            parts.append(describe(n))
         elif k == "region":
             parts.append("region{" + ",".join(f"{a}:({lo},{hi})"
                                                for a, lo, hi in n.ranges) + "}")
@@ -326,6 +329,13 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
     ts_nodes = [n for n in middle if n.kind == "timesteps"]
     middle = [n for n in middle if n.kind != "timesteps"]
 
+    # A region that moves per timestep: read any track file NOW, on the host and
+    # before dispatch, so every route (local, remote batch, catalog delta) sees
+    # the centres inline and the plan ships data rather than a local path.
+    from vislang.interpreter.track import resolve_tracks, per_step_regions
+    middle = resolve_tracks(middle)
+    moving = per_step_regions(middle)
+
     # One measured record per sink (vislang_timing): the forms as written, the
     # site chosen, and every phase timed inside it. No-op when timing is off.
     # The provenance scope is opened from `terminal`, not from `src`: on the
@@ -339,6 +349,9 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
                                     min(n.stop for n in ts_nodes)]
                                    if ts_nodes else None)), \
             provenance.pipeline(terminal):
+        provenance.note_region_track([
+            {"path": os.path.abspath(n.track), "sha256": n.track_sha}
+            for n in moving if n.track])
         # A FOLDER source is a timeseries: map the single-file chain over its
         # timestep files (named `…#N`). This holds for a remote folder as much as a
         # local one — we detect it locally with an os.path check, or remotely with a
@@ -351,7 +364,7 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
             # zero-network (as _plan_remote does): there timesteps() is the folder
             # signal — it applies only to a folder — else we preview the single-file
             # plan. The actual run probes and dispatches for real.
-            is_folder = (bool(ts_nodes) if (dry_run or sink is None)
+            is_folder = (bool(ts_nodes or moving) if (dry_run or sink is None)
                          else remote_is_dir(src.uri))
         else:
             is_folder = os.path.isdir(src.uri)
@@ -363,6 +376,11 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
         elif ts_nodes:
             raise ValueError("timesteps() applies only to a folder (timeseries) "
                              f"source; {src.uri!r} is a single file.")
+        elif moving:
+            raise ValueError("region(center=/track=...) gives a box per timestep, "
+                             "so it needs a folder (timeseries) source; "
+                             f"{src.uri!r} is a single file. Use an ordinary "
+                             "region(x=..., y=...) here.")
         elif remote_src:
             result = _plan_remote(src, middle, sink, terminal, dry_run, confirm)
         else:
@@ -593,12 +611,34 @@ def _finish(loaded, pending_compress, sink, result):
     return result
 
 
-def _lower(info, middle, steps):
+def _boxes_at(info, middle, label, steps):
+    """Swap each per-timestep region in `middle` for timestep `label`'s concrete
+    box, so the rest of lowering sees an ordinary fixed region. `label=None`
+    (pricing or checking a series against one schema) uses each region's first
+    centre. Returns (middle, boxes) with boxes [(ranges, clipped_axes)]."""
+    from vislang.interpreter.track import box_for_step
+    grid = (info.dimensions or {}).get("grid") if _modality(info) == "grid" else None
+    out, boxes = [], []
+    for n in middle:
+        if isinstance(n, RegionNode) and n.per_step:
+            lab = label if label is not None else n.centers[0][0]
+            n, clipped = box_for_step(n, lab, grid)
+            boxes.append((n.ranges, clipped))
+            if clipped:
+                steps.append(f"region at #{lab}: box clipped to the grid edge on "
+                             f"{', '.join(clipped)}")
+        out.append(n)
+    return out, boxes
+
+
+def _lower(info, middle, steps, label=None):
     """Classify + lower the middle forms against ONE file's schema into a single
     fused Narrowing (+ any trailing compress nodes). No read happens here, so the
     folder/timeseries loop can call it once per timestep. Appends human-readable
     steps. `middle` must not contain timesteps() nodes — those are a time-axis
-    selector consumed before the loop, not a per-file narrowing."""
+    selector consumed before the loop, not a per-file narrowing. `label` is the
+    timestep being lowered; it picks the box of a per-timestep region."""
+    middle, _ = _boxes_at(info, middle, label, steps)
     modality = _modality(info)
     caps = adapter_capabilities(info)
     slab = "pushdown" if caps["strided_read"] else "in-memory slice"
@@ -786,6 +826,31 @@ def _plan_local(src, middle, sink, terminal, dry_run, source_uri, steps, confirm
     return result
 
 
+def _box_lines(info, middle, labels, limit=12):
+    """Dry-run text: the box each timestep would get, from one schema (a series
+    shares its grid shape). Shows the first `limit` timesteps."""
+    from vislang.interpreter.track import box_for_step, per_step_regions
+    grid = (info.dimensions or {}).get("grid") if _modality(info) == "grid" else None
+    lines = []
+    for n in per_step_regions(middle):
+        lines.append("per-timestep region boxes ("
+                     + ("index space, clipped to the grid" if grid is not None
+                        else "world coordinates") + "):")
+        for lab in labels[:limit]:
+            box, clipped = box_for_step(n, lab, grid)
+            text = ", ".join(f"{a}:({_fmt_bound(lo)},{_fmt_bound(hi)})"
+                             for a, lo, hi in box.ranges)
+            lines.append(f"  #{lab}: {text}" + (f"  [clipped {','.join(clipped)}]"
+                                                 if clipped else ""))
+        if len(labels) > limit:
+            lines.append(f"  … {len(labels) - limit} more")
+    return lines
+
+
+def _fmt_bound(v):
+    return f"{v:g}" if isinstance(v, float) else str(v)
+
+
 def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
     """A FOLDER source is a TIMESERIES: map the single-file chain over the
     timestep files (named `…#N`) and combine. timesteps() nodes (already split
@@ -794,7 +859,9 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
     one timestep, or save the range (one file per timestep, original format)."""
     from vislang.formats.inspect import timestep_files
     from vislang.interpreter.estimate import estimate_plan_cost, format_plan_estimate
+    from vislang.interpreter.track import check_coverage, per_step_regions
     files = timestep_files(src.uri)                     # [(label, path)]; raises if none
+    available = [lab for lab, _ in files]
     rng = None
     if ts_nodes:
         lo = max(n.start for n in ts_nodes)
@@ -806,6 +873,10 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
              + (f" in #{rng[0]}..{rng[1]}" if rng else "")]
     if not files:
         raise ValueError(f"no timesteps match {rng} in {src.uri}")
+    # A per-timestep region must cover exactly the selected files — checked from
+    # the listing alone, before any inspect or read.
+    moving = per_step_regions(middle)
+    check_coverage(middle, [lab for lab, _ in files], available)
 
     if sink is not None and sink.kind == "render":
         raise NotImplementedError(
@@ -817,7 +888,7 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
         info0 = inspect_file(files[0][1], positions=src.positions)
     provenance.note_source(info=info0, site="local")
     with timing.phase("lower"):
-        narrowing0, _ = _lower(info0, middle, [])
+        narrowing0, _ = _lower(info0, middle, [], label=files[0][0])
     estimate = estimate_plan_cost(info=info0, narrowing=narrowing0, site='local',
                                   n_timesteps=len(files),
                                   sink_kind=(sink.kind if sink is not None else None))
@@ -827,7 +898,9 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
         steps.append("per timestep: "
                      + (" -> ".join(n.kind for n in middle) if middle else "(no narrowing)"))
         _trace(steps, _describe_schema(info0, files[0][1]))
-        _lower(info0, middle, steps)
+        _lower(info0, middle, steps, label=files[0][0])
+        if moving:
+            steps += _box_lines(info0, middle, [lab for lab, _ in files])
         steps.append("(no sink — nothing materialized)" if sink is None
                      else f"-> save timeseries -> {sink.path}")
         steps.append(format_plan_estimate(estimate))
@@ -855,7 +928,12 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
                 info = inspect_file(path, positions=src.positions)
                 if i == 0:                            # echo the schema once
                     _trace(steps, _describe_schema(info, path))
-                narrowing, pending_compress = _lower(info, middle, [])   # per-file steps discarded
+                clip_notes = []
+                mid, boxes = _boxes_at(info, middle, label, clip_notes)
+                steps += clip_notes
+                if boxes:
+                    provenance.note_region_box(label, boxes)
+                narrowing, pending_compress = _lower(info, mid, [])   # per-file steps discarded
                 loaded = materialize(info, narrowing)
                 for c in pending_compress:
                     loaded = _compress(loaded, list(c.variables), c.error_bound, c.mode)
@@ -864,7 +942,8 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
             total += _loaded_bytes(loaded) or 0
             per_step.append((label, loaded))
         _m["bytes"] = total
-    steps.append(f"materialized {len(per_step)} timestep(s), same chain per file")
+    steps.append(f"materialized {len(per_step)} timestep(s), "
+                 + ("each with its own region box" if moving else "same chain per file"))
 
     from vislang.output.save import save_timeseries
     with timing.phase("sink_save_timeseries", n=len(per_step)):
@@ -872,6 +951,21 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
     steps.append(f"-> save timeseries -> {out}")
     return {"kind": "save", "uri": src.uri, "steps": steps, "output": out,
             "materialized": True, "timesteps": [lab for lab, _ in per_step]}
+
+
+def per_step_regions_in(middle):
+    return any(isinstance(n, RegionNode) and n.per_step for n in middle)
+
+
+def _check_remote_coverage(middle, files, available, steps):
+    """Coverage of a per-timestep region against a remote listing
+    [(label, uri, size, mtime)] — the same rule _plan_folder applies locally."""
+    if not per_step_regions_in(middle):
+        return
+    from vislang.interpreter.track import check_coverage
+    check_coverage(middle, [f[0] for f in files], available)
+    steps.append(f"per-timestep region: a centre for each of the {len(files)} "
+                 f"selected timestep(s)")
 
 
 def _fetch_remote_folder(uri):
@@ -937,12 +1031,14 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
                          "nothing checked, nothing priced)")
             return {"kind": sink.kind, "uri": src.uri, "steps": steps,
                     "output": None, "materialized": False}
+        available = [f[0] for f in files]
         if ts_nodes:
             lo, hi = max(n.start for n in ts_nodes), min(n.stop for n in ts_nodes)
             files = [f for f in files if lo <= f[0] <= hi]
             steps.append(f"select timesteps #{lo}..{hi}")
         if not files:
             raise ValueError(f"no timesteps match in {src.uri}")
+        _check_remote_coverage(middle, files, available, steps)
         steps.append(f"{len(files)} timestep(s), "
                      f"{sum(f[2] for f in files) / (1024 ** 2):.0f} MiB of source")
         timing.note(selected_timesteps=len(files),
@@ -956,6 +1052,19 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
     if held is not None:
         timing.note(route="held_session")
         return held
+    if mode != "off" and has_narrowing and per_step_regions_in(middle) \
+            and not any(n.kind == "fields" for n in middle):
+        # The non-catalog batch checks coverage only on the remote, after a job
+        # starts; list once here so a missing centre costs one ssh call. (The
+        # catalog route lists anyway and checks there.)
+        from vislang.formats.inspect import remote_timestep_files_stat
+        listed = remote_timestep_files_stat(src.uri)
+        if listed is not None:
+            available = [f[0] for f in listed]
+            if ts_nodes:
+                lo, hi = max(n.start for n in ts_nodes), min(n.stop for n in ts_nodes)
+                listed = [f for f in listed if lo <= f[0] <= hi]
+            _check_remote_coverage(middle, listed, available, steps)
     if mode != "off" and has_narrowing:
         from vislang.remote.reduce import (remote_folder_reduce, RemoteUnavailable,
                                    SessionHold)

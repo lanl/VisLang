@@ -4,6 +4,7 @@
 |---|---|
 | `planner.py` | `plan_pipeline` — site dispatch, static check, lowering, fusion, execution |
 | `narrowing.py` | the selection primitives: `Narrowing`, `AxisRange`, `Predicate`, `BBox`, row masks |
+| `track.py` | per-timestep regions: reads a track file at planning time, checks centre coverage before any read, and turns one timestep's centre into a concrete box |
 | `load.py` | the universal load/materialize path, driven by a `Narrowing` |
 | `subset.py` | metadata-only narrowing — trims the schema, reads nothing |
 | `compress.py` | error-bounded compression of materialized arrays |

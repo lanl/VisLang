@@ -83,12 +83,99 @@ def fields(node, keep):
     return FieldsNode(upstream=node, keep=keep)
 
 
-def region(node, **axes):
+_CENTER_AXES = ("x", "y", "z")
+
+
+def _is_number(v):
+    return not isinstance(v, bool) and isinstance(v, (int, float))
+
+
+def _check_size(size, ndim):
+    """`size` -> per-axis tuple of length `ndim` (None = keep that axis whole)."""
+    if size is None:
+        raise ValueError("region(center=/track=...) needs size=, the box edge "
+                         "length (a number, or one per axis; None keeps an axis whole)")
+    per_axis = (size,) * ndim if _is_number(size) else size
+    if not isinstance(per_axis, (tuple, list)) or len(per_axis) != ndim:
+        raise ValueError(f"region(size={size!r}): give one number, or {ndim} "
+                         f"(one per centre coordinate)")
+    for s in per_axis:
+        if s is not None and (not _is_number(s) or s <= 0):
+            raise ValueError(f"region(size={size!r}): each size must be a positive "
+                             f"number or None")
+    if all(s is None for s in per_axis):
+        raise ValueError(f"region(size={size!r}): every axis is None, which keeps "
+                         f"the whole domain — drop region() instead")
+    return tuple(per_axis)
+
+
+def check_centers(rows, where="region(center=...)"):
+    """Validate centre rows (label, cx, cy[, cz]) and return them sorted by label.
+    Shared with the track-file reader so both paths enforce the same rules."""
+    rows = [tuple(r) for r in rows]
+    if not rows:
+        raise ValueError(f"{where}: no centres given")
+    ndim = len(rows[0]) - 1
+    if ndim not in (2, 3):
+        raise ValueError(f"{where}: a centre is (x, y) or (x, y, z), got "
+                         f"{len(rows[0]) - 1} coordinate(s)")
+    seen = set()
+    for r in rows:
+        label, coords = r[0], r[1:]
+        if isinstance(label, bool) or not isinstance(label, int):
+            raise TypeError(f"{where}: timestep labels must be integers (the N in "
+                            f"…#N), got {label!r}")
+        if label in seen:
+            raise ValueError(f"{where}: timestep {label} has more than one centre")
+        seen.add(label)
+        if len(coords) != ndim:
+            raise ValueError(f"{where}: timestep {label} has {len(coords)} "
+                             f"coordinate(s), the others have {ndim}")
+        if not all(_is_number(c) for c in coords):
+            raise TypeError(f"{where}: timestep {label} centre must be numbers, "
+                            f"got {coords!r}")
+    return tuple(sorted(rows))
+
+
+def region(node, center=None, size=None, track=None, **axes):
     """Spatial selection — "which part of the box". Lowers two ways by modality:
     grids take index-space crops [a:b] per axis (structural: pushed into the
     read as a hyperslab); point data takes a world-coordinate bounding box on
-    the position variables (computed: applied as a row mask after the read)."""
+    the position variables (computed: applied as a row mask after the read).
+
+    Over a timeseries the box can move: `center={N: (x, y[, z])}` or
+    `track="file.csv"` (columns step,x,y[,z]) gives the centre per timestep, and
+    `size` the box edge length in the same units, so the box is centre ± size/2.
+    The track file is read by the planner, not here — forms read no data."""
     _require_node(node, "region")
+    given = [name for name, v in (("axis ranges", axes), ("center=", center),
+                                  ("track=", track)) if v]
+    if len(given) > 1:
+        raise ValueError(f"region(): give one of axis ranges, center= or track=, "
+                         f"not {' and '.join(given)}")
+    if center is not None or track is not None:
+        if track is not None:
+            if not isinstance(track, str) or not track:
+                raise TypeError(f"region(track=...): expected a CSV path, got {track!r}")
+            # The centre dimension is only known once the file is read, so a
+            # scalar size is kept as a 1-tuple and expanded by the planner
+            # (resolve_track) against the track's columns.
+            if _is_number(size):
+                _check_size(size, 1)
+                per_axis = (size,)
+            else:
+                ndim = len(size) if isinstance(size, (tuple, list)) else 3
+                per_axis = _check_size(size, ndim if ndim in (2, 3) else 3)
+            return RegionNode(upstream=node, size=per_axis, track=track)
+        if not isinstance(center, dict):
+            raise TypeError(f"region(center=...): expected a dict "
+                            f"{{timestep: (x, y[, z])}}, got {type(center).__name__}")
+        rows = check_centers([(k, *v) if isinstance(v, (tuple, list)) else (k, v)
+                              for k, v in center.items()])
+        return RegionNode(upstream=node, centers=rows,
+                          size=_check_size(size, len(rows[0]) - 1))
+    if size is not None:
+        raise ValueError("region(size=...) only applies with center= or track=")
     if not axes:
         raise ValueError("region() needs at least one axis range, e.g. region(d, x=(0, 50))")
     ranges = []

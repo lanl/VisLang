@@ -47,6 +47,7 @@ job name / partition), VISLANG_SRUN_ARGS (extra srun flags, default
 default "~/.vislang/reduce").
 """
 
+import dataclasses
 import json
 import os
 
@@ -353,13 +354,22 @@ def _normalize_remote(uri):
 # ---------------------------------------------------------------------------
 # The narrowing key: identifies WHAT a cached extent is, order included
 # ---------------------------------------------------------------------------
-def _narrow_key(middle):
+def _narrow_key(middle, label=None):
     """A JSON-safe, order-faithful description of the narrowing (minus fields —
     projection is the catalog's variable axis, not part of the key). Written
-    order is part of the key because threshold/subsample do not commute."""
+    order is part of the key because threshold/subsample do not commute.
+
+    A per-timestep region keys on THIS timestep's centre and size (`label`), so
+    two timesteps — or two tracks — never share an extent. The `region_at` form
+    is not a plain crop, so the catalog reuses it on an exact match only."""
     forms = []
     for n in middle:
-        if n.kind == "region":
+        if n.kind == "region" and n.per_step:
+            row = next((r for r in n.centers if r[0] == label), None)
+            if row is None:
+                raise ValueError(f"region: no centre for timestep #{label}")
+            forms.append(["region_at", list(row[1:]), list(n.size)])
+        elif n.kind == "region":
             forms.append(["region", [[a, lo, hi] for a, lo, hi in n.ranges]])
         elif n.kind == "subsample":
             forms.append(["subsample", n.uniform,
@@ -398,7 +408,7 @@ def _rebuild_prefix(remote_path, positions, prefix, project):
         if n.kind == "fields":
             continue                       # replaced by `project` above
         if n.kind == "region":
-            node = RegionNode(upstream=node, ranges=n.ranges)
+            node = dataclasses.replace(n, upstream=node)
         elif n.kind == "subsample":
             node = SubsampleNode(upstream=node, uniform=n.uniform, per_axis=n.per_axis)
         elif n.kind == "threshold":
@@ -484,7 +494,7 @@ def _info_from_schema(uri, schema):
     return info
 
 
-def _check_before_shipping(src, prefix, schema, steps):
+def _check_before_shipping(src, prefix, schema, steps, label=None):
     """Static-check the request against the schema we already hold, BEFORE any
     plan is shipped or any scheduler step is spent.
 
@@ -502,7 +512,7 @@ def _check_before_shipping(src, prefix, schema, steps):
         return None
     from vislang.interpreter.planner import _lower
     info = _info_from_schema(src.uri, schema)
-    narrowing, _pending = _lower(info, prefix, [])      # steps discarded; see below
+    narrowing, _pending = _lower(info, prefix, [], label=label)   # steps discarded; see below
     steps.append(f"static check: request valid against the cached schema "
                  f"({len(info.variables)} vars, dims={info.dimensions or {}})")
     return narrowing
@@ -843,7 +853,7 @@ def _rebuild_folder_chain(remote_dir, positions, middle, ts_nodes):
         if n.kind == "fields":
             node = FieldsNode(upstream=node, keep=tuple(n.keep))
         elif n.kind == "region":
-            node = RegionNode(upstream=node, ranges=n.ranges)
+            node = dataclasses.replace(n, upstream=node)
         elif n.kind == "subsample":
             node = SubsampleNode(upstream=node, uniform=n.uniform, per_axis=n.per_axis)
         elif n.kind == "threshold":
@@ -881,7 +891,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
     prefix, compresses = _split_middle(middle)          # narrowing (incl fields) + compress
     project = _projection_of(prefix)                    # requested vars, or None
     narrow_prefix = [n for n in prefix if n.kind != "fields"]   # region/subsample/threshold
-    narrow_key = _narrow_key(prefix)                    # ordered, fields-independent
+    moving = [n for n in prefix if n.kind == "region" and n.per_step]
 
     norm = _normalize_remote(src.uri)
     _, host, remote_dir = _parse_remote(norm)
@@ -904,11 +914,17 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         files = remote_timestep_files_stat(src.uri)     # [(label, uri, size, mtime)]
     if files is None:
         raise RemoteUnavailable(f"cannot list remote folder {src.uri!r}")
+    available = [f[0] for f in files]
     if ts_nodes:
         lo, hi = max(n.start for n in ts_nodes), min(n.stop for n in ts_nodes)
         files = [f for f in files if lo <= f[0] <= hi]
     if not files:
         raise ValueError(f"no timesteps match in {src.uri}")
+    if moving:
+        from vislang.interpreter.track import check_coverage
+        check_coverage(prefix, [f[0] for f in files], available)
+    # Ordered, fields-independent; one per timestep when the region moves.
+    keys = {f[0]: _narrow_key(prefix, f[0]) for f in files}
     timing.note(source_bytes=int(sum(f[2] for f in files)),
                 selected_timesteps=len(files))
 
@@ -919,7 +935,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
     with timing.phase("catalog_delta", n=len(files)):
         for label, uri, size, mtime in files:
             sid = make_source_id(uri, size, mtime)
-            have, missing = catalog.delta(sid, project, narrow_key)
+            have, missing = catalog.delta(sid, project, keys[label])
             per[label] = {"uri": uri, "sid": sid, "have": have, "missing": missing}
             if missing:
                 manifest[str(label)] = missing
@@ -954,7 +970,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         with timing.phase("login_node_inspect"):
             schema0 = _prime_schema(conn, ts0_path, catalog, per[label0]["sid"], steps)
     with timing.phase("static_check"):
-        _check_before_shipping(src, prefix, schema0, steps)
+        _check_before_shipping(src, prefix, schema0, steps, label=label0)
     timing.note(pre_validated=schema0 is not None)
 
     # --- fetch only the missing (timestep, variable) pairs, in ONE remote job -
@@ -1025,7 +1041,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
                 arr = z[k]
                 fetched[(int(lab), var)] = arr
                 total += arr.nbytes
-                catalog.store(per[int(lab)]["sid"], var, narrow_key, arr)  # cache fresh
+                catalog.store(per[int(lab)]["sid"], var, keys[int(lab)], arr)  # cache fresh
         import shutil
         shutil.rmtree(pull_dir, ignore_errors=True)
         for label in (int(k) for k in manifest):
@@ -1074,6 +1090,16 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
             loaded = _compress(loaded, list(c.variables), c.error_bound, c.mode)
         per_step.append((label, loaded))
 
+    if moving:
+        # The box each timestep got, from the same routine the remote used to
+        # cut it (one schema stands for the series, as in the static check).
+        from vislang.interpreter.planner import _boxes_at
+        info_s = _info_from_schema(src.uri, schema)
+        for label, *_ in files:
+            clip_notes = []
+            _, boxes = _boxes_at(info_s, prefix, label, clip_notes)
+            steps += clip_notes
+            provenance.note_region_box(label, boxes)
     if provenance.active():
         provenance.note_source(columns=schema.get("variables"),
                                filetype=schema.get("filetype"))
@@ -1108,7 +1134,7 @@ def _rebuild_delta_source(remote_dir, positions, narrow_prefix):
                       positions=tuple(positions) if positions else None)
     for nn in narrow_prefix:
         if nn.kind == "region":
-            node = RegionNode(upstream=node, ranges=nn.ranges)
+            node = dataclasses.replace(nn, upstream=node)
         elif nn.kind == "subsample":
             node = SubsampleNode(upstream=node, uniform=nn.uniform, per_axis=nn.per_axis)
         elif nn.kind == "threshold":

@@ -29,6 +29,8 @@ with no sink is a **dry run** — you get the inferred plan, nothing is read.
 ## The forms (available in a spec with no imports)
 
 `source(uri, positions=None)` · `fields(node, keep)` · `region(node, x=(a,b), …)`
+(over a timeseries also `region(node, center={N: (x,y[,z])} | track="f.csv", size=s)`
+— a box per timestep, centre ± size/2)
 · `subsample(node, f)` / `subsample(node, x=…, y=…)` · `threshold(node, "var > v")`
 · `timesteps(node, start, stop)` · `compress(node, variables, error_bound)` ·
 `save(node, path)` [sink] · `render(node, cmap=None, opacity=None)` [sink]. Full
