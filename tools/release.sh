@@ -67,17 +67,16 @@ if [[ $tests -eq 1 ]]; then
     git -C "$stage" init -q
     git -C "$stage" add -A
     git -C "$stage" -c user.name=release -c user.email=release@localhost commit -qm stage
-    # Sample datasets are gitignored in dev; link them in for the run only.
-    data=()
-    for f in "$here"/*.raw; do
-        [[ -e "$f" ]] && ln -s "$f" "$stage/" && data+=("$stage/$(basename "$f")")
+    # Test datasets are gitignored in dev; link them in for the run only.
+    for f in "$here"/tests/*.raw; do
+        [[ -e "$f" ]] && ln -s "$f" "$stage/tests/"
     done
     # The tests are standalone scripts that fail by assertion.
     failed=()
     for t in "$stage"/tests/test_*.py; do
         (cd "$stage" && "$py" "$t" > /dev/null 2>&1) || failed+=("$(basename "$t")")
     done
-    rm -rf "$stage/.git" ${data[@]+"${data[@]}"}
+    rm -rf "$stage/.git"
     if [[ ${#failed[@]} -gt 0 ]]; then
         echo "failed in the release tree: ${failed[*]}; nothing published" >&2
         exit 1

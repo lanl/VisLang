@@ -29,7 +29,7 @@ from vislang.interpreter import planner
 # vislang_exec runs here as a LOCAL subprocess (the fakes stand in for ssh), so
 # use the interpreter running the test; override with VISLANG_TEST_PYTHON.
 PY = os.environ.get("VISLANG_TEST_PYTHON", sys.executable)
-RAW = os.path.join(REPO, "csafe_heptane_302x302x302_uint8.raw")
+RAW = os.path.join(REPO, "tests", "csafe_heptane_302x302x302_uint8.raw")
 EXEC = os.path.join(REPO, "vislang_exec.py")
 TMP = tempfile.mkdtemp(prefix="vislang_rexec_")
 
@@ -104,22 +104,15 @@ def main():
     res = plan_pipeline(subsample(source(fake_uri), 2), dry_run=True)
     check("dry run returns", res["materialized"] is False)
     check("dry run mentions remote", any("remote" in s for s in res["steps"]))
-    check("dry run mentions deferral", any("dry run" in s for s in res["steps"]))
+    check("dry run mentions deferral", any("nothing probed" in s for s in res["steps"]))
 
     print("== planner dispatch: stubbed remote_reduce + stubbed fetch ==")
-    import types
+    from vislang.remote import reduce as reduce_mod
     calls = {"reduce": 0, "fetch": 0}
 
-    class StubUnavailable(Exception):
-        pass
-
-    def stub_reduce_unavailable(src, middle):
+    def stub_reduce_unavailable(src, middle, confirm=False):
         calls["reduce"] += 1
-        raise StubUnavailable("stub says no")
-
-    stub_mod = types.ModuleType("remote_reduce")
-    stub_mod.remote_reduce = stub_reduce_unavailable
-    stub_mod.RemoteUnavailable = StubUnavailable
+        raise reduce_mod.RemoteUnavailable("stub says no")
 
     def stub_fetch(uri):
         calls["fetch"] += 1
@@ -129,10 +122,14 @@ def main():
         shutil.copyfile(RAW, local)
         return local
 
-    real_fetch = planner._fetch_remote
-    real_mod = sys.modules.get("remote_reduce")
-    sys.modules["remote_reduce"] = stub_mod
+    # The fake host has no session and no file to stat: stub the session check
+    # and the fetch cost gate so only the routing under test runs.
+    real_fetch, real_gate = planner._fetch_remote, planner._remote_fetch_gate
+    real_reduce, real_session = reduce_mod.remote_reduce, reduce_mod.session_check
+    reduce_mod.remote_reduce = stub_reduce_unavailable
+    reduce_mod.session_check = lambda uri: None
     planner._fetch_remote = stub_fetch
+    planner._remote_fetch_gate = lambda *a: None
     old_env = os.environ.get("VISLANG_REMOTE")
     try:
         # auto + narrowing -> tries remote, falls back to fetch, still executes
@@ -172,11 +169,8 @@ def main():
         except RuntimeError as e:
             check("force surfaces failure", "force" in str(e))
     finally:
-        planner._fetch_remote = real_fetch
-        if real_mod is not None:
-            sys.modules["remote_reduce"] = real_mod
-        else:
-            sys.modules.pop("remote_reduce", None)
+        planner._fetch_remote, planner._remote_fetch_gate = real_fetch, real_gate
+        reduce_mod.remote_reduce, reduce_mod.session_check = real_reduce, real_session
         if old_env is None:
             os.environ.pop("VISLANG_REMOTE", None)
         else:

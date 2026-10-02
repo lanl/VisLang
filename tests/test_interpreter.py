@@ -28,7 +28,7 @@ from vislang.interpreter.subset import subset
 from vislang.interpreter.load import load, materialize
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RAW = os.path.join(REPO, "csafe_heptane_302x302x302_uint8.raw")
+RAW = os.path.join(REPO, "tests", "csafe_heptane_302x302x302_uint8.raw")
 TMP = tempfile.mkdtemp(prefix="vislang_test_")
 
 PASS = []
