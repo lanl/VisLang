@@ -1,0 +1,68 @@
+#!/bin/sh
+# VisLang's SSH_ASKPASS helper — how a password reaches ssh without passing
+# through VisLang, the MCP transport, or the model.
+#
+# OpenSSH forks this program when it needs a secret and no terminal is available
+# (SSH_ASKPASS_REQUIRE=force makes it do so even when one is). It passes the
+# server's prompt as $1 and reads the answer from our stdout, which is a pipe to
+# ssh itself. So the secret's entire path is: dialog -> this process -> ssh.
+# Nothing here logs, echoes, or stores it, and the calling Python process never
+# sees it. Keep it that way — do not add debugging that prints the answer.
+#
+# $1 is rendered VERBATIM rather than replaced with a fixed "Password:" label.
+# That is required, not cosmetic: hosts offering keyboard-interactive send their
+# own prompts (a login banner, "Passcode or option (1-3):" on MFA hosts), and a
+# hardcoded label would make the second prompt unanswerable.
+#
+# Contract: print the answer on stdout and exit 0; exit non-zero to abort auth.
+
+set -u
+
+prompt=${1:-Password:}
+title=${VISLANG_ASKPASS_TITLE:-VisLang}
+timeout=${VISLANG_ASKPASS_TIMEOUT:-90}
+state=${VISLANG_ASKPASS_STATE:-}
+
+# One ssh invocation can ask more than once: a server offering both
+# keyboard-interactive and password tries them in turn, so declining the first
+# prompt would otherwise be answered with a second dialog. `state` is a path
+# `open_master` picks per attempt; once we touch it, every later prompt in the
+# same attempt declines immediately. Cancel means cancel.
+if [ -n "$state" ] && [ -f "$state" ]; then
+    exit 1
+fi
+
+if [ "$(uname -s)" != "Darwin" ]; then
+    # No dialog to show. Fail closed rather than hang: ssh reports the auth
+    # failure and `connect` turns it into this instruction.
+    echo "vislang-askpass: no GUI prompt on this platform." >&2
+    echo "Open the session from a terminal instead: sieve connect <host>" >&2
+    exit 1
+fi
+
+# AppleScript string literals take backslash and double-quote escapes; the prompt
+# is server-controlled text, so escape both before interpolating.
+escaped=$(printf '%s' "$prompt" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+
+# The dialog record is bound to `d`, not left in AppleScript's implicit
+# `result`: `result` holds only the PREVIOUS statement's value, and the `if`
+# below clears it, so a third statement reading `result` errors -2753 even on a
+# successful entry — which this helper would then report as a cancel.
+answer=$(osascript \
+    -e "set d to display dialog \"$escaped\" \
+        with title \"$title\" \
+        default answer \"\" \
+        with hidden answer \
+        giving up after $timeout" \
+    -e 'if gave up of d then error number -128' \
+    -e 'text returned of d' 2>/dev/null)
+
+# osascript exits non-zero when the user cancels or the dialog times out
+# (error -128). Decline rather than send an empty password, and remember the
+# decision so the next prompt in this attempt does not re-ask.
+if [ $? -ne 0 ]; then
+    [ -n "$state" ] && : > "$state"
+    exit 1
+fi
+
+printf '%s\n' "$answer"
