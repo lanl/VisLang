@@ -6,21 +6,25 @@ artifact. This module writes the third thing — what an output *is* — into th
 artifact itself, or into a companion file where the container has nowhere to put
 it.
 
-One YAML document per output, `format: sieve-provenance/2`, laid out exactly as
-the templates in `prov-ex/`:
+One YAML document per output, `format: sieve-provenance/2`, laid out as:
 
     format, result_summary,
-    logical:     spec, input, resolved, output, sieve, libraries, explanation
+    logical:     spec, spec_explanation, input, resolved, output, sieve, libraries
     realization: at, took_s, by, columns_from, compress, env, run
+
+`input` and `output` share their keys, in the same order: format, fields, then
+`fingerprint` (one file) or `timestep_fingerprints` (a series). A fingerprint
+names its facts in full — filesize, modification_time, head64k_sha256 for a
+file read; shape (or rows) and data_sha256 for a result.
 
 `logical` is what any correct run of this spec on this input must agree on;
 `realization` is how this particular run went. Absent means none: a field with
 no value is left out, never written as null.
 
-Nothing here is written by a model. `result_summary` and `explanation` are
-rendered from recorded fields by one fixed template per form, so a checker can
-rebuild them and compare. A note about *intent* belongs in the spec's own `#`
-comments, which `logical.spec` keeps verbatim.
+Nothing here is written by a model. `result_summary` and `spec_explanation`
+are rendered from recorded fields by one fixed template per form, so a checker
+can rebuild them and compare. A note about *intent* belongs in the spec's own
+`#` comments, which `logical.spec` keeps verbatim.
 
 Ancestry is a link, not a copy: when the source is itself a Sieve output, the
 record names that output's `data_sha256` and the parent's own record holds the
@@ -180,7 +184,7 @@ def iso_time(epoch=None):
 
 def fingerprint(size, mtime, head_sha256=None):
     """The input fingerprint from facts already in hand (a remote stat)."""
-    fp = {"size": int(size), "mtime": iso_time(mtime)}
+    fp = {"filesize": int(size), "modification_time": iso_time(mtime)}
     if head_sha256:
         fp["head64k_sha256"] = str(head_sha256)[:_HASH_LEN]
     return fp
@@ -195,7 +199,8 @@ def file_fingerprint(path):
         st = os.stat(path)
         with open(path, "rb") as f:
             head = f.read(_WINDOW)
-        return {"size": int(st.st_size), "mtime": iso_time(st.st_mtime),
+        return {"filesize": int(st.st_size),
+                "modification_time": iso_time(st.st_mtime),
                 "head64k_sha256": short_sha256(head)}
     except OSError:
         return None
@@ -737,7 +742,7 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
 
     # --- input -------------------------------------------------------------
     inp = {"uri": src.get("uri"), "format": _in_format(src.get("filetype")),
-           "columns": src.get("columns")}
+           "fields": src.get("columns")}
     label = per_step[0][0]
     input_bytes = None
     if series:
@@ -749,19 +754,19 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
                 if s.get("derived_from"):
                     entry["derived_from"] = s["derived_from"]
                 ts[int(lab)] = entry
-        inp["timesteps"] = ts
-        sizes = [e.get("size") for e in ts.values() if e.get("size")]
+        inp["timestep_fingerprints"] = ts
+        sizes = [e.get("filesize") for e in ts.values() if e.get("filesize")]
         input_bytes = sum(sizes) if sizes else None
     elif label is not None and int(label) in steps_in:
         s = steps_in[int(label)]
         inp["uri"] = s.get("uri") or inp["uri"]
         inp["fingerprint"] = s.get("fingerprint")
         inp["derived_from"] = s.get("derived_from")
-        input_bytes = (s.get("fingerprint") or {}).get("size")
+        input_bytes = (s.get("fingerprint") or {}).get("filesize")
     else:
         inp["fingerprint"] = src.get("fingerprint")
         inp["derived_from"] = src.get("derived_from")
-        input_bytes = (src.get("fingerprint") or {}).get("size")
+        input_bytes = (src.get("fingerprint") or {}).get("filesize")
 
     # --- resolved: what the spec left open --------------------------------
     resolved = {}
@@ -791,22 +796,24 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
         resolved["region_track"] = tracks[0] if len(tracks) == 1 else tracks
 
     # --- output ------------------------------------------------------------
-    out = {"format": out_fmt}
+    # The same keys, in the same order, as `input`: format, fields, then the
+    # fingerprint (one, or one per timestep). Shape travels in the fingerprint
+    # because it is part of what identifies a result.
+    out = {"format": out_fmt,
+           "fields": {k: str(getattr(a, "dtype", "")) for k, a in data.items()}}
     if series:
-        out["timesteps"] = {int(lab): {**_output_entry(l, grid),
-                                       "data_sha256": _data_hash(l)}
-                            for lab, l in per_step}
-        out["columns"] = {k: str(getattr(a, "dtype", "")) for k, a in data.items()}
+        out["timestep_fingerprints"] = {
+            int(lab): {**_output_entry(l, grid), "data_sha256": _data_hash(l)}
+            for lab, l in per_step}
     else:
-        out.update(_output_entry(last, grid))
-        out["columns"] = {k: str(getattr(a, "dtype", "")) for k, a in data.items()}
+        out["fingerprint"] = {**_output_entry(last, grid),
+                              "data_sha256": _data_hash(last)}
         geom = getattr(last, "geometry", None)
         if grid and isinstance(geom, dict):
             g = {k: geom.get(k) for k in ("origin", "spacing")
                  if geom.get(k) is not None}
             if g:
                 out["geometry"] = g
-        out["fingerprint"] = {"data_sha256": _data_hash(last)}
 
     libs = [_READER_LIB.get(src.get("filetype")), "numpy"]
     if comp:
@@ -820,9 +827,9 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
         geometry=getattr(last, "geometry", None), cast=cast, series=series,
         degraded=degraded_from)
 
-    logical = {"spec": _run.get("spec"), "input": inp, "resolved": resolved,
-               "output": out, "sieve": build(), "libraries": _libraries(libs),
-               "explanation": explanation}
+    logical = {"spec": _run.get("spec"), "spec_explanation": explanation,
+               "input": inp, "resolved": resolved, "output": out,
+               "sieve": build(), "libraries": _libraries(libs)}
 
     # --- realization: how this run went ------------------------------------
     real = {"at": iso_time(),
@@ -874,8 +881,12 @@ def _local_columns(src, data):
 # fingerprints. Its output is checked by loading it back (see to_yaml), so a
 # layout choice can never change a value.
 _BLOCK_KEYS = {"logical", "input", "resolved", "output", "realization",
-               "columns_from", "timesteps", "local", "remote", "cache",
-               "fetched_whole_file"}
+               "columns_from", "timestep_fingerprints", "local", "remote",
+               "cache", "fetched_whole_file"}
+# A blank line before these, so the spec and its explanation read as one unit
+# and `realization` stands apart from `logical`. Purely visual: a blank line
+# after a `|` block is outside its value (clip and strip chomping drop it).
+_BLANK_BEFORE = {"spec_explanation", "realization"}
 _QUOTED_KEYS = {"data_sha256", "head64k_sha256", "derived_from", "run",
                 "commit", "subsample_random_seed"}
 _WIDTH = 120
@@ -971,6 +982,11 @@ def _emit(d, indent, out, ascii):
     pad = " " * indent
     for k, v in d.items():
         key = _scalar(k, ascii)
+        # Skipped when the line above is already blank: that is the tail of a
+        # keep-chomped (`|+`) block, where one more blank line would join the
+        # value instead of separating it.
+        if k in _BLANK_BEFORE and out and out[-1] != "":
+            out.append("")
         if isinstance(v, str) and "\n" in v:
             blk = _block(v, indent + 2, ascii)
             if blk is None:
@@ -1101,9 +1117,11 @@ def write_sidecar(out_path, rec):
             fp = file_fingerprint(out_path) or {}
             out = rec["logical"]["output"]
             old = out.get("fingerprint") or {}
-            out["fingerprint"] = {"size": fp.get("size"),
-                                  "head64k_sha256": fp.get("head64k_sha256"),
-                                  **old}
+            out["fingerprint"] = {
+                **{k: v for k, v in old.items() if k != "data_sha256"},
+                "filesize": fp.get("filesize"),
+                "head64k_sha256": fp.get("head64k_sha256"),
+                "data_sha256": old.get("data_sha256")}
         path = sidecar_path(out_path)
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:

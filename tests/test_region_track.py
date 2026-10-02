@@ -209,8 +209,8 @@ def test_grid_series():
           boxes[0]["box"] == {"x": [1, 7], "y": [1, 7]}
           and boxes[2].get("clipped") == ["x", "y"], boxes)
     check("provenance: explanation names the moving box",
-          "centred on each timestep's own centre" in rec["logical"]["explanation"],
-          rec["logical"]["explanation"])
+          "centred on each timestep's own centre" in rec["logical"]["spec_explanation"],
+          rec["logical"]["spec_explanation"])
 
     # Same track from a file: identical output, and the hash is recorded.
     p = os.path.join(TMP, "g.csv")

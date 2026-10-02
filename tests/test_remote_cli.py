@@ -358,14 +358,14 @@ def main():
               lg["input"])
         fp = lg["input"].get("fingerprint") or {}
         check("remote record fingerprints the source",
-              fp.get("size") and fp.get("mtime") and fp.get("head64k_sha256"), fp)
+              fp.get("filesize") and fp.get("modification_time") and fp.get("head64k_sha256"), fp)
         grp = (rz.get("columns_from") or {}).get("remote") or {}
         check("remote record columns_from.remote",
               grp.get("columns") == ["density"]
               and grp.get("read", {}).get("then") == ["threshold", "subsample"]
               and grp.get("fetched_bytes", 0) > 0, rz.get("columns_from"))
         check("remote record explains the threshold",
-              "keep rows where density >= 500" in lg["explanation"], lg["explanation"])
+              "keep rows where density >= 500" in lg["spec_explanation"], lg["spec_explanation"])
 
         print("== sieve execute <missing spec>: clean error, exit 1 ==")
         code, out = run_cli(["execute", os.path.join(TMP, "nope.py")])

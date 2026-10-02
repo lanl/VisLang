@@ -369,7 +369,7 @@ def main():
               cf.get("remote", {}).get("columns") == ["temperature"]
               and "cache" in cf, cf)
         check("delta run: record fingerprints every timestep",
-              sorted(rec["logical"]["input"]["timesteps"]) == sorted(labels),
+              sorted(rec["logical"]["input"]["timestep_fingerprints"]) == sorted(labels),
               rec["logical"]["input"])
         check("delta run: manifest asks ONLY temperature (density served from catalog)",
               MANIFESTS[-1] == {str(t): ["temperature"] for t in labels},

@@ -1,0 +1,32 @@
+# What ships to the user-facing Sieve branch. Read by tools/release.sh.
+# Everything not listed stays dev-only. Only committed files ship.
+# Files under release/overlay/ are laid over the result last, so the public
+# README.md, CLAUDE.md, .gitignore and .mcp.json replace the dev ones.
+
+# The package, and the launchers that .mcp.json, `sieve`, and the remote reducer
+# invoke by path.
+vislang
+mcp_server.py
+cli.py
+vislang_exec.py
+sieve
+bin
+
+# Served to users' models as vislang://instructions/*. Internals (adapters.md)
+# and the roadmap stay in dev.
+instructions/authoring-specs.md
+instructions/dsl-reference.md
+instructions/provenance.md
+instructions/rendering.md
+instructions/soundness.md
+instructions/writing-adapters.md
+instructions/writing-bindings.md
+
+examples
+
+# The salloc guard: Claude Code asks before any command that allocates HPC time.
+.claude/settings.json
+
+pyproject.toml
+requirements.txt
+LICENSE

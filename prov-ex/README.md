@@ -132,8 +132,15 @@ What a written record does differently from these hand-written files:
   edges (`>=` and `<=`), so it reads "keep rows with (bounds inclusive)". A
   `.vtp` stores x, y, z as point coordinates *and* keeps every column,
   x, y, z included, as point data.
-- **Grids** record `output.shape` instead of `rows`, and `output.geometry`
+- **Names are spelled out, and `input` and `output` mirror each other.**
+  `explanation` is `spec_explanation`, directly under the spec. `columns` is
+  `fields`. Fingerprints use `filesize` and `modification_time`. Both
+  sections read `format`, `fields`, then `fingerprint` (one file) or
+  `timestep_fingerprints` (a series). The output's `rows` (points) or `shape`
+  (grids) moved inside its fingerprint, and `output.geometry` comes last,
   when the source stated one.
+- **A blank line** separates the spec from its explanation, and `logical`
+  from `realization`.
 - **`columns_from`** has one group per site: `local`, `cache`, `remote`, or
   `fetched_whole_file`. The `cached` / `then` / `yields` breakdown in the
   `vts56` example is not built yet.

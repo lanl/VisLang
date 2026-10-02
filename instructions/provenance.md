@@ -20,16 +20,22 @@ format: sieve-provenance/2
 result_summary: |          # rows × columns, columns by dtype, sizes in and out
 logical:
   spec: |                  # the spec.py text, verbatim (comments included)
-  input:                   # uri, format, columns, fingerprint, derived_from
+
+  spec_explanation: |      # the steps in plain words, and a Values verdict
+  input:                   # uri, format, fields, fingerprint | timestep_fingerprints, derived_from
   resolved:                # choices the spec left open, made while running
-  output:                  # format, rows (or shape), columns, geometry, fingerprint
+  output:                  # format, fields, fingerprint | timestep_fingerprints, geometry
   sieve:                   # version, commit, uncommitted_changes
   libraries:               # the libraries that read, computed and wrote
-  explanation: |           # the steps in plain words, and a Values verdict
+
 realization:               # at, took_s, by, columns_from, compress, env, run
 ```
 
-`prov-ex/` holds two worked examples.
+`input` and `output` share their keys, in the same order: `format`, `fields`,
+then `fingerprint` for one file or `timestep_fingerprints` (keyed by `#N`) for a
+series. Input `fields` lists the source's variables; output `fields` maps each
+written variable to its dtype. `prov-ex/` holds the design examples behind this
+layout.
 
 **`logical`** holds everything a reproduction needs and a check compares. The
 test: would any correct run of this spec on this input agree?
@@ -45,7 +51,7 @@ the save path, and records link by `data_sha256`.
 
 ## Nothing is written by a model
 
-`result_summary` and `explanation` are rendered from recorded fields, one fixed
+`result_summary` and `spec_explanation` are rendered from recorded fields, one fixed
 template per form, so a checker can rebuild them and compare.
 
 - `fields` names what it dropped.
@@ -65,18 +71,21 @@ keeps verbatim.
 
 ## Fingerprints
 
-- **Input:** `size`, `mtime` (ISO-8601 with offset), and `head64k_sha256`, a
-  hash of the first 64 KiB. This is a cheap stand-in for content identity:
-  size alone catches a truncated copy, and the head catches a regenerated file.
-  It cannot detect a rewrite in the same second, at the same size, with the
-  head unchanged. Remote sources get the same fingerprint from one ssh probe.
-  A timeseries records one fingerprint per timestep under `input.timesteps`.
-- **Output:** `data_sha256`, a hash of the column values (each column's name,
-  dtype, shape and bytes), not of the file. It is the same whatever the output
-  format, so the same result saved as `.npz` and `.hdf5` has one hash.
-  Companion-file records also carry the file's `size` and `head64k_sha256`,
-  to notice when record and file drift apart. An embedded record can't, since a
-  file cannot hold a hash of itself.
+- **Input:** `filesize`, `modification_time` (ISO-8601 with offset), and
+  `head64k_sha256`, a hash of the first 64 KiB. This is a cheap stand-in for
+  content identity: size alone catches a truncated copy, and the head catches
+  a regenerated file. It cannot detect a rewrite in the same second, at the
+  same size, with the head unchanged. Remote sources get the same fingerprint
+  from one ssh probe. A timeseries records one fingerprint per timestep under
+  `input.timestep_fingerprints`. A remote folder's listing gives size and time
+  but no head hash, so its entries carry only those two.
+- **Output:** the result's `shape` (or `rows` for points) and `data_sha256`, a
+  hash of the column values (each column's name, dtype, shape and bytes), not
+  of the file. It is the same whatever the output format, so the same result
+  saved as `.npz` and `.hdf5` has one hash. Companion-file records also carry
+  the file's `filesize` and `head64k_sha256`, to notice when record and file
+  drift apart. An embedded record can't, since a file cannot hold a hash of
+  itself.
 
 All hashes are sha256, cut to 16 hex characters.
 

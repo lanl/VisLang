@@ -25,7 +25,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from vislang.runtime import provenance
 from vislang.formats.dataset_info import DatasetInfo
 from vislang.dsl import reset_sinks
-from vislang.dsl.forms import (source, region, fields, save, subsample, threshold)
+from vislang.dsl.forms import (source, region, fields, save, subsample, threshold,
+                               timesteps)
 from vislang.interpreter.planner import plan_pipeline
 from vislang.interpreter.narrowing import reset_sampling, _get_particle_indices
 from vislang.runtime.paths import REPO_ROOT
@@ -36,7 +37,8 @@ SKIP = []
 
 # The template's order, top level and within `logical` / `realization`.
 TOP = ["format", "result_summary", "logical", "realization"]
-LOGICAL = ["spec", "input", "resolved", "output", "sieve", "libraries", "explanation"]
+LOGICAL = ["spec", "spec_explanation", "input", "resolved", "output", "sieve",
+           "libraries"]
 REALIZATION = ["at", "took_s", "by", "columns_from", "compress", "env", "run"]
 
 
@@ -103,9 +105,11 @@ def test_fingerprint():
     with open(p, "wb") as f:
         f.write(b"A" * 200_000)
     base = provenance.file_fingerprint(p)
-    check("fingerprint_fields", list(base) == ["size", "mtime", "head64k_sha256"], base)
+    check("fingerprint_fields",
+          list(base) == ["filesize", "modification_time", "head64k_sha256"], base)
     check("fingerprint_hash_length", len(base["head64k_sha256"]) == 16)
-    check("fingerprint_mtime_has_offset", base["mtime"][-6] in "+-", base["mtime"])
+    check("fingerprint_mtime_has_offset", base["modification_time"][-6] in "+-",
+          base["modification_time"])
 
     st = os.stat(p)
 
@@ -204,19 +208,19 @@ def test_record_grid():
     inp = lg["input"]
     check("input_uri_is_authored", inp["uri"] == src)
     check("input_format", inp["format"] == "hdf5")
-    check("input_columns", set(inp["columns"]) == {"rho", "T"}, inp["columns"])
+    check("input_fields", set(inp["fields"]) == {"rho", "T"}, inp["fields"])
     check("input_fingerprint", inp["fingerprint"] == provenance.file_fingerprint(src))
     check("no_parent_link_for_plain_source", "derived_from" not in inp)
     check("no_resolved_when_nothing_open", "resolved" not in lg)
 
     out_ = lg["output"]
-    check("output_shape", out_["shape"] == [16, 32, 32], out_)
-    check("output_columns", out_["columns"] == {"rho": "float32"})
+    check("output_shape", out_["fingerprint"]["shape"] == [16, 32, 32], out_)
+    check("output_fields", out_["fields"] == {"rho": "float32"})
     check("output_hash", len(out_["fingerprint"]["data_sha256"]) == 16)
     check("sieve_build", lg["sieve"]["version"] and "commit" in lg["sieve"])
     check("libraries_scoped", set(lg["libraries"]) >= {"h5py", "numpy"}, lg["libraries"])
 
-    ex = lg["explanation"]
+    ex = lg["spec_explanation"]
     check("explain_fields", "1. fields     keep rho; drop T" in ex, ex)
     check("explain_grid_region", "x index 8 to 23" in ex, ex)
     check("explain_save_preserved", "3. save       write one HDF5 file\n" in ex, ex)
@@ -252,14 +256,14 @@ def test_record_points_and_seed():
     lg = rec["logical"]
     seed = lg["resolved"]["subsample_random_seed"]
     check("seed_recorded_as_string", isinstance(seed, str) and seed.isdigit(), seed)
-    ex = lg["explanation"]
+    ex = lg["spec_explanation"]
     check("explain_point_region", "x between 10.0 and 90.0" in ex, ex)
     check("explain_threshold_note",
           "keep rows where tag != 2.0\n" in ex
           and "(read for this test only; not in the output)" in ex, ex)
     check("explain_random", "keep a random 25% of the rows" in ex, ex)
     check("explain_conversion", "write one npz file, converted from HDF5" in ex, ex)
-    check("output_rows", lg["output"]["rows"] > 0)
+    check("output_rows", lg["output"]["fingerprint"]["rows"] > 0)
 
     os.environ["VISLANG_SAMPLE_SEED"] = seed
     try:
@@ -275,7 +279,7 @@ def test_record_points_and_seed():
     run_spec(lambda: save(subsample(source(src, positions=XYZ), 10), c))
     lc = provenance.record_for(c)["logical"]
     check("stride_has_no_seed", "resolved" not in lc, lc.get("resolved"))
-    check("explain_stride", "keep every 10th row: rows 0, 10, 20, …" in lc["explanation"])
+    check("explain_stride", "keep every 10th row: rows 0, 10, 20, …" in lc["spec_explanation"])
 
 
 def test_seeded_sampling():
@@ -485,7 +489,7 @@ def test_embedding():
                                    source(psrc, positions=XYZ), o)))
         check("embedded.vtp", rec is not None)
         check("vtp_explains_points",
-              "x, y, z as point coordinates," in rec["logical"]["explanation"])
+              "x, y, z as point coordinates," in rec["logical"]["spec_explanation"])
 
     # A record inside an npz must not surface as a variable or an attribute.
     from vislang.formats.inspect import inspect_file
@@ -556,7 +560,7 @@ def test_oversized_record():
         rec = provenance.record_for(out)
         check(f"oversized_record_found{ext}", rec and rec["logical"]["spec"] == spec)
         check(f"sidecar_fingerprints_the_file{ext}",
-              rec["logical"]["output"]["fingerprint"]["size"] == os.path.getsize(out))
+              rec["logical"]["output"]["fingerprint"]["filesize"] == os.path.getsize(out))
     if len(exts) == 1:
         skip("oversized.nc", "netCDF4 not installed")
 
@@ -583,15 +587,15 @@ def test_timeseries_folder():
     check("folder_still_reads_as_timeseries", labels == [0, 1, 2], labels)
     rec = provenance.record_for(out)
     lg = rec["logical"]
-    check("folder_input_timesteps", sorted(lg["input"]["timesteps"]) == [0, 1, 2],
+    check("folder_input_timesteps", sorted(lg["input"]["timestep_fingerprints"]) == [0, 1, 2],
           lg["input"])
     check("folder_input_step_fingerprint",
-          lg["input"]["timesteps"][1] == provenance.file_fingerprint(
+          lg["input"]["timestep_fingerprints"][1] == provenance.file_fingerprint(
               os.path.join(src, "snap#1.hdf5")))
     check("folder_output_timesteps",
-          all(len(v["data_sha256"]) == 16 for v in lg["output"]["timesteps"].values()))
+          all(len(v["data_sha256"]) == 16 for v in lg["output"]["timestep_fingerprints"].values()))
     check("folder_explains_per_timestep",
-          "write one HDF5 file per timestep" in lg["explanation"], lg["explanation"])
+          "write one HDF5 file per timestep" in lg["spec_explanation"], lg["spec_explanation"])
 
     step = provenance.record_for(os.path.join(out, "timestep#2.hdf5"))
     check("step_record_names_its_own_input",
@@ -599,7 +603,7 @@ def test_timeseries_folder():
           step["logical"]["input"])
     check("step_hash_matches_folder",
           step["logical"]["output"]["fingerprint"]["data_sha256"]
-          == lg["output"]["timesteps"][2]["data_sha256"])
+          == lg["output"]["timestep_fingerprints"][2]["data_sha256"])
 
 
 # ---------------------------------------------------------------------------
@@ -640,7 +644,7 @@ def test_netcdf():
     rec = provenance.record_for(out)
     check("nc_record_readable", rec is not None)
     check("nc_explains_dims", "dimensions x, y, z in Sieve's index order"
-          in rec["logical"]["explanation"], rec["logical"]["explanation"])
+          in rec["logical"]["spec_explanation"], rec["logical"]["spec_explanation"])
 
     with Dataset(out) as ds:
         check("nc_no_invented_coords", "x" not in ds.variables, list(ds.variables))
@@ -688,7 +692,7 @@ def test_grid_threshold_cast():
     src = make_grid(os.path.join(d, "g.hdf5"), (8, 8, 8), dtype=np.int32)
     out = os.path.join(d, "o.hdf5")
     run_spec(lambda: save(threshold(source(src), "rho > 100"), out))
-    ex = provenance.record_for(out)["logical"]["explanation"]
+    ex = provenance.record_for(out)["logical"]["spec_explanation"]
     check("cast_named_in_values", "cast to float32 to hold NaN" in ex, ex)
 
 
@@ -760,6 +764,193 @@ def test_mcp_reader():
     check("mcp_no_record_is_an_error", do_provenance(src).startswith("ERROR"))
 
 
+# ---------------------------------------------------------------------------
+# Layout: the record a real run writes, in the agreed shape
+# ---------------------------------------------------------------------------
+# A real record (the wildfire track-file run), as the agreed layout. Emitting
+# its own values must reproduce it byte for byte: key names, key order, flow
+# vs block, quoting, and the two blank lines.
+LAYOUT_GOLDEN = """\
+format: sieve-provenance/2
+result_summary: |
+  4 timesteps × 1 columns, 4.2 MB (from a 4.4 GB input)
+    float32  theta
+logical:
+  spec: |
+    # Wildfire mountain_headcurve80 — box per timestep from a track file.
+    # Series = symlinks fire#N.vts -> output.N.vts (600 x 500 x 61 grid, index space).
+    # Track: unOrg/roi_tests/wildfire/fire_track.csv (5 steps, #11000 clips at x edge).
+    # timesteps() picks the files (a contiguous range); the track's #4000 row lies
+    # outside it, which is allowed — a track may be longer than the selection.
+    series = source(
+        "ssh://gpu-server//home.na1/ad.wsu.edu/aayush.shrestha/pvt/pvt/vislang_series/fire/"
+    )
+
+    box = region(
+        fields(timesteps(series, 8000, 11000), ["theta"]),
+        track="unOrg/roi_tests/wildfire/fire_track.csv",
+        size=(120, 120, 20),
+    )
+
+    save(box, "/Users/agoosh11/Projects/VisLang/unOrg/roi_tests/wildfire/02_track_file.npz")
+
+  spec_explanation: |
+    Steps
+      1. timesteps  keep timesteps #8000 to #11000
+      2. fields     keep theta; drop u, v, w, O2, rhowatervapor, rhof_1, convht_1, frhosiesrad_1
+      3. region     keep a box of size (120, 120, 20) centred on each timestep's own centre
+                      centres from fire_track.csv; index space, clipped to the grid; the box per timestep is under resolved.region_boxes
+      4. save       write one npz file per timestep, converted from VTK
+
+    Values: all exact.
+  input:
+    uri: "ssh://gpu-server//home.na1/ad.wsu.edu/aayush.shrestha/pvt/pvt/vislang_series/fire/"
+    format: vtk
+    fields: [u, v, w, theta, O2, rhowatervapor, rhof_1, convht_1, frhosiesrad_1]
+    timestep_fingerprints:
+      8000: {filesize: 1098002905, modification_time: "2023-03-22T16:36:03-07:00"}
+      9000: {filesize: 1098002905, modification_time: "2023-03-22T16:37:50-07:00"}
+      10000: {filesize: 1098002905, modification_time: "2023-03-22T16:23:55-07:00"}
+      11000: {filesize: 1098002905, modification_time: "2023-03-22T16:24:04-07:00"}
+  resolved:
+    region_boxes:
+      8000: {box: {x: [190, 310], y: [190, 310], z: [0, 20]}}
+      9000: {box: {x: [290, 410], y: [190, 310], z: [0, 20]}}
+      10000: {box: {x: [390, 510], y: [190, 310], z: [0, 20]}}
+      11000: {box: {x: [520, 600], y: [190, 310], z: [0, 20]}, clipped: [x]}
+    region_track:
+      path: "/Users/agoosh11/Projects/VisLang/unOrg/roi_tests/wildfire/fire_track.csv"
+      sha256: "930ca2d2cf469fdd"
+  output:
+    format: npz
+    fields: {theta: float32}
+    timestep_fingerprints:
+      8000: {shape: [120, 120, 20], data_sha256: "cc6a10a79df637e0"}
+      9000: {shape: [120, 120, 20], data_sha256: "f46f5c34df9e916b"}
+      10000: {shape: [120, 120, 20], data_sha256: "90c18e54be4a09a9"}
+      11000: {shape: [80, 120, 20], data_sha256: "07b921a8dd0f86eb"}
+  sieve: {version: "0.1.0", commit: "91b3fa9"}
+  libraries: {vtk: "9.7.0", numpy: "2.5.2"}
+
+realization:
+  at: "2026-10-01T07:26:16-07:00"
+  took_s: 120
+  by: "agoosh11@Kajis-MacBook-Pro.local"
+  columns_from:
+    remote:
+      columns: [theta]
+      read: {then: [region]}
+      fetched_bytes: 4224000
+  env: {python: "3.12.14", platform: macOS-26.0.1}
+  run: "afec737f609a"
+"""
+
+INPUT_KEYS = ["uri", "format", "fields", "fingerprint", "timestep_fingerprints",
+              "derived_from"]
+OUTPUT_KEYS = ["format", "fields", "fingerprint", "timestep_fingerprints",
+               "geometry"]
+
+
+def test_layout_golden():
+    rec = yaml.safe_load(LAYOUT_GOLDEN)
+    check("layout_golden_reproduced", provenance.to_yaml(rec) == LAYOUT_GOLDEN,
+          provenance.to_yaml(rec))
+    lg = rec["logical"]
+    check("layout_golden_input_output_mirror",
+          [k for k in lg["input"] if k in lg["output"]]
+          == [k for k in lg["output"] if k in lg["input"]]
+          == ["format", "fields", "timestep_fingerprints"])
+
+
+def test_layout_series_run():
+    """A real timeseries run — timesteps, fields, a per-timestep region — writes
+    the golden's keys in the golden's order."""
+    reason = have("h5py")
+    if reason:
+        skip("layout_series_run", reason)
+        return
+    d = os.path.join(TMP, "layout_series")
+    os.makedirs(d, exist_ok=True)
+    for t in (0, 1, 2):
+        make_grid(os.path.join(d, f"snap#{t}.hdf5"), (16, 16, 16))
+    out = os.path.join(TMP, "layout_series_out")
+    centre = {0: (4, 4, 8), 1: (8, 8, 8), 2: (14, 14, 8)}
+    spec = "# moving box\nsave(region(...), 'layout_series_out.npz')\n"
+    run_spec(lambda: save(region(fields(timesteps(source(d), 0, 2), ["rho"]),
+                                 center=centre, size=(6, 6, None)), out + ".npz"),
+             spec_text=spec)
+    text = provenance.record_text(out)
+    rec = provenance.record_for(out)
+    lg = rec["logical"]
+    check("series_top_order", list(rec) == TOP, list(rec))
+    check("series_logical_order", ordered(lg, LOGICAL) and
+          list(lg)[:2] == ["spec", "spec_explanation"], list(lg))
+    check("series_input_keys", list(lg["input"]) ==
+          ["uri", "format", "fields", "timestep_fingerprints"], list(lg["input"]))
+    check("series_output_keys", list(lg["output"]) ==
+          ["format", "fields", "timestep_fingerprints"], list(lg["output"]))
+    fp_in = lg["input"]["timestep_fingerprints"]
+    check("series_input_step_fields", sorted(fp_in) == [0, 1, 2] and
+          list(fp_in[1]) == ["filesize", "modification_time", "head64k_sha256"],
+          fp_in)
+    fp_out = lg["output"]["timestep_fingerprints"]
+    check("series_output_step_fields", sorted(fp_out) == [0, 1, 2] and
+          list(fp_out[2]) == ["shape", "data_sha256"] and
+          fp_out[2]["shape"] == [5, 5, 16], fp_out)
+    check("series_fields_are_dtypes", lg["output"]["fields"] == {"rho": "float32"})
+    check("series_region_boxes_resolved", sorted(lg["resolved"]["region_boxes"])
+          == [0, 1, 2])
+    check("series_blank_line_before_explanation",
+          "\n\n  spec_explanation: |\n    Steps\n" in text, text[:400])
+    check("series_blank_line_before_realization", "\n\nrealization:\n" in text)
+    check("series_input_fingerprints_flow",
+          "\n      0: {filesize: " in text, text)
+
+
+def test_layout_single_file():
+    reason = have("h5py")
+    if reason:
+        skip("layout_single_file", reason)
+        return
+    d = os.path.join(TMP, "layout_single")
+    os.makedirs(d, exist_ok=True)
+    src = make_grid(os.path.join(d, "g.hdf5"), (8, 8, 8))
+    out = os.path.join(d, "o.hdf5")
+    run_spec(lambda: save(region(source(src), x=(2, 6)), out))
+    lg = provenance.record_for(out)["logical"]
+    check("single_input_keys", list(lg["input"]) ==
+          ["uri", "format", "fields", "fingerprint"], list(lg["input"]))
+    check("single_input_fingerprint_fields", list(lg["input"]["fingerprint"]) ==
+          ["filesize", "modification_time", "head64k_sha256"])
+    check("single_output_keys", list(lg["output"]) ==
+          ["format", "fields", "fingerprint"], list(lg["output"]))
+    check("single_output_fingerprint_fields",
+          list(lg["output"]["fingerprint"]) == ["shape", "data_sha256"],
+          lg["output"]["fingerprint"])
+    check("keys_from_the_agreed_sets", set(lg["input"]) <= set(INPUT_KEYS)
+          and set(lg["output"]) <= set(OUTPUT_KEYS))
+
+    # A companion file adds the file's own facts inside the same fingerprint.
+    big = os.path.join(d, "big.hdf5")
+    run_spec(lambda: save(source(src), big), spec_text="# " + "x" * 70_000 + "\n")
+    fp = provenance.record_for(big)["logical"]["output"]["fingerprint"]
+    check("sidecar_fingerprint_order", list(fp) ==
+          ["shape", "filesize", "head64k_sha256", "data_sha256"], fp)
+
+
+def test_layout_blank_line_never_changes_a_value():
+    """The blank line before spec_explanation sits after the spec block. When
+    the spec ends in blank lines (a keep-chomped `|+` block), one more would
+    become part of the spec — so it is skipped, and the round trip holds."""
+    for spec in ("a = 1\n", "a = 1\n\n\n", "a = 1"):
+        rec = {"format": "sieve-provenance/2",
+               "logical": {"spec": spec, "spec_explanation": "Steps\n"},
+               "realization": {"run": "abc"}}
+        text = provenance.to_yaml(rec)
+        check(f"blank_line_round_trip_{len(spec)}",
+              yaml.safe_load(text) == rec and not text.startswith("{"), text)
+
+
 if __name__ == "__main__":
     print("provenance")
     test_fingerprint()
@@ -782,4 +973,8 @@ if __name__ == "__main__":
     test_grid_threshold_cast()
     test_parent_link()
     test_mcp_reader()
+    test_layout_golden()
+    test_layout_series_run()
+    test_layout_single_file()
+    test_layout_blank_line_never_changes_a_value()
     print(f"\n{len(PASS)} passed, {len(SKIP)} skipped  (artifacts in {TMP})")

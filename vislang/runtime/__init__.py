@@ -8,6 +8,4 @@
     timing.py   the same runs as data -> `.vislang/timings.jsonl` (per-phase
                 seconds and bytes, ssh round trips, predicted-vs-actual,
                 catalog reuse). `VISLANG_TIMING=0` turns it off.
-
-`bench/summarize.py` turns the JSONL into tables.
 """

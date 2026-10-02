@@ -7,7 +7,7 @@ round trips, predicted vs actual" as rows you can aggregate. This module writes
 exactly that — ONE JSON object per run, appended to `<home>/timings.jsonl` —
 alongside the prose, from the same call sites.
 
-Shape of a run record (bench/summarize.py turns these into tables):
+Shape of a run record (one JSON object per line):
 
     {"run_id", "started", "spec", "spec_sha", "commit", "status", "total_s",
      "env": {...the VISLANG_* knobs in force...},
@@ -97,7 +97,7 @@ def _flush(record):
 
 
 # ---------------------------------------------------------------------------
-# The run: one record per run_pipeline (or per driver iteration in bench/)
+# The run: one record per run_pipeline (or per driver iteration)
 # ---------------------------------------------------------------------------
 @contextmanager
 def run(spec_path, spec_code=None, **fields):
