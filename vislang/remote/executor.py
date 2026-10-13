@@ -242,49 +242,73 @@ def _run_folder(text, outdir):
         "timesteps": result.get("timesteps", []),
         "steps": result["steps"],
     }
+    if result.get("tags"):                     # named boxes: {tag: [labels]}
+        meta["tags"] = result["tags"]
     print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
     return 0
 
 
-def _reroot(narrowing_nodes, path, positions, keep, label=None, info=None):
-    """Re-root the folder's narrowing forms (region/subsample/threshold, already
-    validated) onto ONE timestep file, ending in a projection to `keep`. Used by
-    the catalog delta path to fetch just the missing variables of one timestep.
-    A per-timestep region becomes timestep `label`'s own box first (`info` is
-    that file's schema, which decides grid-vs-points and the grid to clip to)."""
-    import dataclasses
-    from vislang.dsl.nodes import (SourceNode, SubsampleNode,
-                                 ThresholdNode, FieldsNode)
-    if any(nn.kind == "region" and nn.per_step for nn in narrowing_nodes):
-        from vislang.interpreter.planner import _boxes_at
-        narrowing_nodes, _ = _boxes_at(info, narrowing_nodes, label, [])
-    node = SourceNode(uri=path, positions=positions)
-    for nn in narrowing_nodes:
-        if nn.kind == "region":
-            node = dataclasses.replace(nn, upstream=node)
-        elif nn.kind == "subsample":
-            node = SubsampleNode(upstream=node, uniform=nn.uniform, per_axis=nn.per_axis)
-        elif nn.kind == "threshold":
-            node = ThresholdNode(upstream=node, var=nn.var, op=nn.op, value=nn.value)
-    return FieldsNode(upstream=node, keep=tuple(keep))
+def _manifest_entries(manifest):
+    """[(label|None, tag|None, vars|None)] from a delta manifest, validated —
+    it crossed the wire. Two forms: the folder form {"<label>": [vars]}, and the
+    named-box form [{"label": N|null, "tag": "v1", "vars": [...]|null}] (a null
+    label is the one box on a single file; null vars means every variable)."""
+    from vislang.dsl.forms import valid_tag
+    if isinstance(manifest, dict):
+        out = []
+        for k, v in manifest.items():
+            if not (isinstance(v, list) and v and all(isinstance(x, str) for x in v)):
+                raise ValueError(f"manifest: timestep {k!r} needs a list of variables")
+            out.append((int(k), None, list(v)))
+        return out
+    if not isinstance(manifest, list):
+        raise ValueError("manifest must be {label: [vars]} or a list of entries")
+    out = []
+    for e in manifest:
+        if not isinstance(e, dict) or set(e) != {"label", "tag", "vars"}:
+            raise ValueError(f"manifest: bad entry {e!r}")
+        label, tag, vars_ = e["label"], e["tag"], e["vars"]
+        if label is not None and (isinstance(label, bool) or not isinstance(label, int)):
+            raise ValueError(f"manifest: label must be an integer or null, got {label!r}")
+        if not valid_tag(tag):
+            raise ValueError(f"manifest: bad tag {tag!r}")
+        if vars_ is not None and not (isinstance(vars_, list) and vars_
+                                      and all(isinstance(x, str) for x in vars_)):
+            raise ValueError(f"manifest: vars must be null or a list of names, got {vars_!r}")
+        out.append((label, tag, vars_))
+    return out
+
+
+def _unit_middle(narrowing_nodes, keep, tag=None):
+    """The chain for ONE manifest entry: the plan's narrowing forms (with a named
+    box's own view in place of the named-box region), then a projection to
+    `keep` (None keeps every variable). Its per-timestep box is cut by the
+    planner (_boxes_at) against the file's own schema."""
+    from vislang.dsl.nodes import FieldsNode
+    from vislang.interpreter.track import for_tag
+    nodes = list(for_tag(narrowing_nodes, tag) if tag is not None else narrowing_nodes)
+    if keep:
+        nodes.append(FieldsNode(upstream=None, keep=tuple(keep)))
+    return nodes
 
 
 def _run_folder_delta(text, manifest_path, outdir):
-    """Catalog DELTA reduce for a folder: fetch ONLY the (timestep, variable)
-    pairs the caller's catalog is missing. The plan carries source(dir) plus the
-    per-file narrowing (region/subsample/threshold — no fields); the manifest
-    {"<label>": [vars]} names exactly what each timestep still needs. We narrow
-    each listed file to its missing vars and bundle the results into one
-    outdir/bundle.npz keyed "<label>/<var>", so a single directory pull carries
-    only the delta. Fully-cached timesteps are absent from the manifest and never
-    touched here."""
+    """Catalog DELTA reduce: fetch ONLY the pieces the caller's catalog is
+    missing. The plan carries the source plus its narrowing (region/subsample/
+    threshold — no fields); the manifest names exactly what each piece still
+    needs — per timestep of a folder ({"<label>": [vars]}), or per named box
+    (entries with a label, or a null label on a single file, and a tag). Each
+    file is inspected once and all its pieces are cut together (one read where
+    the format slices in memory), bundled into ONE outdir/bundle.npz keyed as
+    reduce.delta_key, so a single directory pull carries only the delta.
+    Fully-cached pieces are absent from the manifest and never touched here."""
     import json as _json
     import numpy as np
-    from vislang.dsl import reset_sinks
-    from vislang.dsl.forms import save
     from vislang.dsl.nodes import upstream_of
-    from vislang.interpreter.planner import plan_pipeline
     from vislang.formats.inspect import timestep_files, inspect_file
+    from vislang.interpreter.planner import _materialize_units
+    from vislang.interpreter.track import tagged_region
+    from vislang.remote.reduce import delta_key
 
     terminal, err = _rebuild(text)
     if err is not None:
@@ -299,53 +323,52 @@ def _run_folder_delta(text, manifest_path, outdir):
     src_node = chain[0]
     narrowing = [n for n in chain[1:]
                  if n.kind in ("region", "subsample", "threshold")]
-    moving = any(n.kind == "region" and n.per_step for n in narrowing)
 
     try:
-        manifest = _json.loads(open(manifest_path).read())
+        entries = _manifest_entries(_json.loads(open(manifest_path).read()))
+        tagged = tagged_region(narrowing)
     except (OSError, ValueError) as e:
         return _fail(f"cannot read manifest: {e}")
+    if any((t is None) != (tagged is None) for _, t, _ in entries):
+        return _fail("manifest entries must name a tag exactly when the plan's "
+                     "region names its boxes")
 
+    by_label = {}
+    for label, tag, keep in entries:
+        by_label.setdefault(label, []).append((tag, keep))
     try:
-        files = dict(timestep_files(src_node.uri))     # {label: path}
+        if os.path.isdir(src_node.uri):
+            files = dict(timestep_files(src_node.uri))     # {label: path}
+        else:
+            files = {None: src_node.uri}                   # named boxes on one file
     except Exception as e:
         return _fail(f"{type(e).__name__}: {e}")
 
     os.makedirs(outdir, exist_ok=True)
-    bundle, schema, fetched = {}, None, {}
-    tmp = os.path.join(outdir, "_scratch.npz")
+    bundle, schema, fetched = {}, None, []
     try:
-        for label_str, keep in manifest.items():
-            label = int(label_str)
+        for label, pieces in by_label.items():
             path = files.get(label)
             if path is None:
-                return _fail(f"manifest names timestep #{label} not present in "
-                             f"{src_node.uri}")
-            info = None
-            if schema is None or moving:
-                info = inspect_file(path, positions=src_node.positions)
+                where = "a single file" if None in files else src_node.uri
+                return _fail(f"manifest names timestep #{label} not present in {where}")
+            info = inspect_file(path, positions=src_node.positions)
             if schema is None:
                 schema = {"variables": list(info.variables),
                           "dimensions": dict(info.dimensions or {}),
                           "positions": list(info.positions) if info.positions else None,
-                          "filetype": info.filetype}
-            reset_sinks()
-            terminal_file = save(_reroot(narrowing, path, src_node.positions, keep,
-                                         label=label, info=info), tmp)
-            try:
-                held = _held_reason(plan_pipeline(terminal_file, dry_run=False,
-                                                  confirm=_CONFIRMED))
-                if held:
-                    return _fail(f"timestep #{label}: {held}")
-                with np.load(tmp) as z:
-                    for var in z.files:
-                        bundle[f"{label}/{var}"] = z[var]
-            finally:
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-            fetched[label_str] = list(keep)
+                          "filetype": info.filetype,
+                          "attributes": _jsonable_attrs(info.attributes)}
+            cut = _materialize_units(info, [_unit_middle(narrowing, keep, tag)
+                                            for tag, keep in pieces],
+                                     label, tags=[t for t, _ in pieces])
+            for (tag, keep), (loaded, _) in zip(pieces, cut):
+                for var, arr in loaded.data.items():
+                    bundle[delta_key(label, tag, var)] = np.asarray(arr)
+                fetched.append({"label": label, "tag": tag, "vars": keep})
     except Exception as e:
-        return _fail(f"{type(e).__name__}: {e}")
+        where = f"timestep #{label}: " if label is not None else ""
+        return _fail(f"{where}{type(e).__name__}: {e}")
 
     np.savez(os.path.join(outdir, "bundle.npz"), **bundle)
     meta = {"vislang_exec": PLAN_VERSION, "ok": True,
@@ -363,8 +386,9 @@ def main(argv=None):
     out = ap.add_mutually_exclusive_group(required=False)
     out.add_argument("--out", help="output .npz path (single-file reduce)")
     out.add_argument("--outdir", help="output DIRECTORY (folder/timeseries reduce)")
-    ap.add_argument("--manifest", help="catalog delta manifest {label: [vars]} "
-                                       "(with --outdir: fetch only these per-file vars)")
+    ap.add_argument("--manifest", help="catalog delta manifest — {label: [vars]}, or "
+                                       "[{label, tag, vars}] for named boxes (with "
+                                       "--outdir: fetch only these pieces)")
     ap.add_argument("--inspect", metavar="PATH",
                     help="metadata-only inspect: print schema meta and exit "
                          "(no --plan/--out needed)")

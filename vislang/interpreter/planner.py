@@ -37,7 +37,7 @@ import vislang.runtime.timing as timing        # per-phase seconds/bytes -> timi
 import vislang.runtime.provenance as provenance  # the derivation record -> the artifact
 from vislang.dsl.nodes import SourceNode, RegionNode, upstream_of
 from vislang.formats.inspect import inspect_file
-from vislang.interpreter.load import materialize
+from vislang.interpreter.load import materialize, materialize_boxes
 from vislang.interpreter.compress import compress as _compress
 from vislang.output.render import render as _render
 from vislang.formats.adapters import adapter_capabilities
@@ -80,7 +80,7 @@ def _describe_ast(chain):
             parts.append(f"source({os.path.basename(n.uri.rstrip('/')) or n.uri})")
         elif k == "fields":
             parts.append(f"fields[{','.join(n.keep)}]")
-        elif k == "region" and n.per_step:
+        elif k == "region" and (n.per_step or n.tagged):
             from vislang.interpreter.track import describe
             parts.append(describe(n))
         elif k == "region":
@@ -332,9 +332,17 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
     # A region that moves per timestep: read any track file NOW, on the host and
     # before dispatch, so every route (local, remote batch, catalog delta) sees
     # the centres inline and the plan ships data rather than a local path.
-    from vislang.interpreter.track import resolve_tracks, per_step_regions
+    from vislang.interpreter.track import (resolve_tracks, per_step_regions,
+                                           tagged_region, tag_names)
     middle = resolve_tracks(middle)
     moving = per_step_regions(middle)
+    tagged = tagged_region(middle)              # raises on two
+    if tagged is not None and sink is not None and sink.kind == "render":
+        raise NotImplementedError(
+            f"render shows one dataset, and this region names {len(tagged.tags)} "
+            f"boxes ({', '.join(tag_names(tagged))}). save() writes each to its own "
+            f"output (.vti/.vtp adds a ParaView index that opens them together); "
+            f"to look at one box here, render a plain region for it.")
 
     # One measured record per sink (vislang_timing): the forms as written, the
     # site chosen, and every phase timed inside it. No-op when timing is off.
@@ -351,7 +359,8 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
             provenance.pipeline(terminal):
         provenance.note_region_track([
             {"path": os.path.abspath(n.track), "sha256": n.track_sha}
-            for n in moving if n.track])
+            for n in moving + ([tagged] if tagged is not None else []) if n.track])
+        provenance.note_resolved_regions([n for n in middle if n.kind == "region"])
         # A FOLDER source is a timeseries: map the single-file chain over its
         # timestep files (named `…#N`). This holds for a remote folder as much as a
         # local one — we detect it locally with an os.path check, or remotely with a
@@ -364,11 +373,14 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
             # zero-network (as _plan_remote does): there timesteps() is the folder
             # signal — it applies only to a folder — else we preview the single-file
             # plan. The actual run probes and dispatches for real.
-            is_folder = (bool(ts_nodes or moving) if (dry_run or sink is None)
-                         else remote_is_dir(src.uri))
+            is_folder = (bool(ts_nodes or moving or (tagged is not None
+                                                     and tagged.tag_series))
+                         if (dry_run or sink is None) else remote_is_dir(src.uri))
         else:
             is_folder = os.path.isdir(src.uri)
         timing.note(site="remote" if remote_src else "local", folder=is_folder)
+        if tagged is not None:
+            _check_tag_shape(tagged, is_folder, src.uri)
 
         if is_folder:
             plan_folder = _plan_remote_folder if remote_src else _plan_folder
@@ -393,6 +405,21 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
     if _tracing() and isinstance(result, dict) and "steps" in result:
         result["steps"].insert(0, _describe_ast(chain))    # spec as authored, on top
     return result
+
+
+def _check_tag_shape(tagged, is_folder, uri):
+    """Named boxes are placed per timestep over a folder and once on a file;
+    the other way round is a spec that cannot mean what it says."""
+    if is_folder and not tagged.tag_series:
+        raise ValueError(
+            f"{uri!r} is a timeseries, so each named box needs its timesteps: "
+            f"center={{tag: {{N: (x, y, z)}}}}, or a track file with a `step` "
+            f"column (tag,step,x,y,z)")
+    if not is_folder and tagged.tag_series:
+        raise ValueError(
+            f"region(center={{tag: {{N: …}}}}) places each box per timestep, but "
+            f"{uri!r} is a single file; on one file give each tag one centre: "
+            f"center={{tag: (x, y, z)}}")
 
 
 def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
@@ -436,11 +463,17 @@ def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
         return held
 
     if mode != "off" and has_narrowing:
-        from vislang.remote.reduce import (remote_reduce, RemoteUnavailable, BudgetHold,
+        from vislang.remote.reduce import (remote_reduce, remote_reduce_tags,
+                                   RemoteUnavailable, BudgetHold,
                                    AllocationHold, SessionHold)
+        from vislang.interpreter.track import tagged_region
+        tagged = tagged_region(middle)
         try:
             with timing.phase("remote_reduce"):
-                loaded, rsteps, estimate = remote_reduce(src, middle, confirm)
+                if tagged is None:
+                    loaded, rsteps, estimate = remote_reduce(src, middle, confirm)
+                else:
+                    cut, rsteps, estimate = remote_reduce_tags(src, middle, confirm)
             timing.note(route="remote_reduce")
             timing.note_estimate(estimate)
             steps += rsteps
@@ -451,6 +484,8 @@ def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
             result = {"kind": sink.kind, "uri": src.uri, "steps": steps,
                       "output": None, "materialized": True, "estimate": estimate}
             steps.append(f"-> {sink.kind} (local)")
+            if tagged is not None:
+                return _finish_tags(cut, pending_compress, sink, result)
             return _finish(loaded, pending_compress, sink, result)
         except SessionHold as h:
             # Normally caught by _session_gate above; kept because remote_reduce
@@ -513,7 +548,7 @@ def _probe_bandwidth(uri, steps):
 
 
 def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=1,
-                     schema_uri=None):
+                     schema_uri=None, plan=None):
     """Price a remote request WITHOUT running it — the `estimate` path.
 
     This is a dry run with a sink present, which is a different intent from a
@@ -533,10 +568,13 @@ def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=
     downloading the file raises SchemaUnavailable instead.
 
     `schema_uri` names the file whose schema stands for the request (one timestep
-    of a folder); `n_timesteps` scales the estimate over the series.
+    of a folder); `n_timesteps` scales the estimate over the series. Named boxes
+    are priced per tag; `plan` ({label: [tags]}) says which run where.
     """
     from vislang.formats.inspect import inspect_source, SchemaUnavailable
-    from vislang.interpreter.estimate import estimate_plan_cost, format_plan_estimate
+    from vislang.interpreter.estimate import (estimate_plan_cost, estimate_boxes_cost,
+                                              format_plan_estimate)
+    from vislang.interpreter.track import tagged_region, tag_names, for_tag
 
     steps.append(f"remote source {src.uri}")
     steps.append("plan: reduce on the remote (narrowing prefix next to the data), "
@@ -558,13 +596,28 @@ def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=
             f"(VISLANG_REMOTE_PYTHON / VISLANG_REMOTE_REPO).") from e
     steps.append(_describe_schema(info, uri))
 
-    with timing.phase("lower"):
-        narrowing, _pending = _lower(info, middle, steps)   # raises on a bad request
-
-    estimate = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",
-                                  n_timesteps=n_timesteps, sink_kind=sink.kind,
-                                  wire_vars=narrowing.project,
-                                  net_bw_bps=_probe_bandwidth(src.uri, steps))
+    tagged = tagged_region(middle)
+    if tagged is None:
+        with timing.phase("lower"):
+            narrowing, _pending = _lower(info, middle, steps)   # raises on a bad request
+        estimate = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",
+                                      n_timesteps=n_timesteps, sink_kind=sink.kind,
+                                      wire_vars=narrowing.project,
+                                      net_bw_bps=_probe_bandwidth(src.uri, steps))
+    else:
+        plan = plan or {None: tag_names(tagged)}
+        counts, firsts = _tag_summary(plan)
+        middles = {t: for_tag(middle, t) for t in counts}
+        with timing.phase("lower"):
+            _check_boxes(info, middles, _first_boxes(firsts))
+            boxes = [(_lower(info, middles[t], steps if i == 0 else [],
+                             label=firsts[t])[0], counts[t])
+                     for i, t in enumerate(counts)]
+        narrowing = boxes[0][0]
+        steps += _tag_box_lines(info, tagged, plan)
+        estimate = estimate_boxes_cost(info=info, boxes=boxes, site="remote",
+                                       n_timesteps=n_timesteps, sink_kind=sink.kind,
+                                       net_bw_bps=_probe_bandwidth(src.uri, steps))
     # The estimate prices the WHOLE request. Extents already held locally are not
     # deducted, so this is an upper bound on what would cross — the useful
     # direction for a budget question.
@@ -611,11 +664,30 @@ def _finish(loaded, pending_compress, sink, result):
     return result
 
 
-def _boxes_at(info, middle, label, steps):
+def _finish_tags(cut, pending_compress, sink, result):
+    """The local suffix for named boxes on one file: compress each box, then
+    save each to its own output under the sink path."""
+    from vislang.output.save import save_tagged
+    done = []
+    for tag, loaded in cut:
+        for c in pending_compress:
+            with timing.phase("compress", vars=list(c.variables),
+                              error_bound=c.error_bound):
+                loaded = _compress(loaded, list(c.variables), c.error_bound, c.mode)
+        done.append((tag, loaded))
+    with timing.phase("sink_save", bytes=sum(_loaded_bytes(l) or 0 for _, l in done)):
+        result["output"] = save_tagged(done, sink.path, done[0][1].filetype)
+    result["tags"] = [t for t, _ in done]
+    return result
+
+
+def _boxes_at(info, middle, label, steps, tag=None):
     """Swap each per-timestep region in `middle` for timestep `label`'s concrete
     box, so the rest of lowering sees an ordinary fixed region. `label=None`
     (pricing or checking a series against one schema) uses each region's first
-    centre. Returns (middle, boxes) with boxes [(ranges, clipped_axes)]."""
+    centre — and is the one centre a named box on a single file has. `tag` names
+    the box in a clip note. Returns (middle, boxes) with boxes [(ranges,
+    clipped_axes)]."""
     from vislang.interpreter.track import box_for_step
     grid = (info.dimensions or {}).get("grid") if _modality(info) == "grid" else None
     out, boxes = [], []
@@ -625,10 +697,95 @@ def _boxes_at(info, middle, label, steps):
             n, clipped = box_for_step(n, lab, grid)
             boxes.append((n.ranges, clipped))
             if clipped:
-                steps.append(f"region at #{lab}: box clipped to the grid edge on "
+                who = (f"region at #{lab}" if tag is None else
+                       f"box {tag!r}" + (f" at #{lab}" if lab is not None else ""))
+                steps.append(f"{who}: box clipped to the grid edge on "
                              f"{', '.join(clipped)}")
         out.append(n)
     return out, boxes
+
+
+def _materialize_units(info, middles, label=None, notes=None, tags=None):
+    """Cut several boxes from ONE file: each middle (one per box — a named box's
+    own view of the chain) is lowered against `info`, one inspect for all, and
+    the boxes are read together (load.materialize_boxes: one read where the
+    format would read the whole file per box anyway). `tags` names each box in
+    clip notes. Returns [(loaded, boxes)] in the order given, `boxes` being each
+    one's resolved per-timestep box for provenance."""
+    notes = [] if notes is None else notes
+    lowered = []
+    for i, mid in enumerate(middles):
+        mid, boxes = _boxes_at(info, mid, label, notes,
+                               tag=tags[i] if tags else None)
+        narrowing, pending = _lower(info, mid, [])
+        lowered.append((narrowing, pending, boxes))
+    # A subsample pushed into the read samples the FILE, before any box is cut
+    # (that is the order the spec wrote), so every box gets the same draw —
+    # lowering drew one per box. The chains differ only in the region, so the
+    # pushdowns agree in kind.
+    first = lowered[0][0]
+    if first.particle_index is not None:
+        for narrowing, _, _ in lowered[1:]:
+            if narrowing.particle_index is not None:
+                narrowing.particle_index = first.particle_index
+    if len(lowered) == 1:
+        loadeds = [materialize(info, lowered[0][0])]
+    else:
+        loadeds = materialize_boxes(info, [n for n, _, _ in lowered])
+    out = []
+    for loaded, (_, pending, boxes) in zip(loadeds, lowered):
+        for c in pending:
+            loaded = _compress(loaded, list(c.variables), c.error_bound, c.mode)
+        out.append((loaded, boxes))
+    return out
+
+
+def _check_boxes(info, middles, plan, own_info=None):
+    """Resolve every box against a schema before any read, so a box that misses
+    the grid fails now — not after the timesteps before it were read. `info`
+    stands for the series; a box that misses its grid is re-checked against its
+    own timestep's file when `own_info(label)` can inspect it, so a series whose
+    grid changes is not refused for a box its own file holds. `middles` is
+    {tag: middle}; `plan` is {label: [tags]}."""
+    from vislang.interpreter.track import box_for_step, per_step_regions
+
+    def grid_of(i):
+        return (i.dimensions or {}).get("grid") if _modality(i) == "grid" else None
+    grid = grid_of(info)
+    for lab, tags in plan.items():
+        for t in tags:
+            for n in per_step_regions(middles[t]):
+                try:
+                    try:
+                        box_for_step(n, lab, grid)
+                    except ValueError:
+                        if own_info is None or lab is None:
+                            raise
+                        box_for_step(n, lab, grid_of(own_info(lab)))
+                except ValueError as e:
+                    if t is None:
+                        raise
+                    raise ValueError(f"box {t!r}: {e}") from None
+
+
+def _first_boxes(firsts):
+    """{label: [tags]} holding only each tag's first box: what one schema can
+    vouch for when the other timesteps' files are not at hand (an estimate, a
+    remote folder) — the rest are cut against their own files."""
+    plan = {}
+    for t, lab in firsts.items():
+        plan.setdefault(lab, []).append(t)
+    return plan
+
+
+def _tag_summary(plan):
+    """({tag: number of boxes}, {tag: its first timestep}) from {label: [tags]}."""
+    counts, firsts = {}, {}
+    for lab, tags in plan.items():
+        for t in tags:
+            counts[t] = counts.get(t, 0) + 1
+            firsts.setdefault(t, lab)
+    return counts, firsts
 
 
 def _lower(info, middle, steps, label=None):
@@ -759,6 +916,10 @@ def _lower(info, middle, steps, label=None):
 def _plan_local(src, middle, sink, terminal, dry_run, source_uri, steps, confirm=False):
     """Plan (and unless dry_run, execute) a SINGLE-file chain: inspect, lower the
     middle forms into one fused Narrowing, then materialize + compress + sink."""
+    from vislang.interpreter.track import tagged_region
+    if tagged_region(middle) is not None:
+        return _plan_local_tagged(src, middle, sink, terminal, dry_run, source_uri,
+                                  steps, confirm)
     # Inspect (metadata only) — static checks in _lower run before any bulk read.
     # These two phases are the "cost of a rejected request": everything up to and
     # including validate_narrowing happens on metadata, before any bulk read.
@@ -826,6 +987,78 @@ def _plan_local(src, middle, sink, terminal, dry_run, source_uri, steps, confirm
     return result
 
 
+def _plan_local_tagged(src, middle, sink, terminal, dry_run, source_uri, steps,
+                       confirm=False):
+    """Named boxes on ONE file (region(center={tag: (x, y[, z])})): one inspect,
+    each tag lowered as its own box, the boxes read together (one read where
+    the format slices in memory), and each tag saved to its own output."""
+    from vislang.interpreter.estimate import estimate_boxes_cost, format_plan_estimate
+    from vislang.interpreter.load import shares_read
+    from vislang.interpreter.track import tagged_region, tag_names, for_tag
+    tagged = tagged_region(middle)
+    tags = tag_names(tagged)
+    middles = {t: for_tag(middle, t) for t in tags}
+    plan = {None: tags}
+    with timing.phase("inspect", uri=source_uri):
+        info = inspect_file(source_uri, positions=src.positions)
+    try:
+        timing.note(source_bytes=os.path.getsize(source_uri))
+    except OSError:
+        pass
+    if provenance.active():
+        provenance.note_source(read_from=source_uri, info=info, site="local",
+                               fingerprint=provenance.file_fingerprint(source_uri))
+    steps.append(_describe_schema(info, source_uri))
+    with timing.phase("lower"):
+        steps.append(f"named boxes: {', '.join(tags)} — each lowered as its own box")
+        _check_boxes(info, middles, plan)
+        boxes = [(_lower(info, middles[t], steps if i == 0 else [])[0], 1)
+                 for i, t in enumerate(tags)]
+    steps += _tag_box_lines(info, tagged, plan)
+    if sink is not None:
+        steps.append(f"-> save one output per tag -> {_output_root(sink.path)}/<tag>")
+    else:
+        steps.append(f"(no sink — chain ends at {terminal.kind}; nothing to materialize)")
+
+    result = {"kind": (sink.kind if sink is not None else terminal.kind),
+              "uri": src.uri, "steps": steps, "output": None, "materialized": False,
+              "narrowing": boxes[0][0]}
+    estimate = estimate_boxes_cost(info=info, boxes=boxes, site='local',
+                                   sink_kind=sink.kind if sink is not None else None,
+                                   shared_read=len(tags) > 1 and shares_read(info))
+    timing.note(tags=len(tags), boxes=len(tags))
+    timing.note_estimate(estimate)
+    if dry_run or sink is None:
+        result["estimate"] = estimate
+        steps.append(format_plan_estimate(estimate))
+        return result
+    if _gate(result, estimate, confirm, steps):
+        return result
+
+    with timing.phase("materialize") as _m:
+        notes = []
+        cut = _materialize_units(info, [middles[t] for t in tags], None, notes,
+                                 tags=tags)
+        _m["bytes"] = sum(_loaded_bytes(l) or 0 for l, _ in cut)
+    steps += notes
+    result["materialized"] = True
+    for t, (_, boxes_t) in zip(tags, cut):
+        provenance.note_region_box(None, boxes_t, tag=t)
+    return _finish_tags([(t, l) for t, (l, _) in zip(tags, cut)], [], sink, result)
+
+
+def _output_root(path):
+    """The directory a many-file sink writes into: the path minus a known
+    output extension (`roi.vti` -> `roi`), as save does."""
+    from vislang.output.save import _EXT_FORMAT
+    stem, ext = os.path.splitext(path)
+    return stem if ext.lower() in _EXT_FORMAT else path
+
+
+def _ranges_text(ranges):
+    return ", ".join(f"{a}:({_fmt_bound(lo)},{_fmt_bound(hi)})" for a, lo, hi in ranges)
+
+
 def _box_lines(info, middle, labels, limit=12):
     """Dry-run text: the box each timestep would get, from one schema (a series
     shares its grid shape). Shows the first `limit` timesteps."""
@@ -838,12 +1071,37 @@ def _box_lines(info, middle, labels, limit=12):
                         else "world coordinates") + "):")
         for lab in labels[:limit]:
             box, clipped = box_for_step(n, lab, grid)
-            text = ", ".join(f"{a}:({_fmt_bound(lo)},{_fmt_bound(hi)})"
-                             for a, lo, hi in box.ranges)
-            lines.append(f"  #{lab}: {text}" + (f"  [clipped {','.join(clipped)}]"
-                                                 if clipped else ""))
+            lines.append(f"  #{lab}: {_ranges_text(box.ranges)}"
+                         + (f"  [clipped {','.join(clipped)}]" if clipped else ""))
         if len(labels) > limit:
             lines.append(f"  … {len(labels) - limit} more")
+    return lines
+
+
+def _tag_box_lines(info, tagged, plan, limit=8):
+    """Dry-run text: every named box — per timestep over a series (the first
+    `limit` of each tag), or its one box on a file."""
+    from vislang.interpreter.track import box_for_step, tag_names, tag_view
+    grid = (info.dimensions or {}).get("grid") if _modality(info) == "grid" else None
+    lines = ["named boxes (" + ("index space, clipped to the grid" if grid is not None
+                                else "world coordinates") + "):"]
+    for t in tag_names(tagged):
+        labels = [lab for lab, tags in plan.items() if t in tags]
+        if not labels:
+            continue
+        view = tag_view(tagged, t)
+        if labels == [None]:
+            box, clipped = box_for_step(view, None, grid)
+            lines.append(f"  {t}: {_ranges_text(box.ranges)}"
+                         + (f"  [clipped {','.join(clipped)}]" if clipped else ""))
+            continue
+        lines.append(f"  {t} ({len(labels)} timestep(s)):")
+        for lab in labels[:limit]:
+            box, clipped = box_for_step(view, lab, grid)
+            lines.append(f"    #{lab}: {_ranges_text(box.ranges)}"
+                         + (f"  [clipped {','.join(clipped)}]" if clipped else ""))
+        if len(labels) > limit:
+            lines.append(f"    … {len(labels) - limit} more")
     return lines
 
 
@@ -856,10 +1114,18 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
     timestep files (named `…#N`) and combine. timesteps() nodes (already split
     out of `middle`) pick the inclusive #N range; the rest of the chain lowers
     per file exactly as for one file. render over a series isn't supported — pick
-    one timestep, or save the range (one file per timestep, original format)."""
+    one timestep, or save the range (one file per timestep, original format).
+
+    Named boxes (region(center={tag: {N: …}})) run per (timestep, tag): each file
+    is inspected once and every tag whose box exists there is cut from it (one
+    read where the format slices in memory); each tag is then saved as its own
+    series under the sink path. Timesteps where no tag has a box are not read."""
     from vislang.formats.inspect import timestep_files
-    from vislang.interpreter.estimate import estimate_plan_cost, format_plan_estimate
-    from vislang.interpreter.track import check_coverage, per_step_regions
+    from vislang.interpreter.estimate import (estimate_plan_cost, estimate_boxes_cost,
+                                              format_plan_estimate)
+    from vislang.interpreter.load import shares_read
+    from vislang.interpreter.track import (check_coverage, per_step_regions,
+                                           tagged_region, tag_plan, tag_names, for_tag)
     files = timestep_files(src.uri)                     # [(label, path)]; raises if none
     available = [lab for lab, _ in files]
     rng = None
@@ -873,36 +1139,74 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
              + (f" in #{rng[0]}..{rng[1]}" if rng else "")]
     if not files:
         raise ValueError(f"no timesteps match {rng} in {src.uri}")
-    # A per-timestep region must cover exactly the selected files — checked from
-    # the listing alone, before any inspect or read.
     moving = per_step_regions(middle)
-    check_coverage(middle, [lab for lab, _ in files], available)
+    tagged = tagged_region(middle)
+    if tagged is not None:
+        # Which tag's box runs at which timestep — from the listing alone,
+        # before any inspect or read. A tag may skip timesteps.
+        plan, skipped = tag_plan(tagged, [lab for lab, _ in files], available)
+        files = [(lab, p) for lab, p in files if lab in plan]
+        if moving:                  # an unnamed moving box too: every file read
+            check_coverage(middle, list(plan), available)
+        tags = [t for t in tag_names(tagged) if t not in skipped]
+        middles = {t: for_tag(middle, t) for t in tags}
+        counts, firsts = _tag_summary(plan)
+        steps.append("named boxes: " + ", ".join(f"{t} ×{counts[t]}" for t in tags)
+                     + f" — {sum(counts.values())} box(es) from {len(files)} "
+                       f"timestep file(s)")
+        steps += [f"tag {t!r}: no box in the selected timesteps — nothing written "
+                  f"for it" for t in skipped]
+    else:
+        # A per-timestep region must cover exactly the selected files — checked
+        # from the listing alone, before any inspect or read.
+        check_coverage(middle, [lab for lab, _ in files], available)
+        plan = {lab: [None] for lab, _ in files}
+        tags, middles = [None], {None: middle}
+        counts, firsts = {None: len(files)}, {None: files[0][0]}
 
     if sink is not None and sink.kind == "render":
         raise NotImplementedError(
             "render over a timeseries folder isn't supported — select one timestep "
             "with timesteps(node, N, N), or use save() to write the range.")
 
-    # Plan + estimate off timestep 0 (metadata only); folder cost scales × N steps.
+    # Plan + estimate off the first timestep (metadata only); a series shares
+    # its schema, so cost scales with the steps (or boxes) selected.
     with timing.phase("inspect", uri=files[0][1], n_timesteps=len(files)):
         info0 = inspect_file(files[0][1], positions=src.positions)
     provenance.note_source(info=info0, site="local")
     with timing.phase("lower"):
-        narrowing0, _ = _lower(info0, middle, [], label=files[0][0])
-    estimate = estimate_plan_cost(info=info0, narrowing=narrowing0, site='local',
-                                  n_timesteps=len(files),
-                                  sink_kind=(sink.kind if sink is not None else None))
+        if moving or tagged is not None:                # every box, before any read
+            paths = dict(files)
+            _check_boxes(info0, middles, plan, own_info=lambda lab: inspect_file(
+                paths[lab], positions=src.positions))
+        lowered0 = {t: _lower(info0, middles[t], [], label=firsts[t])[0] for t in tags}
+    sink_kind = sink.kind if sink is not None else None
+    if tagged is None:
+        estimate = estimate_plan_cost(info=info0, narrowing=lowered0[None], site='local',
+                                      n_timesteps=len(files), sink_kind=sink_kind)
+    else:
+        estimate = estimate_boxes_cost(
+            info=info0, boxes=[(lowered0[t], counts[t]) for t in tags], site='local',
+            n_timesteps=len(files), sink_kind=sink_kind,
+            shared_read=shares_read(info0) and any(len(v) > 1 for v in plan.values()))
+        timing.note(tags=len(tags), boxes=sum(counts.values()))
     timing.note_estimate(estimate)
 
     if dry_run or sink is None:
         steps.append("per timestep: "
                      + (" -> ".join(n.kind for n in middle) if middle else "(no narrowing)"))
         _trace(steps, _describe_schema(info0, files[0][1]))
-        _lower(info0, middle, steps, label=files[0][0])
-        if moving:
+        _lower(info0, middles[tags[0]], steps, label=firsts[tags[0]])
+        if tagged is not None:
+            steps += _tag_box_lines(info0, tagged, plan)
+        elif moving:
             steps += _box_lines(info0, middle, [lab for lab, _ in files])
-        steps.append("(no sink — nothing materialized)" if sink is None
-                     else f"-> save timeseries -> {sink.path}")
+        if sink is None:
+            steps.append("(no sink — nothing materialized)")
+        elif tagged is not None:
+            steps.append(f"-> save one series per tag -> {_output_root(sink.path)}/<tag>/")
+        else:
+            steps.append(f"-> save timeseries -> {sink.path}")
         steps.append(format_plan_estimate(estimate))
         return {"kind": (sink.kind if sink is not None else terminal.kind),
                 "uri": src.uri, "steps": steps, "output": None, "materialized": False,
@@ -920,52 +1224,81 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
         provenance.note_timesteps([
             {"label": lab, "uri": p, "fingerprint": provenance.file_fingerprint(p),
              "derived_from": provenance.parent_link(p)} for lab, p in files])
-    per_step = []
+    per_tag = {t: [] for t in tags}
     with timing.phase("materialize_timeseries", n=len(files)) as _m:
         total = 0
         for i, (label, path) in enumerate(files):
+            here = plan[label]
             try:                                      # name the failing timestep
                 info = inspect_file(path, positions=src.positions)
                 if i == 0:                            # echo the schema once
                     _trace(steps, _describe_schema(info, path))
                 clip_notes = []
-                mid, boxes = _boxes_at(info, middle, label, clip_notes)
+                cut = _materialize_units(info, [middles[t] for t in here], label,
+                                         clip_notes, tags=here)
                 steps += clip_notes
-                if boxes:
-                    provenance.note_region_box(label, boxes)
-                narrowing, pending_compress = _lower(info, mid, [])   # per-file steps discarded
-                loaded = materialize(info, narrowing)
-                for c in pending_compress:
-                    loaded = _compress(loaded, list(c.variables), c.error_bound, c.mode)
             except Exception as e:
                 raise type(e)(f"timestep #{label} ({path}): {e}") from e
-            total += _loaded_bytes(loaded) or 0
-            per_step.append((label, loaded))
+            for t, (loaded, boxes) in zip(here, cut):
+                if boxes:
+                    provenance.note_region_box(label, boxes, tag=t)
+                total += _loaded_bytes(loaded) or 0
+                per_tag[t].append((label, loaded))
         _m["bytes"] = total
-    steps.append(f"materialized {len(per_step)} timestep(s), "
-                 + ("each with its own region box" if moving else "same chain per file"))
 
-    from vislang.output.save import save_timeseries
-    with timing.phase("sink_save_timeseries", n=len(per_step)):
-        out = save_timeseries(per_step, sink.path, per_step[0][1].filetype)
-    steps.append(f"-> save timeseries -> {out}")
+    from vislang.output.save import save_timeseries, save_tagged_series
+    if tagged is None:
+        per_step = per_tag[None]
+        steps.append(f"materialized {len(per_step)} timestep(s), "
+                     + ("each with its own region box" if moving else "same chain per file"))
+        with timing.phase("sink_save_timeseries", n=len(per_step)):
+            out = save_timeseries(per_step, sink.path, per_step[0][1].filetype)
+        steps.append(f"-> save timeseries -> {out}")
+        return {"kind": "save", "uri": src.uri, "steps": steps, "output": out,
+                "materialized": True, "timesteps": [lab for lab, _ in per_step]}
+
+    n_boxes = sum(len(v) for v in per_tag.values())
+    steps.append(f"materialized {n_boxes} named box(es) from {len(files)} timestep(s)")
+    with timing.phase("sink_save_timeseries", n=n_boxes):
+        out = save_tagged_series([(t, per_tag[t]) for t in tags], sink.path,
+                                 per_tag[tags[0]][0][1].filetype)
+    steps.append(f"-> save one series per tag -> {out}/<tag>/")
     return {"kind": "save", "uri": src.uri, "steps": steps, "output": out,
-            "materialized": True, "timesteps": [lab for lab, _ in per_step]}
+            "materialized": True, "timesteps": [lab for lab, _ in files],
+            "tags": {t: [lab for lab, _ in per_tag[t]] for t in tags}}
 
 
 def per_step_regions_in(middle):
-    return any(isinstance(n, RegionNode) and n.per_step for n in middle)
+    """True when a region's box depends on the timestep (one moving box, or
+    named boxes placed per timestep)."""
+    return any(isinstance(n, RegionNode) and (n.per_step or n.tag_series)
+               for n in middle)
 
 
 def _check_remote_coverage(middle, files, available, steps):
     """Coverage of a per-timestep region against a remote listing
-    [(label, uri, size, mtime)] — the same rule _plan_folder applies locally."""
+    [(label, uri, size, mtime)] — the same rule _plan_folder applies locally.
+    Returns the named-box plan {label: [tags]} when the region names its boxes,
+    else None."""
+    from vislang.interpreter.track import (check_coverage, tagged_region, tag_plan,
+                                           per_step_regions)
+    tagged = tagged_region(middle)
+    if tagged is not None:
+        plan, skipped = tag_plan(tagged, [f[0] for f in files], available)
+        if per_step_regions(middle):
+            check_coverage(middle, list(plan), available)
+        counts, _ = _tag_summary(plan)
+        steps.append(f"named boxes: {sum(counts.values())} box(es) over "
+                     f"{len(plan)} timestep(s)"
+                     + (f"; none in the selection for {', '.join(skipped)}"
+                        if skipped else ""))
+        return plan
     if not per_step_regions_in(middle):
-        return
-    from vislang.interpreter.track import check_coverage
+        return None
     check_coverage(middle, [f[0] for f in files], available)
     steps.append(f"per-timestep region: a centre for each of the {len(files)} "
                  f"selected timestep(s)")
+    return None
 
 
 def _fetch_remote_folder(uri):
@@ -1038,13 +1371,16 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
             steps.append(f"select timesteps #{lo}..{hi}")
         if not files:
             raise ValueError(f"no timesteps match in {src.uri}")
-        _check_remote_coverage(middle, files, available, steps)
+        plan = _check_remote_coverage(middle, files, available, steps)
+        if plan is not None:                            # named boxes: only their files
+            files = [f for f in files if f[0] in plan]
         steps.append(f"{len(files)} timestep(s), "
                      f"{sum(f[2] for f in files) / (1024 ** 2):.0f} MiB of source")
         timing.note(selected_timesteps=len(files),
                     source_bytes=int(sum(f[2] for f in files)))
         return _estimate_remote(src, middle, sink, steps, mode, has_narrowing,
-                                n_timesteps=len(files), schema_uri=files[0][1])
+                                n_timesteps=len(files), schema_uri=files[0][1],
+                                plan=plan)
 
     # Execute: one remote job for the whole folder (cost gate mirrors _plan_remote).
     steps = []
@@ -1108,10 +1444,15 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
             else:
                 steps.append(f"remote compute: {n}/{n} timestep(s) reduced next to "
                              f"the data on {report['host']}{job}, dir pulled once")
-            steps.append(f"local:   -> save timeseries -> {out}")
-            return {"kind": "save", "uri": src.uri, "steps": steps, "output": out,
-                    "materialized": True, "timesteps": report.get("timesteps", []),
-                    "sites": {"remote": fetched, "cached": cached, "fetch": 0}}
+            steps.append(f"local:   -> save one series per tag -> {out}/<tag>/"
+                         if report.get("tags") else
+                         f"local:   -> save timeseries -> {out}")
+            res = {"kind": "save", "uri": src.uri, "steps": steps, "output": out,
+                   "materialized": True, "timesteps": report.get("timesteps", []),
+                   "sites": {"remote": fetched, "cached": cached, "fetch": 0}}
+            if report.get("tags"):
+                res["tags"] = report["tags"]
+            return res
         except SessionHold as h:
             # As in _plan_remote: the whole-folder fetch needs the same session,
             # so there is nothing to fall back TO.

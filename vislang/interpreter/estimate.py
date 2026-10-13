@@ -210,6 +210,7 @@ class CostEstimate:
     over_budget: bool = False
     budget_reason: str | None = None       # 'size' | 'time' | 'size+time' | None
     notes: list = field(default_factory=list)
+    n_boxes: int = 0                       # named boxes priced (0 = one box per step)
 
 
 def _ceil_div(a, b):
@@ -362,6 +363,18 @@ def estimate_plan_cost(*, info, narrowing, site, n_timesteps=1, sink_kind=None,
     if browser_payload_mb is not None:
         browser_payload_mb *= n
 
+    est = _priced(site=site, read_mb=read_mb, output_mb=output_mb,
+                  browser_payload_mb=browser_payload_mb, n_timesteps=n,
+                  net_bw_bps=net_bw_bps, notes=notes)
+    if any(v not in info.itemsizes for v in read_set):
+        est.notes.append("dtype not fully known — bytes assume 4 B/element where missing.")
+    return est
+
+
+def _priced(*, site, read_mb, output_mb, browser_payload_mb, n_timesteps,
+            net_bw_bps, notes, n_boxes=0):
+    """A CostEstimate from its byte totals: the time band (remote, when the link
+    was measured) and the budget verdict."""
     time_lo_s = time_hi_s = confidence = None
     if site == 'remote' and read_mb is not None:
         if net_bw_bps:
@@ -375,15 +388,56 @@ def estimate_plan_cost(*, info, narrowing, site, n_timesteps=1, sink_kind=None,
     over_time = time_hi_s is not None and time_hi_s > _budget_seconds()
     reason = ('size+time' if over_size and over_time else
               'size' if over_size else 'time' if over_time else None)
-
-    if any(v not in info.itemsizes for v in read_set):
-        notes.append("dtype not fully known — bytes assume 4 B/element where missing.")
-
     return CostEstimate(site=site, read_mb=read_mb, output_mb=output_mb,
-                        browser_payload_mb=browser_payload_mb, n_timesteps=n,
+                        browser_payload_mb=browser_payload_mb, n_timesteps=n_timesteps,
                         time_lo_s=time_lo_s, time_hi_s=time_hi_s, confidence=confidence,
                         over_budget=bool(over_size or over_time), budget_reason=reason,
-                        notes=notes)
+                        notes=notes, n_boxes=n_boxes)
+
+
+def estimate_boxes_cost(*, info, boxes, site, n_timesteps=1, sink_kind=None,
+                        net_bw_bps=None, shared_read=False):
+    """Estimate cutting several NAMED boxes (region(center={tag: …})).
+
+    `boxes` is [(narrowing, count)] or [(narrowing, count, wire_vars)]: one
+    lowered box per tag, standing for all `count` of that tag's boxes (a tag's
+    size is fixed, so its boxes match up to clipping at the grid edge — which
+    only shrinks them, so this errs high). Result size and bytes over the wire
+    are summed over the boxes. A local read the boxes of one file share
+    (`load.shares_read`) is counted once per file: the largest one box would
+    read, times the `n_timesteps` files read."""
+    parts = []
+    for entry in boxes:
+        narrowing, count = entry[0], entry[1]
+        wire = entry[2] if len(entry) > 2 else (
+            narrowing.project if narrowing is not None else None)
+        est = estimate_plan_cost(info=info, narrowing=narrowing, site=site,
+                                 n_timesteps=1, sink_kind=sink_kind,
+                                 net_bw_bps=net_bw_bps,
+                                 wire_vars=wire if site == 'remote' else None)
+        parts.append((est, max(0, int(count))))
+
+    def total(attr):
+        vals = [(getattr(e, attr), k) for e, k in parts]
+        if all(v is None for v, _ in vals):
+            return None
+        return sum((v or 0) * k for v, k in vals)
+
+    notes = []
+    for e, _ in parts:
+        notes += [m for m in e.notes if m not in notes
+                  and not m.startswith("network speed unavailable")]
+    n = max(1, int(n_timesteps))
+    if site == 'local' and shared_read:
+        reads = [e.read_mb for e, _ in parts if e.read_mb is not None]
+        read_mb = max(reads) * n if reads else None
+        notes.append("each file is read once and every box is cut from that read.")
+    else:
+        read_mb = total("read_mb")
+    return _priced(site=site, read_mb=read_mb, output_mb=total("output_mb"),
+                   browser_payload_mb=total("browser_payload_mb"), n_timesteps=n,
+                   net_bw_bps=net_bw_bps, notes=notes,
+                   n_boxes=sum(k for _, k in parts))
 
 
 def format_plan_estimate(est):
@@ -391,6 +445,8 @@ def format_plan_estimate(est):
     lines = [f"Cost estimate ({est.site}):"]
     if est.n_timesteps > 1:
         lines.append(f"  timesteps: {est.n_timesteps}")
+    if est.n_boxes:
+        lines.append(f"  named boxes: {est.n_boxes}")
     if est.read_mb is not None:
         label = "over the wire" if est.site == 'remote' else "read from disk"
         lines.append(f"  {label}: ~{est.read_mb:.0f} MB")

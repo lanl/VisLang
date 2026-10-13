@@ -19,6 +19,14 @@ conversion is requested** — including over a time series, where it names the
 per-timestep format inside the output folder (`save(node, "roi.vti")` writes
 `roi/timestep#N.vti`). Otherwise a series preserves the source format.
 
+Named boxes (`region(center={tag: …})`) write one output per tag under the
+sink's directory — `<dir>/<tag>/timestep#N.<ext>` over a series,
+`<dir>/<tag>.<ext>` on one file — with one format decided for every tag
+before anything is written. A `.vti`/`.vtp` series stores each file's `#N` as
+`TimeValue` and gets a `<dir>/<dir>.pvd` index, so ParaView opens the whole
+output as one time-aligned dataset with a block per tag (a box missing at a
+timestep is missing there, not frozen at its last frame).
+
 Two rules the writers keep. **Writers are Tier-0 only**: you can convert out of
 an LLM-read format but never into one (`instructions/soundness.md`).
 **Conversion never resamples**: a grid cannot be saved as a point set or the

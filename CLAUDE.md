@@ -30,7 +30,9 @@ with no sink is a **dry run** — you get the inferred plan, nothing is read.
 
 `source(uri, positions=None)` · `fields(node, keep)` · `region(node, x=(a,b), …)`
 (over a timeseries also `region(node, center={N: (x,y[,z])} | track="f.csv", size=s)`
-— a box per timestep, centre ± size/2)
+— a box per timestep, centre ± size/2; several **named boxes** with
+`center={tag: {N: (x,y[,z])}}`, or `{tag: (x,y[,z])}` on one file — `save` writes
+one output per tag, `<dir>/<tag>/…`)
 · `subsample(node, f)` / `subsample(node, x=…, y=…)` · `threshold(node, "var > v")`
 · `timesteps(node, start, stop)` · `compress(node, variables, error_bound)` ·
 `save(node, path)` [sink] · `render(node, cmap=None, opacity=None)` [sink]. Full
@@ -65,7 +67,9 @@ change). VTK covers grids (ImageData/Rectilinear/Structured) and point sets
 (PolyData); `.vtu` is refused in both directions. A cropped grid carries
 `DatasetInfo.geometry` (origin+spacing, optional and never synthesized, shifted
 by the narrowing in `materialize`), so VTK output lands where the cut actually
-was and ROIs across timesteps align.
+was and ROIs across timesteps align. A `.vti`/`.vtp` series also carries each
+file's `#N` as `TimeValue` plus a `<dir>/<dir>.pvd` index, so ParaView opens it
+— named boxes included, gaps and all — as one time-aligned dataset.
 
 ## MCP tools (called directly, not written in a spec)
 

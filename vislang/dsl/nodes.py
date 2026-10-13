@@ -44,21 +44,40 @@ class FieldsNode(Node):
 class RegionNode(Node):
     # A fixed box (`ranges`: (axis, lo, hi) per axis), OR a box that moves with
     # the timestep: `centers` rows (label, cx, cy[, cz]) plus a per-axis `size`
-    # (None = keep that axis whole). `track` names the CSV the centres came from
-    # and `track_sha` its hash; the planner inlines the rows before any read, so
-    # the plan carries data, never a path the remote cannot see.
+    # (None = keep that axis whole), OR several NAMED boxes: `tags` rows
+    # (tag, size, centres) where centres are (label, cx, cy[, cz]) rows over a
+    # timeseries and one (None, cx, cy[, cz]) row on a single file. `track`
+    # names the CSV the centres came from and `track_sha` its hash; the planner
+    # inlines the rows before any read, so the plan carries data, never a path
+    # the remote cannot see. `tag_sizes` holds a `size={tag: …}` until a track
+    # file's tags are known.
     upstream: Node
     ranges: tuple = ()
     centers: tuple = ()
     size: tuple = ()
     track: str = None
     track_sha: str = None
+    tags: tuple = ()
+    tag_sizes: tuple = ()
     kind = "region"
 
     @property
     def per_step(self):
-        """True when the box differs per timestep (centres or a track file)."""
+        """True when ONE box differs per timestep (centres, or a track file not
+        yet read). Named boxes are `tagged`, not per_step."""
+        if self.tags:
+            return False
         return bool(self.centers) or self.track is not None
+
+    @property
+    def tagged(self):
+        """True for several named boxes, each written to its own output."""
+        return bool(self.tags)
+
+    @property
+    def tag_series(self):
+        """True when the named boxes are placed per timestep (a timeseries)."""
+        return bool(self.tags) and self.tags[0][2][0][0] is not None
 
 
 @dataclass(frozen=True)

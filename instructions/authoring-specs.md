@@ -29,6 +29,9 @@ For a first look at an unfamiliar dataset, skip the narrowing and just
   are visible and editable by the human.
 - Trust the static check: a bad axis, out-of-range region, or unknown
   variable/threshold raises *before any data is read* — fix the spec, don't guess.
+- For several boxes, name them in one `region(center={tag: …})` rather than
+  writing a region and a `save` per box: the file is read once, a remote run is
+  one job, and the output folder has one series per tag plus a ParaView index.
 
 ## Don't
 - Don't import readers, hand-parse bytes, or call `load`/`subset`/`download` in a

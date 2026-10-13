@@ -332,18 +332,39 @@ def note_timesteps(steps):
         pass
 
 
-def note_region_box(label, boxes):
+def note_region_box(label, boxes, tag=None):
     """The concrete box a per-timestep region resolved to at timestep `label`:
-    boxes is [(ranges, clipped_axes)], one per moving region in the chain."""
+    boxes is [(ranges, clipped_axes)], one per moving region in the chain. For a
+    named box `tag` says whose box it is (`label` is None on a single file)."""
     if _pipe is None:
         return
     try:
-        _pipe.setdefault("region_boxes", {})[int(label)] = [
-            {"box": {a: [lo, hi] for a, lo, hi in ranges},
-             **({"clipped": list(clipped)} if clipped else {})}
-            for ranges, clipped in boxes]
+        entry = [{"box": {a: [lo, hi] for a, lo, hi in ranges},
+                  **({"clipped": list(clipped)} if clipped else {})}
+                 for ranges, clipped in boxes]
+        if tag is None:
+            _pipe.setdefault("region_boxes", {})[int(label)] = entry
+        else:
+            _pipe.setdefault("tag_boxes", {}).setdefault(tag, {})[
+                None if label is None else int(label)] = entry
     except Exception:
         pass
+
+
+@contextmanager
+def for_tag(tag):
+    """Scope the records written inside to named box `tag`: each tag's output
+    is its own artifact, so its record carries that tag's boxes, not its
+    siblings'."""
+    if _pipe is None:
+        yield
+        return
+    prev = _pipe.get("tag")
+    _pipe["tag"] = tag
+    try:
+        yield
+    finally:
+        _pipe["tag"] = prev
 
 
 def note_region_track(tracks):
@@ -352,6 +373,27 @@ def note_region_track(tracks):
     if _pipe is None or not tracks:
         return
     _pipe["region_track"] = list(tracks)
+
+
+def note_resolved_regions(regions):
+    """Swap the stashed plan's region steps for their resolved form, so the
+    explanation describes the boxes a track file actually held (named or not)
+    rather than the bare path the spec wrote. `regions` are the chain's region
+    nodes after resolution, in written order."""
+    if _pipe is None or not _pipe.get("plan"):
+        return
+    try:
+        from vislang.dsl.ast_serialize import _ser_region
+        steps = [s for s in _pipe["plan"].get("chain") or []
+                 if s.get("kind") == "region"]
+        if len(steps) != len(regions):
+            return
+        for st, n in zip(steps, regions):
+            if n.track is not None:
+                st.clear()
+                st.update(_ser_region(n))
+    except Exception:
+        pass
 
 
 def note_columns_from(groups):
@@ -481,9 +523,50 @@ def _flow_text(v):
     return _num(v)
 
 
+def _tagged_lines(step, tag, grid, labels):
+    """Explanation lines for a region with named boxes, for this output's tag.
+    `labels` are the timesteps this output holds (none for a box on one file),
+    so a folder record and each of its per-timestep files say what they hold.
+    A track file's tags are read after the plan was recorded; when the plan was
+    not updated, the step carries only the track and the sizes as written."""
+    entries = step.get("tags") or []
+    names = [e[0] for e in entries]
+    mine = next((e for e in entries if e[0] == tag), None)
+    if mine is not None:
+        size, rows = mine[1], mine[2]
+    else:
+        size = dict((t, sz) for t, sz in step.get("tag_sizes") or []).get(tag) \
+            or step.get("size") or []
+        rows = None
+    size = ", ".join("whole" if v is None else _num(v) for v in size)
+    centre = {r[0]: list(r[1:]) for r in rows or ()}
+    if not labels:
+        at = f" centred at {_flow_text(centre[None])}" if None in centre else ""
+        head = f"keep the box named {tag}: size ({size}){at}"
+    elif len(labels) == 1:
+        lab = labels[0]
+        at = (f"centred at {_flow_text(centre[lab])}" if lab in centre
+              else "centred on its own centre")
+        head = f"keep the box named {tag} at #{lab}: size ({size}) {at}"
+    else:
+        head = (f"keep the box named {tag}: size ({size}), centred on its own "
+                f"centre at each of its {len(labels)} timesteps here")
+    src = (f"centres from {os.path.basename(step['track'])}" if step.get("track")
+           else "centres given in the spec")
+    others = [n for n in names if n != tag]
+    more = [("  one of " + (f"{len(names)} named boxes in the spec" if names
+                            else "the named boxes in the spec")
+             + (f" (the others: {_names(others)})" if others else "")),
+            f"  {src}; " + ("index space, clipped to the grid" if grid
+                            else "world coordinates")
+            + ("; the box per timestep is under resolved.region_boxes" if labels
+               else "; the box is under resolved.region_box")]
+    return head, more
+
+
 def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
             comp, modes, grid, positions=None, geometry=None, cast=(),
-            series=False, degraded=None):
+            series=False, degraded=None, tag=None, labels=None):
     """The Steps list and the Values verdict, from recorded fields only."""
     lossy = _lossy(comp)
     avail = list(input_columns or [])
@@ -498,6 +581,8 @@ def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
             drop = [c for c in avail if c not in keep]
             head = f"keep {_names(keep)}" + (f"; drop {_names(drop)}" if drop else "")
             avail = keep
+        elif kind == "region" and "tags" in step:
+            head, more = _tagged_lines(step, tag, grid, labels or [])
         elif kind == "region" and "centers" in step:
             size = ", ".join("whole" if v is None else _num(v)
                              for v in step.get("size") or [])
@@ -782,8 +867,16 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
              and comp[v].get("method") == "SPERR"}
     if modes:
         resolved["compress_mode"] = modes
-    boxes = _pipe.get("region_boxes") or {}
-    if boxes:
+    tag = _pipe.get("tag")
+    boxes = (_pipe.get("tag_boxes") or {}).get(tag, {}) if tag is not None \
+        else _pipe.get("region_boxes") or {}
+    if tag is not None:
+        resolved["region_tag"] = tag
+    if None in boxes:
+        # A named box on one file: one box, no timestep.
+        v = boxes[None]
+        resolved["region_box"] = v[0] if len(v) == 1 else v
+    elif boxes:
         labels = [int(lab) for lab, _ in per_step if lab is not None]
         mine = {lab: boxes[lab] for lab in labels if lab in boxes}
         if mine:
@@ -825,7 +918,8 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
         in_filetype=src.get("filetype"), fmt=fmt, ext=ext, comp=comp,
         modes=modes, grid=grid, positions=getattr(last, "positions", None),
         geometry=getattr(last, "geometry", None), cast=cast, series=series,
-        degraded=degraded_from)
+        degraded=degraded_from, tag=tag,
+        labels=[int(lab) for lab, _ in per_step if lab is not None])
 
     logical = {"spec": _run.get("spec"), "spec_explanation": explanation,
                "input": inp, "resolved": resolved, "output": out,

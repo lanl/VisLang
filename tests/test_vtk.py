@@ -288,7 +288,14 @@ def test_degrade_and_series():
     check("series_folder_drops_extension", folder.endswith("roi_series"), folder)
     names = sorted(os.listdir(folder))
     check("series_files_named_by_convention",
-          names == ["timestep#0.vti", "timestep#1.vti"], names)
+          names == ["roi_series.pvd", "timestep#0.vti", "timestep#1.vti"], names)
+    from vislang.formats.inspect import timestep_files
+    check("series_index_is_not_a_timestep",
+          [lab for lab, _ in timestep_files(folder)] == [0, 1])
+    import pyvista as pv
+    check("series_files_carry_their_timestep",
+          float(pv.read(os.path.join(folder, "timestep#1.vti"))
+                .field_data["TimeValue"][0]) == 1.0)
 
     # No extension -> preserve the source format, unchanged behavior.
     plain = save_mod.save_timeseries(series, os.path.join(TMP, "plain_series"), "HDF5")
@@ -311,12 +318,14 @@ def test_degrade_and_series():
     vtk_pts = [("0", point_info(filetype="VTK")), ("1", point_info(filetype="VTK"))]
     pf = save_mod.save_timeseries(vtk_pts, os.path.join(TMP, "vtk_pts_series"), "VTK")
     check("series_preserve_points_uses_vtp",
-          sorted(os.listdir(pf)) == ["timestep#0.vtp", "timestep#1.vtp"],
+          sorted(os.listdir(pf)) == ["timestep#0.vtp", "timestep#1.vtp",
+                                     "vtk_pts_series.pvd"],
           os.listdir(pf))
     vtk_grid = [("0", grid_info(filetype="VTK")), ("1", grid_info(filetype="VTK"))]
     gf = save_mod.save_timeseries(vtk_grid, os.path.join(TMP, "vtk_grid_series"), "VTK")
     check("series_preserve_grid_uses_vti",
-          sorted(os.listdir(gf)) == ["timestep#0.vti", "timestep#1.vti"],
+          sorted(os.listdir(gf)) == ["timestep#0.vti", "timestep#1.vti",
+                                     "vtk_grid_series.pvd"],
           os.listdir(gf))
 
 

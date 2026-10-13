@@ -83,6 +83,26 @@ Follow-ups:
 - **Curvilinear output** (`.vts`) so terrain-following grids keep their point
   positions through the crop.
 
+## Named boxes — v1 realized
+`region(node, center={tag: {N: …}} | {tag: (x, y, z)} | track="f.csv" with a
+tag column)` cuts several named boxes per file — a different number at each
+timestep — and writes one output per tag (`<dir>/<tag>/…`), with a ParaView
+`.pvd` index and `TimeValue` so the boxes open together, time-aligned, gaps
+shown. Every route runs them: local, a remote file, the remote catalog folder
+route (unit = (timestep, tag)), and the plain remote folder batch.
+Follow-ups:
+- **Tracking itself**: tags are identity the author (or an external tracker)
+  vouches for. Deriving the centres in VisLang — feature detection per
+  timestep plus correspondence across steps, with splits and merges — would be
+  a new form with its own record of how matches were made.
+- **Render named boxes together** in the browser viewer (today: one dataset
+  per render; ParaView via the `.pvd` instead).
+- **Superset reuse** across boxes: two overlapping boxes are two extents.
+- **Box positions without source geometry**: a grid with no origin/spacing
+  writes each box at the index origin, so boxes overlap in ParaView. Writing
+  the crop's cell offset was considered and declined — it would put an origin
+  in the file the source never gave.
+
 ## Provenance — now realized (`sieve-provenance/2`)
 Every output carries a YAML record split into `logical` (the spec, the input's
 fingerprint, choices resolved at run time, the output's `data_sha256`, the

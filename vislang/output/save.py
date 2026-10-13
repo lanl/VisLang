@@ -34,6 +34,14 @@ A folder (timeseries) source writes one file per timestep into the output
 directory, named `timestep#N.<ext>` (GenericIO files carry no extension), so the
 result is itself a valid timeseries folder that source()/timesteps() can read
 back.
+
+Named boxes (`region(center={tag: …})`) write one output per tag under the
+sink path: `<dir>/<tag>/timestep#N.<ext>` over a timeseries (each tag its own
+series), `<dir>/<tag>.<ext>` on one file. One format is chosen for every tag.
+
+For ParaView, a `.vti`/`.vtp` series also carries each file's timestep as
+`TimeValue` field data, and a `<dir>/<dir>.pvd` collection indexes the files
+— see `_write_pvd`.
 """
 
 import os
@@ -378,6 +386,14 @@ def _write_vtk(out, loaded):
     # included, so a spec comment like `# dimensions 302 302 302` would be read
     # as the grid's shape. Free text cannot ride safely there; the companion
     # file takes it.
+    step = getattr(loaded, "time_value", None)
+    if step is not None and ext in _PVD_EXTS:
+        # ParaView takes a file's time from `TimeValue`. Without it a series is
+        # timed 0, 1, 2… by file order, so two series that skip different
+        # timesteps (named boxes) misalign on one time slider. ParaView ignores
+        # it in legacy .vtk, and .vtkhdf keeps time its own way.
+        mesh.field_data["TimeValue"] = np.array([float(step)])
+
     blob, _ = (None, {}) if ext == ".vtk" else _prov_blob(loaded, ascii=True)
     if blob is not None:
         mesh.field_data[PROV_KEY] = np.array([blob])
@@ -684,6 +700,123 @@ def save_loaded(loaded, path):
     return out
 
 
+def _series_format(path, source_filetype, loadeds):
+    """(fmt, out_dir, ext, note, degraded) for a sink that writes many files —
+    a timeseries, or named boxes. Format follows the SAME rule as the single-file
+    case — an extension the caller wrote wins, else the source's format is
+    preserved (npz fallback; for GenericIO the extension is empty, as its
+    snapshots carry none) — and is decided for EVERY file before any is written,
+    so the output is never a mix. With an extension, the directory takes the
+    stem: `roi.vti` -> `roi/`."""
+    _reject_unsupported_ext(path)
+    stem, want_ext = os.path.splitext(path)
+    want_ext = want_ext.lower()
+    explicit = want_ext in _EXT_FORMAT
+    if explicit:
+        fmt, path, ext = _EXT_FORMAT[want_ext], stem, want_ext
+    else:
+        fmt = _format_for_source(source_filetype)
+        ext = _FORMAT_EXT[fmt]
+
+    note = ""
+    degraded = None
+    if fmt == "npz" and not explicit and source_filetype not in (None, "npz"):
+        note = f" (no writer for {source_filetype}; wrote npz)"
+    elif fmt in ("genericio", "vtk"):
+        if fmt == "genericio":
+            label_fmt, checks = "GenericIO", (_genericio_blocker(l) for l in loadeds)
+        else:
+            # Preserving a VTK series: name the files after what the result
+            # actually is, so a point-cloud series round-trips as .vtp rather
+            # than failing against the .vti default and degrading to npz.
+            if not explicit:
+                ext = _vtk_default_ext(loadeds[0])
+            label_fmt, checks = "VTK", (_vtk_blocker(l, ext) for l in loadeds)
+        # One format for the WHOLE output: if any file cannot be written the
+        # set degrades together, rather than becoming a mixed bag or leaving a
+        # half-converted folder behind.
+        blocker = next((b for b in checks if b), None)
+        if blocker:
+            if explicit:
+                raise ValueError(f"cannot write {path}/ as {label_fmt}: {blocker}")
+            degraded = label_fmt
+            fmt, ext = "npz", _FORMAT_EXT["npz"]
+            note = f" (cannot write {label_fmt}: {blocker}; wrote npz)"
+    return fmt, path, ext, note, degraded
+
+
+def _write_series(per_step, path, fmt, ext, degraded):
+    """Write one series folder: `timestep#N<ext>` per step plus the folder's
+    provenance record. Returns the record's companion path, or None."""
+    os.makedirs(path, exist_ok=True)
+    for label, loaded in per_step:
+        step_out = os.path.join(path, f"timestep#{label}{ext}")
+        # Each step embeds its own record where the format allows, so a single
+        # file lifted out of the folder still carries one. Where it cannot
+        # (GenericIO), the folder record below lists the step: a companion file
+        # per step would be enumerated by timeseries discovery.
+        _begin_provenance(loaded, step_out, fmt, step=label, degraded_from=degraded)
+        loaded.time_value = label
+        try:
+            _WRITERS[fmt](step_out, loaded)
+        finally:
+            loaded.provenance = None
+            loaded.time_value = None
+    # Plus ONE folder-level record, naming every step in and out.
+    from vislang.runtime import provenance
+    return provenance.write_sidecar(
+        path, provenance.record_series(per_step, path, fmt, degraded_from=degraded))
+
+
+# Extensions a ParaView collection (.pvd) can list, and that carry TimeValue.
+# ParaView's collection reader takes VTK XML only: legacy .vtk and .vtkhdf are
+# refused ("could not determine the data type").
+_PVD_EXTS = (".vti", ".vtp")
+
+
+def pvd_path(root):
+    """Where the ParaView index of the output folder `root` lives: named after
+    the folder, so ParaView's pipeline shows what was opened. `#` would make the
+    index look like a timestep to timeseries discovery."""
+    name = os.path.basename(os.path.normpath(root)).replace("#", "_") or "series"
+    return os.path.join(root, f"{name}.pvd")
+
+
+def _write_pvd(root, entries, ext):
+    """A ParaView collection indexing the files under `root`, or None when the
+    format is not one it can list. `entries` is [(label|None, tag|None, path
+    relative to root)].
+
+    ParaView opens it as ONE dataset: each file at its own `timestep` (the #N
+    label) and each named box as its own block (`part`, named by its tag). A box
+    with no file at a timestep is simply absent there. Opened instead as one
+    file series per folder, ParaView would hold a box's last file across a gap,
+    showing a box that is not there."""
+    if ext not in _PVD_EXTS or not entries:
+        return None
+    from xml.sax.saxutils import quoteattr
+    parts = {}                            # tag -> block index, in the order given
+    for _, tag, _ in entries:
+        parts.setdefault(tag, len(parts))
+    rows = []
+    for label, tag, rel in sorted(entries, key=lambda e: (
+            -1 if e[0] is None else e[0], parts[e[1]])):
+        attrs = [] if label is None else [f'timestep="{int(label)}"']
+        attrs.append(f'part="{parts[tag]}"')
+        if tag is not None:
+            attrs.append(f"name={quoteattr(tag)}")
+        attrs.append(f"file={quoteattr(rel)}")
+        rows.append("    <DataSet " + " ".join(attrs) + "/>")
+    out = pvd_path(root)
+    tmp = out + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0"?>\n'
+                '<VTKFile type="Collection" version="0.1">\n  <Collection>\n'
+                + "\n".join(rows) + "\n  </Collection>\n</VTKFile>\n")
+    os.replace(tmp, out)
+    return out
+
+
 def save_timeseries(per_step, path, source_filetype):
     """Write a folder (timeseries) result: one file per timestep into a
     directory, named `timestep#N.<ext>`. The output folder is itself a valid
@@ -700,56 +833,62 @@ def save_timeseries(per_step, path, source_filetype):
     so a series is never a mix. A write that fails after that is raised rather
     than swallowed — unlike the single-file case, degrading halfway would leave
     a half-converted folder."""
-    _reject_unsupported_ext(path)
-    stem, want_ext = os.path.splitext(path)
-    want_ext = want_ext.lower()
-    explicit = want_ext in _EXT_FORMAT
-    if explicit:
-        fmt, path, ext = _EXT_FORMAT[want_ext], stem, want_ext
-    else:
-        fmt = _format_for_source(source_filetype)
-        ext = _FORMAT_EXT[fmt]
-    os.makedirs(path, exist_ok=True)
-
-    note = ""
-    degraded = None
-    if fmt == "npz" and not explicit and source_filetype not in (None, "npz"):
-        note = f" (no writer for {source_filetype}; wrote npz)"
-    elif fmt in ("genericio", "vtk"):
-        if fmt == "genericio":
-            label_fmt, checks = "GenericIO", (_genericio_blocker(l) for _, l in per_step)
-        else:
-            # Preserving a VTK series: name the files after what the result
-            # actually is, so a point-cloud series round-trips as .vtp rather
-            # than failing against the .vti default and degrading to npz.
-            if not explicit:
-                ext = _vtk_default_ext(per_step[0][1])
-            label_fmt, checks = "VTK", (_vtk_blocker(l, ext) for _, l in per_step)
-        # One format for the WHOLE folder: if any timestep cannot be written the
-        # series degrades together, rather than becoming a mixed bag or leaving
-        # a half-converted folder behind.
-        blocker = next((b for b in checks if b), None)
-        if blocker:
-            if explicit:
-                raise ValueError(f"cannot write {path}/ as {label_fmt}: {blocker}")
-            degraded = label_fmt
-            fmt, ext = "npz", _FORMAT_EXT["npz"]
-            note = f" (cannot write {label_fmt}: {blocker}; wrote npz)"
-
-    for label, loaded in per_step:
-        step_out = os.path.join(path, f"timestep#{label}{ext}")
-        # Each step embeds its own record where the format allows, so a single
-        # file lifted out of the folder still carries one. Where it cannot
-        # (GenericIO), the folder record below lists the step: a companion file
-        # per step would be enumerated by timeseries discovery.
-        _begin_provenance(loaded, step_out, fmt, step=label, degraded_from=degraded)
-        _WRITERS[fmt](step_out, loaded)
-        loaded.provenance = None
-    # Plus ONE folder-level record, naming every step in and out.
-    from vislang.runtime import provenance
-    side = provenance.write_sidecar(
-        path, provenance.record_series(per_step, path, fmt, degraded_from=degraded))
+    fmt, path, ext, note, degraded = _series_format(
+        path, source_filetype, [l for _, l in per_step])
+    side = _write_series(per_step, path, fmt, ext, degraded)
     if side:
         note += f"; provenance -> {os.path.basename(side)}"
+    pvd = _write_pvd(path, [(label, None, f"timestep#{label}{ext}")
+                            for label, _ in per_step], ext)
+    if pvd:
+        note += f"; ParaView index -> {os.path.basename(pvd)}"
     print(f"[save] wrote {len(per_step)} timestep(s) as {fmt} -> {path}/{note}")
     return path
+
+
+def save_tagged_series(per_tag, path, source_filetype):
+    """Named boxes over a timeseries: one series per tag, written to
+    `<dir>/<tag>/timestep#N.<ext>` — each tag folder a valid timeseries that
+    source() reads back, holding only the timesteps that tag's box exists at —
+    plus, for .vti/.vtp, `<dir>/<dir>.pvd` indexing every tag for ParaView.
+    `per_tag` is [(tag, [(label, loaded)])]. Format as for one series, decided
+    once for every tag. Returns `<dir>`."""
+    from vislang.runtime import provenance
+    fmt, root, ext, note, degraded = _series_format(
+        path, source_filetype, [l for _, steps in per_tag for _, l in steps])
+    os.makedirs(root, exist_ok=True)
+    entries, n = [], 0
+    for tag, per_step in per_tag:
+        with provenance.for_tag(tag):
+            _write_series(per_step, os.path.join(root, tag), fmt, ext, degraded)
+        entries += [(label, tag, f"{tag}/timestep#{label}{ext}") for label, _ in per_step]
+        n += len(per_step)
+    pvd = _write_pvd(root, entries, ext)
+    if pvd:
+        note += f"; ParaView index -> {os.path.basename(pvd)}"
+    print(f"[save] wrote {len(per_tag)} named box series ({n} file(s)) as {fmt} "
+          f"-> {root}/<tag>/{note}")
+    return root
+
+
+def save_tagged(per_tag, path, source_filetype):
+    """Named boxes on one file: `<dir>/<tag>.<ext>` per tag (each carrying its
+    own provenance record), plus, for .vti/.vtp, `<dir>/<dir>.pvd` so ParaView
+    opens every box at once. `per_tag` is [(tag, loaded)]. One format for every
+    tag, decided before anything is written. Returns `<dir>`."""
+    from vislang.runtime import provenance
+    fmt, root, ext, note, degraded = _series_format(
+        path, source_filetype, [l for _, l in per_tag])
+    os.makedirs(root, exist_ok=True)
+    extra = ""
+    for tag, loaded in per_tag:
+        out = os.path.join(root, f"{tag}{ext}")
+        with provenance.for_tag(tag):
+            _begin_provenance(loaded, out, fmt, degraded_from=degraded)
+            _WRITERS[fmt](out, loaded)
+            extra = _finish_provenance(loaded, out) or extra
+    pvd = _write_pvd(root, [(None, tag, f"{tag}{ext}") for tag, _ in per_tag], ext)
+    if pvd:
+        note += f"; ParaView index -> {os.path.basename(pvd)}"
+    print(f"[save] wrote {len(per_tag)} named box(es) as {fmt} -> {root}/{note}{extra}")
+    return root

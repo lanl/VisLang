@@ -226,8 +226,26 @@ def timestep_files(dirpath):
              if os.path.isfile(os.path.join(dirpath, n))]
     parsed = _parse_timesteps(names)
     if not parsed:
+        series = _series_subfolders(dirpath)
+        if series:
+            # The output of named boxes: one series per tag, one level down.
+            raise ValueError(
+                f"{dirpath!r} holds one timeseries per named box "
+                f"({', '.join(series)}); source one of them, e.g. "
+                f"source({os.path.join(dirpath, series[0])!r})")
         raise _no_timesteps_error(dirpath)
     return [(label, os.path.join(dirpath, name)) for label, name in parsed]
+
+
+def _series_subfolders(dirpath):
+    """Subfolders of `dirpath` that are themselves timeseries."""
+    out = []
+    for n in sorted(os.listdir(dirpath)):
+        sub = os.path.join(dirpath, n)
+        if not n.startswith(".") and os.path.isdir(sub) and _parse_timesteps(
+                [m for m in os.listdir(sub) if os.path.isfile(os.path.join(sub, m))]):
+            out.append(n)
+    return out
 
 
 def remote_is_dir(uri):

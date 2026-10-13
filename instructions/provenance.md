@@ -57,6 +57,11 @@ template per form, so a checker can rebuild them and compare.
 - `fields` names what it dropped.
 - `region` gives each axis's bounds: inclusive, in world coordinates, for
   points; index ranges for a grid.
+- A named box (`region(center={tag: …})`) says which box the output is and
+  names its siblings. Each tag's output is its own artifact with its own
+  record: `resolved.region_tag` holds the tag, and `resolved.region_boxes`
+  (a series, per timestep) or `resolved.region_box` (one file) only that tag's
+  boxes.
 - `threshold` notes when its variable is read only for the test.
 - `subsample` shows which rows a stride keeps, or the random fraction.
 - `compress` gives the codec, bound and mode, including what `mode="auto"`

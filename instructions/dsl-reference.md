@@ -68,6 +68,52 @@ box = region(series, track="halo_track.csv", size=30)      # the same, from a fi
   each timestep on its own centre, so it reuses a cached box only on an exact
   match.
 
+### Several named boxes: region(node, center={tag: …}, size=...)
+Name each box with a **tag** (a string), the way you would assign it to a
+variable, and every box is cut and written to its own output:
+```python
+# Over a timeseries: each tag lists the timesteps its box exists at.
+boxes = region(series, size=20, center={
+    "v1": {10: (50, 60, 70), 11: (52, 61, 70), 12: (54, 62, 71)},
+    "v2": {10: (200, 40, 90), 12: (198, 42, 88)},          # gone at #11
+})
+save(boxes, "roi.vti")   # roi/v1/timestep#10…#12.vti, roi/v2/timestep#10,#12.vti, roi/roi.pvd
+
+# On one file: one centre per tag; size may differ per tag.
+save(region(snapshot, center={"core": (150, 150, 150), "jet": (40, 151, 150)},
+            size={"core": 40, "jet": (10, 10, 60)}), "boxes.vti")   # boxes/core.vti, boxes/jet.vti
+```
+- The key type says what you mean: `{N: centre}` is one unnamed moving box,
+  `{tag: …}` names boxes. Mixing the two raises, as does mixing per-timestep
+  tags with single-centre tags.
+- A tag names its box's output, so it is letters, digits, `_`, `-` or `.`, not
+  starting with `.`; two tags must differ by more than case.
+- `size` is one number, one per coordinate, or `{tag: size}` naming every tag.
+- A track file names its boxes with a leading `tag` column: `tag,step,x,y[,z]`
+  over a timeseries (rows sharing a step are separate boxes) or `tag,x,y[,z]`
+  for one file. `size={tag: …}` works with it too.
+- **The tag is the box's identity**, and the interpreter cannot check it: it
+  does not know that `v1` at #11 is the same object as `v1` at #10. Whoever
+  wrote the centres — you, or the tracker that produced the CSV — vouches for
+  that; provenance records the track file's hash.
+- **Gaps are allowed**: a tag lists only the timesteps its box exists at, and
+  timesteps where no tag has a box are not read. A tag naming a timestep with no
+  file raises; a tag with no box inside `timesteps(...)` is skipped with a note;
+  a selection where no tag has a box raises. All of this — and every box against
+  the grid — is checked before any read.
+- **Output**: one per tag under the sink path — a timeseries folder
+  `<dir>/<tag>/timestep#N.<ext>` per tag (each one readable with `source()`), or
+  `<dir>/<tag>.<ext>` on one file. One format is chosen for every tag. Each
+  output carries its own provenance record: `resolved.region_tag` and that tag's
+  boxes only.
+- **Reads**: each file is inspected once. Point data, and grid formats that read
+  whole then slice, are read once per file with every box cut from that read;
+  HDF5/FITS grids read one hyperslab per box.
+- One named-box region per chain. `render` refuses named boxes: render a plain
+  region for one box, or open the saved boxes in ParaView.
+- **Remote**: every box runs in one remote job. The extent catalog keys each box
+  by its centre and size, not its tag, so renaming a tag still reuses it.
+
 ## subsample(node, factor) | subsample(node, x=…, y=…, z=…) -> node
 Reduce resolution. A factor is an **int stride** (keep every f-th) or a **float
 fraction** in (0,1]. A single `factor` is uniform; per-axis `x=/y=/z=` is for
@@ -133,7 +179,17 @@ timeseries folder. A series converts the same way a single file does: an
 extension on the path names the per-timestep format and the directory takes the
 stem, so `save(series, "roi.vti")` writes `roi/timestep#0.vti`,
 `roi/timestep#1.vti`, … The whole folder commits to one format before anything
-is written, so a series is never a mix.
+is written, so a series is never a mix. Named boxes write one output per tag
+under the directory (see `region`), all in one format.
+
+**Opening a series in ParaView.** A `.vti`/`.vtp` series stores each file's
+`#N` as `TimeValue` field data, and the folder gets an index, `<dir>/<dir>.pvd`
+(a ParaView collection): open that one file. Each named box is its own block at
+its own timesteps, so a box absent at a timestep is absent there — opened as
+separate file series, ParaView would number each folder 0, 1, 2… and hold a
+box's last file across a gap. Legacy `.vtk` and `.vtkhdf` get neither: ParaView
+reads no `TimeValue` from legacy files, and its collection reader cannot list
+either format.
 
 **Every output carries a provenance record** — a YAML document with the spec,
 the input's fingerprint, the output's `data_sha256`, and a plain-words
@@ -146,7 +202,8 @@ Serve the headless k3d browser viewer; prints its URL. Renders everything the
 node describes — narrow upstream to show less. `cmap` is `'green'`, a matplotlib
 name, or `None`; `opacity` overrides the k3d transfer function. 3-D fields render
 as volumes; point data as a cloud + density volume (coords from `info.positions`).
-See `vislang://instructions/rendering`.
+One dataset per render: named boxes (`region(center={tag: …})`) are refused —
+`save` them and open the `.pvd` in ParaView. See `vislang://instructions/rendering`.
 
 ## MCP tools (called directly, not in the spec)
 - `inspect(filepath, positions=None)` — the schema (variables, dimensions),

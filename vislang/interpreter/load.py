@@ -1,6 +1,6 @@
 """Materialize a dataset under a Narrowing.
 
-Two entry points share one read core:
+Three entry points share one read core:
   - `load(info)` — the legacy/declarative path. Builds a Narrowing from whatever
     `subset()` recorded in `info.selected_dimensions` and reads it. Byte-identical
     to the pre-Narrowing loader.
@@ -9,6 +9,11 @@ Two entry points share one read core:
     particle subsample) are pushed into the read; the computed cuts arrive as
     `narrowing.post_ops` and are applied AFTER the read in the exact order the
     spec wrote them (RowMask / RowSample / VoxelMask).
+  - `materialize_boxes(info, narrowings)` — several boxes of ONE file (named
+    boxes). Where the format would read the whole file per box anyway (point
+    data, whose box is a post-read mask; a grid reader without strided reads),
+    the file is read once and every box is cut from that one read. Each result
+    equals `materialize(info, narrowing)` for its own narrowing.
 
 The read-set is `project` (the output variables) plus whatever the post-read
 ops need (threshold vars, bbox position vars) — mask-only extras are read, used,
@@ -20,10 +25,11 @@ import copy
 
 import numpy as np
 
-from vislang.formats.adapters import get_adapter_for_info, _resolve_variables, build_selection_info
+from vislang.formats.adapters import (get_adapter_for_info, _resolve_variables,
+                                     build_selection_info, adapter_capabilities)
 from vislang.formats.dataset_info import narrowed_geometry
-from vislang.interpreter.narrowing import (narrowing_from_dimensions, build_row_mask, row_mask_from,
-                       voxel_mask_from, post_op_read_vars, sampling_rng,
+from vislang.interpreter.narrowing import (Narrowing, narrowing_from_dimensions, build_row_mask,
+                       row_mask_from, voxel_mask_from, post_op_read_vars, sampling_rng,
                        RowMask, RowSample, VoxelMask)
 
 
@@ -40,14 +46,83 @@ def load(dataset_info):
 def materialize(dataset_info, narrowing):
     """Read `dataset_info` under a (planner-built) Narrowing."""
     loaded = copy.deepcopy(dataset_info)
-    adapter = get_adapter_for_info(loaded)
+    variables, extra = _read_set(loaded, narrowing)
+    loaded.data.update(_read(loaded, variables + extra, narrowing))
+    return _settle(loaded, narrowing, variables, extra)
 
+
+def shares_read(dataset_info):
+    """True when several boxes of this file are best cut from ONE read: point
+    data (a box is a post-read mask over rows the read returns whole) and grids
+    whose reader has no strided read (it reads the whole array per box anyway).
+    A strided grid reader keeps one hyperslab read per box — smaller than the
+    whole file, and never larger than the boxes asked for."""
+    if getattr(dataset_info, 'positions', None) or \
+            'particles' in (dataset_info.dimensions or {}):
+        return True
+    return not adapter_capabilities(dataset_info)['strided_read']
+
+
+def materialize_boxes(dataset_info, narrowings):
+    """[materialize(dataset_info, n) for n in narrowings], reading the file once
+    when `shares_read` says the per-box reads would each be the whole file.
+
+    The shared read carries everything the boxes have in common — the particle
+    subsample pushed into the read, which the planner draws once per file for
+    every box — over the union of the variables they need. Each box then
+    gets its own grid crop (a copy, so one box's NaN mask cannot reach another)
+    or its own post-read row masks, in written order."""
+    narrowings = list(narrowings)
+    if len(narrowings) < 2 or not shares_read(dataset_info) or not _same_pushdown(narrowings):
+        return [materialize(dataset_info, n) for n in narrowings]
+    sets = [_read_set(dataset_info, n) for n in narrowings]
+    read_vars = []
+    for variables, extra in sets:
+        read_vars += [v for v in variables + extra if v not in read_vars]
+    first = narrowings[0]
+    base = _read(dataset_info, read_vars, Narrowing(
+        particle_index=first.particle_index, project=tuple(read_vars),
+        total_particles=first.total_particles, positions=first.positions,
+        dimensions={k: v for k, v in (first.dimensions or {}).items()
+                    if k != 'grid_ranges'}))
+    out = []
+    for narrowing, (variables, extra) in zip(narrowings, sets):
+        loaded = copy.deepcopy(dataset_info)
+        for var in variables + extra:
+            arr = base[var]
+            if arr.ndim == 3:
+                # Always a copy: a threshold NaN-masks a grid in place.
+                arr = np.array(arr[narrowing.indexer(3, arr.shape[0])])
+            loaded.data[var] = arr
+        out.append(_settle(loaded, narrowing, variables, extra))
+    return out
+
+
+def _same_pushdown(narrowings):
+    """True when the narrowings differ only in what a shared read can cut
+    afterwards (grid crop/stride, post-read ops, projection)."""
+    first = narrowings[0].particle_index
+    for n in narrowings[1:]:
+        idx = n.particle_index
+        if (idx is None) != (first is None):
+            return False
+        if isinstance(idx, slice) or isinstance(first, slice):
+            if idx != first:
+                return False
+        elif idx is not None and not np.array_equal(np.asarray(idx), np.asarray(first)):
+            return False
+        if n.has_row_mask or narrowings[0].has_row_mask:
+            return False                   # the legacy mask path reads per box
+    return True
+
+
+def _read_set(loaded, narrowing):
+    """(output variables, mask-only extras) a narrowing reads."""
     # Output variables: the planner's projection, else everything listed.
     if getattr(narrowing, 'project', None) is not None:
         variables = _resolve_variables(loaded, list(narrowing.project))
     else:
         variables = _resolve_variables(loaded, None)
-    locations = getattr(loaded, 'variable_locations', None) or {}
     positions = getattr(loaded, 'positions', None) or ()
 
     # Read-set = output ∪ mask needs. A bbox/threshold may test a variable the
@@ -59,19 +134,27 @@ def materialize(dataset_info, narrowing):
     if missing:
         raise ValueError(f"threshold/region needs variable(s) {missing} "
                          f"not present in this dataset")
-    read_vars = variables + extra
+    return variables, extra
 
+
+def _read(info, read_vars, narrowing):
+    """{var: array} for `read_vars`, read through the format's adapter with the
+    narrowing's structural cuts pushed into the read."""
+    adapter = get_adapter_for_info(info)
+    locations = getattr(info, 'variable_locations', None) or {}
     read_all = getattr(adapter, 'read_all', None)
     if read_all is not None:
         wanted = {var: locations.get(var, var) for var in read_vars}
-        for var, arr in read_all(loaded.filepath, wanted, narrowing).items():
-            loaded.data[var] = np.asarray(arr)
-    else:
-        for var in read_vars:
-            location = locations.get(var, var)
-            loaded.data[var] = np.asarray(
-                adapter.read_array(loaded.filepath, location, narrowing))
+        return {var: np.asarray(arr)
+                for var, arr in read_all(info.filepath, wanted, narrowing).items()}
+    return {var: np.asarray(adapter.read_array(info.filepath, locations.get(var, var),
+                                               narrowing))
+            for var in read_vars}
 
+
+def _settle(loaded, narrowing, variables, extra):
+    """Apply the computed cuts and finish the result's metadata."""
+    positions = getattr(loaded, 'positions', None) or ()
     # Computed cuts, in the order the spec wrote them.
     post_ops = getattr(narrowing, 'post_ops', ())
     if post_ops:

@@ -228,7 +228,8 @@ def note_estimate(est):
          est_time_hi_s=getattr(est, "time_hi_s", None),
          est_confidence=getattr(est, "confidence", None),
          est_over_budget=getattr(est, "over_budget", None),
-         est_n_timesteps=getattr(est, "n_timesteps", None))
+         est_n_timesteps=getattr(est, "n_timesteps", None),
+         est_n_boxes=getattr(est, "n_boxes", None) or None)
 
 
 def dir_bytes(path):

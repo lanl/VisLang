@@ -103,7 +103,10 @@ def test_form():
            ValueError)
     raises("all-None size", lambda: region(src, center={0: (1, 2)}, size=(None, None)),
            ValueError)
-    raises("non-int label", lambda: region(src, center={"a": (1, 2)}, size=1), TypeError)
+    raises("non-int label", lambda: region(src, center={0.5: (1, 2)}, size=1), TypeError)
+    raises("labels and tags mixed",
+           lambda: region(src, center={"a": (1, 2), 0: (1, 2)}, size=1), ValueError,
+           "not a mix")
     raises("bool coordinate", lambda: region(src, center={0: (True, 2)}, size=1),
            TypeError)
     raises("mixed dimension",
@@ -302,7 +305,7 @@ def test_particle_series():
 def test_remote_pieces():
     print("== remote pieces ==")
     from vislang.remote.reduce import _narrow_key, _rebuild_folder_chain
-    from vislang.remote.executor import _reroot
+    from vislang.remote.executor import _unit_middle
     from vislang.formats.inspect import inspect_file
     reset_sinks()
     r = region(source("/d"), center={1: (4, 4, 4), 2: (8, 8, 8)}, size=4)
@@ -323,11 +326,12 @@ def test_remote_pieces():
 
     d = grid_series()
     path = os.path.join(d, "snap#2.hdf5")
-    node = _reroot([r], path, None, ["rho"], label=2, info=inspect_file(path))
-    reg = node.upstream
+    mid, _ = planner._boxes_at(inspect_file(path), _unit_middle([r], ["rho"]), 2, [])
+    reg = mid[0]
     check("delta reducer cuts its own timestep's box",
           isinstance(reg, RegionNode) and not reg.per_step
-          and reg.ranges == (("x", 6, 10), ("y", 6, 10), ("z", 6, 10)), reg)
+          and reg.ranges == (("x", 6, 10), ("y", 6, 10), ("z", 6, 10))
+          and mid[-1].keep == ("rho",), mid)
     reset_sinks()
 
 
