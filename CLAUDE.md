@@ -51,11 +51,14 @@ the rest of the chain over the timesteps; `timesteps(node, start, stop)` picks a
 inclusive `#N` range. `render` over a series isn't supported (select one timestep,
 or save the range); `save` writes one file per timestep. Multi-file loading lives
 in `vislang/output/save.py` + `planner._plan_folder` (local) /
-`planner._plan_remote_folder` (remote, reducing each timestep next to the data).
+`planner._plan_remote_folder` (remote, reducing each timestep next to the data;
+the remote only cuts and returns arrays — every file is written locally by
+`save`, so each carries its provenance record. With no `fields()` the request
+is every variable of timestep 0's schema).
 
 **`save` converts on request, else preserves the source's format.** The output
-path's extension wins if known (`.npz`/`.hdf5`/`.gio`/`.vti`/`.vtp`/`.vtk`/
-`.vtkhdf`), else the source's original format (HDF5, npz, GenericIO, and VTK
+path's extension wins if known (`.npz`/`.hdf5`/`.gio`/`.vti`/`.vts`/`.vtp`/
+`.vtk`/`.vtkhdf`), else the source's original format (HDF5, npz, GenericIO, and VTK
 today; npz fallback, with a note, for formats without a writer or for a result
 the target can't hold). So **an extension IS the conversion request** —
 including over a timeseries, where it names the per-timestep format and the
@@ -65,11 +68,17 @@ never *into* one — there is no oracle for a generated writer), and conversion
 **never resamples** (grid↔points raises; that is a computation, not a format
 change). VTK covers grids (ImageData/Rectilinear/Structured) and point sets
 (PolyData); `.vtu` is refused in both directions. A cropped grid carries
-`DatasetInfo.geometry` (origin+spacing, optional and never synthesized, shifted
-by the narrowing in `materialize`), so VTK output lands where the cut actually
-was and ROIs across timesteps align. A `.vti`/`.vtp` series also carries each
-file's `#N` as `TimeValue` plus a `<dir>/<dir>.pvd` index, so ParaView opens it
-— named boxes included, gaps and all — as one time-aligned dataset.
+`DatasetInfo.geometry` — origin+spacing for a uniform grid, or every point's
+position for a curvilinear one (a `.vts`, e.g. terrain-following, whose z
+differs per column) — optional and never synthesized, cut by the narrowing in
+`materialize`, and fetched + cached with the data on remote routes (as the
+`sieve_geometry` piece). So output lands where the cut actually was and ROIs
+across timesteps align: a curvilinear grid is written as `.vts` (and refused as
+`.vti`, which can only hold origin+spacing); `.npz` keeps either form under
+reserved `sieve_*` keys, which the Tier-0 npz reader reads back. A
+`.vti`/`.vts`/`.vtp` series also carries each file's `#N` as `TimeValue` plus a
+`<dir>/<dir>.pvd` index, so ParaView opens it — named boxes included, gaps and
+all — as one time-aligned dataset.
 
 ## MCP tools (called directly, not written in a spec)
 

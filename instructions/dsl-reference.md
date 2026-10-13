@@ -149,9 +149,9 @@ Storage only — it does **not** cheapen a render.
 
 ## save(node, path) -> (sink)
 Write the materialized result to disk. The output format follows `path`'s
-extension when it's a known one (`.npz`, `.hdf5`/`.h5`, `.gio`, `.vti`, `.vtp`,
-`.vtk`, `.vtkhdf`, `.nc`); with no recognized extension it **preserves the source's
-format** (HDF5, npz, GenericIO, and VTK today; other formats fall back to `.npz`
+extension when it's a known one (`.npz`, `.hdf5`/`.h5`, `.gio`, `.vti`, `.vts`,
+`.vtp`, `.vtk`, `.vtkhdf`, `.nc`); with no recognized extension it **preserves the
+source's format** (HDF5, npz, GenericIO, and VTK today; other formats fall back to `.npz`
 with a note until a writer exists).
 
 **An extension is a conversion request.** `save(box, "roi.vti")` over an HDF5
@@ -161,11 +161,27 @@ reverse — that is a computation, not a format change, and it raises), and a
 format read through a generated adapter can be converted *out of* but never
 *into* (writers are trusted-library only).
 
-**VTK targets.** `.vti` holds a grid, `.vtp` a point set, and `.vtk`/`.vtkhdf`
-either. A cropped or strided grid records where it was cut, so the output lands
-in the right place in world space and ROIs from different timesteps line up.
-Unstructured meshes (`.vtu`) are not supported in either direction — narrowing
-one needs connectivity-aware `region`/`subsample`.
+**VTK targets.** `.vti` holds an evenly spaced grid (an origin and one spacing
+per axis), `.vts` a grid with every point's own position, `.vtp` a point set,
+and `.vtk`/`.vtkhdf` any of them. A cropped or strided grid records where it was
+cut, so the output lands in the right place in world space and ROIs from
+different timesteps line up. Unstructured meshes (`.vtu`) are not supported in
+either direction — narrowing one needs connectivity-aware `region`/`subsample`.
+
+**Curvilinear grids (`.vts` sources).** Some grids list each point's position
+because no origin + spacing can describe them — a terrain-following grid has
+regular x and y, but its z starts on the ground and so differs from column to
+column. `region`/`subsample` cut those positions exactly as they cut the data,
+and the result keeps them: with no extension it is written as `.vts`; asking
+for `.vti` raises (it would put the data in the wrong place); `.npz` keeps the
+positions beside the data (`sieve_points`). HDF5 and netCDF have no slot for
+them — the values are written, and the record says the positions were not.
+
+**`.npz` output** keeps a grid's place in space too, under reserved keys
+(`sieve_origin` + `sieve_spacing`, or `sieve_points`), so a saved `.npz` can be
+`source()`d and cut again and still land in the right place. The npz reader
+sees a grid when every array shares one shape, particles when every array is
+one column of the same length.
 
 GenericIO output is a single
 unpartitioned file with **no extension** (its snapshots are named by convention),
@@ -182,7 +198,7 @@ stem, so `save(series, "roi.vti")` writes `roi/timestep#0.vti`,
 is written, so a series is never a mix. Named boxes write one output per tag
 under the directory (see `region`), all in one format.
 
-**Opening a series in ParaView.** A `.vti`/`.vtp` series stores each file's
+**Opening a series in ParaView.** A `.vti`/`.vts`/`.vtp` series stores each file's
 `#N` as `TimeValue` field data, and the folder gets an index, `<dir>/<dir>.pvd`
 (a ParaView collection): open that one file. Each named box is its own block at
 its own timesteps, so a box absent at a timestep is absent there — opened as

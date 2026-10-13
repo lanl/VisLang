@@ -627,8 +627,10 @@ def test_remote():
                               size=4), os.path.join(TMP, "r_one.npz")))
         check("remote file: one job for both boxes", len(EXECS) == n0 + 1, len(EXECS) - n0)
         check("remote file: manifest names each box",
-              MANIFESTS[-1] == [{"label": None, "tag": "core", "vars": ["rho"]},
-                                {"label": None, "tag": "jet", "vars": ["rho"]}],
+              MANIFESTS[-1] == [{"label": None, "tag": "core",
+                                 "vars": ["rho", "sieve_geometry"]},
+                                {"label": None, "tag": "jet",
+                                 "vars": ["rho", "sieve_geometry"]}],
               MANIFESTS[-1])
         with np.load(os.path.join(TMP, "r_one", "jet.npz")) as z:
             check("remote file: box correct",
@@ -654,11 +656,9 @@ def test_remote():
                               size=4), os.path.join(TMP, "r_series.vti")))
         check("remote folder: one job for every box", len(EXECS) == n0 + 1)
         check("remote folder: manifest lists (timestep, tag) pieces",
-              MANIFESTS[-1] == [{"label": 10, "tag": "v1", "vars": ["rho"]},
-                                {"label": 10, "tag": "v2", "vars": ["rho"]},
-                                {"label": 11, "tag": "v1", "vars": ["rho"]},
-                                {"label": 12, "tag": "v1", "vars": ["rho"]},
-                                {"label": 12, "tag": "v2", "vars": ["rho"]}],
+              MANIFESTS[-1] == [{"label": lab, "tag": t, "vars": ["rho", "sieve_geometry"]}
+                                for lab, t in ((10, "v1"), (10, "v2"), (11, "v1"),
+                                               (12, "v1"), (12, "v2"))],
               MANIFESTS[-1])
         check("remote folder: tags reported", res.get("tags") == {"v1": [10, 11, 12],
                                                                   "v2": [10, 12]}, res)
@@ -680,21 +680,34 @@ def test_remote():
               len(EXECS) == n0 + 1 and any("full hit" in s for s in res["steps"]),
               res["steps"])
 
-        # -- plain folder batch (no fields): the remote runs the same planner --
+        # -- no fields(): every variable, by the SAME catalog route -----------
+        # There used to be a second route here: the remote saved the files
+        # itself and the folder was copied back, so no record was written. Now
+        # the request is every variable of the series (timestep 0's schema), so
+        # it reuses what the fields(["rho"]) run cached and saves locally.
         n0 = len(EXECS)
         reset_sinks()
-        res = plan_pipeline(save(region(source(f"u@fakehost:{d}"), center=C, size=4),
-                                 os.path.join(TMP, "r_batch.vti")))
-        root = os.path.join(TMP, "r_batch")
-        check("batch: one job", len(EXECS) == n0 + 1)
-        check("batch: the extension converts, the folder drops it",
+        with provenance.run("spec.py", spec_code="# no fields\n"):
+            res = plan_pipeline(save(region(source(f"u@fakehost:{d}"), center=C, size=4),
+                                     os.path.join(TMP, "r_all.vti")))
+        root = os.path.join(TMP, "r_all")
+        check("no fields: same catalog route (full hit, no job)",
+              len(EXECS) == n0 and any("full hit" in s for s in res["steps"])
+              and any("every variable of the series" in s for s in res["steps"]),
+              res["steps"])
+        check("no fields: the extension converts, the folder drops it",
               res["output"] == root and sorted(os.listdir(root)) ==
-              ["r_batch.pvd", "v1", "v2"], (res["output"], os.listdir(TMP)))
-        check("batch: tag folders pulled whole",
+              ["r_all.pvd", "v1", "v2"], (res["output"], os.listdir(root)))
+        check("no fields: files written per tag",
               sorted(glob.glob(os.path.join(root, "v2", "*.vti"))) ==
               [os.path.join(root, "v2", f"timestep#{t}.vti") for t in (10, 12)])
-        check("batch: tags reported", res.get("tags") == {"v1": [10, 11, 12], "v2": [10, 12]},
+        check("no fields: tags reported", res.get("tags") == {"v1": [10, 11, 12], "v2": [10, 12]},
               res.get("tags"))
+        rec = provenance.record_for(os.path.join(root, "v1"))
+        check("no fields: every output carries its record",
+              rec is not None and rec["logical"]["resolved"]["region_tag"] == "v1"
+              and all(provenance.record_for(f) is not None for f in
+                      glob.glob(os.path.join(root, "*", "*.vti"))), rec)
 
         # -- estimate: priced per box, nothing shipped ----------------------
         n0 = len(EXECS)

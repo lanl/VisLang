@@ -13,7 +13,7 @@ interactively. Keep the grid small enough that the browser stays responsive; the
 lever for that is `subsample` or `region`.
 
 `save` resolves the output format in this order: the path's extension if we can
-write it (`.npz`, `.hdf5`, `.gio`, `.vti`, `.vtp`, `.vtk`, `.vtkhdf`), else the
+write it (`.npz`, `.hdf5`, `.gio`, `.vti`, `.vts`, `.vtp`, `.vtk`, `.vtkhdf`), else the
 source's original format, else npz with a note. **The extension is how a
 conversion is requested** — including over a time series, where it names the
 per-timestep format inside the output folder (`save(node, "roi.vti")` writes
@@ -22,10 +22,15 @@ per-timestep format inside the output folder (`save(node, "roi.vti")` writes
 Named boxes (`region(center={tag: …})`) write one output per tag under the
 sink's directory — `<dir>/<tag>/timestep#N.<ext>` over a series,
 `<dir>/<tag>.<ext>` on one file — with one format decided for every tag
-before anything is written. A `.vti`/`.vtp` series stores each file's `#N` as
+before anything is written. A `.vti`/`.vts`/`.vtp` series stores each file's `#N` as
 `TimeValue` and gets a `<dir>/<dir>.pvd` index, so ParaView opens the whole
 output as one time-aligned dataset with a block per tag (a box missing at a
 timestep is missing there, not frozen at its last frame).
+
+A grid keeps its place in space: `.vti` writes origin + spacing, `.vts` every
+point's position (a curvilinear grid — such a result is refused as `.vti`,
+which would misplace it), `.npz` either form under reserved `sieve_*` keys.
+Formats with no slot for listed points (HDF5, netCDF) say so in the record.
 
 Two rules the writers keep. **Writers are Tier-0 only**: you can convert out of
 an LLM-read format but never into one (`instructions/soundness.md`).

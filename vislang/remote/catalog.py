@@ -30,6 +30,9 @@ import os
 
 import numpy as np
 
+from vislang.formats.dataset_info import (GEOMETRY_KEY, decode_geometry,
+                                          encode_geometry, narrowed_geometry)
+
 _MANIFEST = "catalog.json"
 _EXTENT_DIR = "extents"
 
@@ -255,7 +258,13 @@ class ExtentCatalog:
             if any(s is None for s in slices):
                 continue
             arr = self._read(e)
-            if arr is not None and arr.ndim == len(slices):
+            if arr is None:
+                continue
+            if var == GEOMETRY_KEY:
+                # A cut's geometry is cut the way its arrays are: a uniform
+                # origin moves by start * spacing, listed points are sliced.
+                return encode_geometry(narrowed_geometry(decode_geometry(arr), slices))
+            if arr.ndim == len(slices):
                 return arr[tuple(slices)]
         return None
 

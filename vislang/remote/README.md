@@ -3,7 +3,7 @@
 | File | What it holds |
 |---|---|
 | `reduce.py` | ship the narrowing prefix next to the data; srun placement; the env knobs |
-| `executor.py` | the reducer that runs on the remote host (launched via `vislang_exec.py` at the repo root); its delta mode cuts every piece a manifest lists — per timestep, or per named box — in one job |
+| `executor.py` | the reducer that runs on the remote host (launched via `vislang_exec.py` at the repo root); its delta mode cuts every piece a manifest lists — per timestep, or per named box — in one job. It returns arrays only (plus a grid's `sieve_geometry` piece when asked); output files are always written locally, by `save` |
 | `download.py` | ssh / rsync / scp transport, connection probes, the askpass session |
 | `hosts.py` | per-host config — interpreter, repo path, tmp dir — from `.vislang/hosts.json` or env |
 | `catalog.py` | the local extent cache, so a repeat request fetches only `need − have` |

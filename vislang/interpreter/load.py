@@ -48,7 +48,22 @@ def materialize(dataset_info, narrowing):
     loaded = copy.deepcopy(dataset_info)
     variables, extra = _read_set(loaded, narrowing)
     loaded.data.update(_read(loaded, variables + extra, narrowing))
+    loaded.geometry = _source_geometry(dataset_info)
     return _settle(loaded, narrowing, variables, extra)
+
+
+def _source_geometry(info):
+    """The source's geometry, uncut, with listed point positions read in.
+
+    Inspect only marks a curvilinear grid (its points are bulk data); here the
+    adapter reads them whole, and _settle cuts them with the same index ranges
+    as the arrays, so data and positions stay aligned. An adapter that cannot
+    read them leaves index space — the honest answer, never an invented one."""
+    geom = getattr(info, 'geometry', None)
+    if not geom or geom.get('kind') != 'structured' or geom.get('points') is not None:
+        return geom
+    reader = getattr(get_adapter_for_info(info), 'read_geometry', None)
+    return reader(info.filepath) if reader is not None else None
 
 
 def shares_read(dataset_info):
@@ -85,9 +100,11 @@ def materialize_boxes(dataset_info, narrowings):
         total_particles=first.total_particles, positions=first.positions,
         dimensions={k: v for k, v in (first.dimensions or {}).items()
                     if k != 'grid_ranges'}))
+    geometry = _source_geometry(dataset_info)        # read once, cut per box
     out = []
     for narrowing, (variables, extra) in zip(narrowings, sets):
         loaded = copy.deepcopy(dataset_info)
+        loaded.geometry = geometry
         for var in variables + extra:
             arr = base[var]
             if arr.ndim == 3:

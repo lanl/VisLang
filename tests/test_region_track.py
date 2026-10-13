@@ -304,7 +304,7 @@ def test_particle_series():
 
 def test_remote_pieces():
     print("== remote pieces ==")
-    from vislang.remote.reduce import _narrow_key, _rebuild_folder_chain
+    from vislang.remote.reduce import _narrow_key, _rebuild_delta_source
     from vislang.remote.executor import _unit_middle
     from vislang.formats.inspect import inspect_file
     reset_sinks()
@@ -318,7 +318,7 @@ def test_remote_pieces():
     from vislang.remote.catalog import _fuse_forms
     check("moving key is exact-match only", _fuse_forms(k1["forms"], (16, 16, 16)) is None)
 
-    chain = _rebuild_folder_chain("/remote/dir", None, [fields(r, ["rho"]).upstream], [])
+    chain = _rebuild_delta_source("/remote/dir", None, [r])
     plan = json.loads(to_plan_json(save(chain, "o.npz")))
     step = [s for s in plan["chain"] if s["kind"] == "region"][0]
     check("folder plan carries centres inline", step["centers"] == [[1, 4, 4, 4],

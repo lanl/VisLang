@@ -473,8 +473,8 @@ _FORMAT_DESC = {"hdf5": "one HDF5 file", "npz": "one npz file",
 _FAMILY = {"HDF5": "hdf5", "npz": "npz", "GenericIO": "genericio", "VTK": "vtk"}
 
 
-def _vtk_kind(ext, grid):
-    model = "ImageData" if grid else "PolyData"
+def _vtk_kind(ext, grid, structured=False):
+    model = ("StructuredGrid" if structured else "ImageData") if grid else "PolyData"
     if ext == ".vtk":
         return f"legacy VTK {model}"
     if ext == ".vtkhdf":
@@ -484,8 +484,11 @@ def _vtk_kind(ext, grid):
 
 def _save_lines(fmt, ext, in_filetype, grid, positions, geometry, series,
                 degraded):
+    listed = (grid and isinstance(geometry, dict)
+              and geometry.get("kind") == "structured"
+              and geometry.get("points") is not None)
     if fmt == "vtk":
-        desc = _vtk_kind(ext, grid)
+        desc = _vtk_kind(ext, grid, structured=listed or ext == ".vts")
         if series:
             desc = f"one {desc} file"
     else:
@@ -501,7 +504,9 @@ def _save_lines(fmt, ext, in_filetype, grid, positions, geometry, series,
     if fmt == "vtk":
         if grid:
             more.append("every column as point data")
-            if geometry and geometry.get("origin") is not None:
+            if listed:
+                more.append("each point at its own position from the source")
+            elif geometry and geometry.get("origin") is not None:
                 more.append(f"origin {_flow_text(geometry.get('origin'))}, "
                             f"spacing {_flow_text(geometry.get('spacing'))}")
             else:
@@ -512,6 +517,18 @@ def _save_lines(fmt, ext, in_filetype, grid, positions, geometry, series,
     elif fmt == "netcdf4":
         more.append("dimensions x, y, z in Sieve's index order" if grid
                     else 'one "particles" dimension')
+    if fmt == "npz" and grid:
+        if listed:
+            more.append("each point's position kept beside the data (sieve_points)")
+        elif geometry and geometry.get("origin") is not None:
+            more.append(f"origin {_flow_text(geometry.get('origin'))}, "
+                        f"spacing {_flow_text(geometry.get('spacing'))} kept beside "
+                        f"the data (sieve_origin, sieve_spacing)")
+    elif listed and fmt not in ("vtk", "npz"):
+        # Said plainly: the values are right, but this container has no place
+        # for listed point positions, so the file alone no longer says where
+        # each value sits.
+        more.append("point positions are not stored in this format (index space)")
     if more and not head.endswith(")"):
         head += ":"
     return head, more
@@ -903,10 +920,20 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
                               "data_sha256": _data_hash(last)}
         geom = getattr(last, "geometry", None)
         if grid and isinstance(geom, dict):
-            g = {k: geom.get(k) for k in ("origin", "spacing")
-                 if geom.get(k) is not None}
-            if g:
-                out["geometry"] = g
+            if geom.get("kind") == "structured" and geom.get("points") is not None:
+                # The positions themselves are bulk data; the record names
+                # where they span, not every point.
+                import numpy as np
+                pts = np.asarray(geom["points"]).reshape(-1, 3)
+                out["geometry"] = {
+                    "points": "listed per point",
+                    "bounds": {ax: [float(pts[:, i].min()), float(pts[:, i].max())]
+                               for i, ax in enumerate("xyz")} if pts.size else {}}
+            else:
+                g = {k: geom.get(k) for k in ("origin", "spacing")
+                     if geom.get(k) is not None}
+                if g:
+                    out["geometry"] = g
 
     libs = [_READER_LIB.get(src.get("filetype")), "numpy"]
     if comp:

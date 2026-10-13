@@ -151,8 +151,7 @@ def test_model_and_blockers():
 
     # Extensions we recognize as VTK but cannot write must say so, not fall
     # through to source preservation and produce "out.vtu.hdf5".
-    for bad, why in ((".vtu", "connectivity"), (".vtr", "coordinate"),
-                     (".vts", "coordinate")):
+    for bad, why in ((".vtu", "connectivity"), (".vtr", "coordinate")):
         try:
             save_mod._resolve("out" + bad, "HDF5")
             check(f"reject{bad}", False, "no error raised")

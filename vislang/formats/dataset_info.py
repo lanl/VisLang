@@ -36,18 +36,53 @@ def geometry_from_edges(left_edge, right_edge, dimensions):
     return uniform_geometry(lo, (hi - lo) / n)
 
 
+def structured_geometry(points):
+    """A curvilinear-grid geometry — every grid point's own (x, y, z) — or None
+    if `points` is not a grid of 3-vectors.
+
+    `points` is indexed like the grid's arrays, (nx, ny, nz, 3), axis 0 = x. This
+    is what a terrain-following grid needs: x and y may be regular while z
+    follows the ground, so no origin + spacing can say where a point is."""
+    try:
+        pts = np.asarray(points)
+    except (TypeError, ValueError):
+        return None
+    if pts.ndim < 2 or pts.shape[-1] != 3 or not np.issubdtype(pts.dtype, np.number):
+        return None
+    return {"kind": "structured", "points": pts}
+
+
+def structured_pending():
+    """Inspect's marker for a source whose points are listed one by one. The
+    points are bulk data (3 numbers per grid point), so inspect only says they
+    exist; materialize reads them, cut by the same box as the data."""
+    return {"kind": "structured", "points": None}
+
+
 def narrowed_geometry(geometry, grid_ranges):
     """`geometry` as it applies to a block cut out by `grid_ranges`.
 
+    Uniform:
         origin_out  = origin_in + start * spacing_in
         spacing_out = spacing_in * step
+    Structured: the same index cut applied to the per-point positions.
 
     so a cropped, strided block still reports where in the source it came from
     and lands in the right place in world space. `grid_ranges` is read
-    duck-typed (`.start` / `.step`) so this stays independent of the interpreter
-    layer that defines AxisRange. Returns `geometry` unchanged when there is
-    nothing to apply."""
-    if not geometry or geometry.get("kind") != "uniform" or not grid_ranges:
+    duck-typed (`.start` / `.stop` / `.step`, which python slices also have) so
+    this stays independent of the interpreter layer that defines AxisRange.
+    Returns `geometry` unchanged when there is nothing to apply."""
+    if not geometry or not grid_ranges:
+        return geometry
+    if geometry.get("kind") == "structured":
+        pts = geometry.get("points")
+        if pts is None or len(grid_ranges) != pts.ndim - 1:
+            return geometry          # no points yet, or rank mismatch: never guess
+        cut = tuple(slice(getattr(r, "start", None), getattr(r, "stop", None),
+                          getattr(r, "step", None) or 1) for r in grid_ranges)
+        # A copy, so the cut does not keep the whole source's points alive.
+        return structured_geometry(np.ascontiguousarray(pts[cut]))
+    if geometry.get("kind") != "uniform":
         return geometry
     origin, spacing = geometry["origin"], geometry["spacing"]
     if len(grid_ranges) != len(origin):
@@ -59,6 +94,66 @@ def narrowed_geometry(geometry, grid_ranges):
         out_o.append(origin[axis] + start * spacing[axis])
         out_s.append(spacing[axis] * step)
     return uniform_geometry(out_o, out_s)
+
+
+# ---------------------------------------------------------------------------
+# Geometry as arrays: how it rides in a file, over the wire, and in the cache
+# ---------------------------------------------------------------------------
+# In an .npz that save() writes, under readable reserved keys (the `sieve_`
+# prefix is never a variable):
+#   uniform     sieve_origin (3,), sieve_spacing (3,)
+#   structured  sieve_points (nx, ny, nz, 3)
+GEOMETRY_ARRAY_KEYS = ("sieve_origin", "sieve_spacing", "sieve_points")
+
+# Between the remote reducer and this side, and in the extent catalog, a cut's
+# geometry is ONE array under this reserved name, so it can be requested,
+# cached and reused like a variable: shape (0,) = index space (no geometry),
+# (2, 3) = uniform [origin, spacing], (..., 3) with ndim >= 3 = structured.
+GEOMETRY_KEY = "sieve_geometry"
+
+
+def geometry_to_arrays(geometry):
+    """{reserved key: array} for an .npz; {} for index space."""
+    if not geometry:
+        return {}
+    if geometry.get("kind") == "uniform":
+        return {"sieve_origin": np.asarray(geometry["origin"], dtype=float),
+                "sieve_spacing": np.asarray(geometry["spacing"], dtype=float)}
+    if geometry.get("kind") == "structured" and geometry.get("points") is not None:
+        return {"sieve_points": np.asarray(geometry["points"])}
+    return {}
+
+
+def encode_geometry(geometry):
+    """The geometry of one cut as the single array GEOMETRY_KEY carries."""
+    arrays = geometry_to_arrays(geometry)
+    if "sieve_points" in arrays:
+        return arrays["sieve_points"]
+    if "sieve_origin" in arrays:
+        return np.stack([arrays["sieve_origin"], arrays["sieve_spacing"]])
+    return np.zeros((0,))
+
+
+def decode_geometry(arr):
+    """Inverse of encode_geometry: a geometry dict, or None for index space."""
+    arr = np.asarray(arr)
+    if arr.ndim == 2 and arr.shape == (2, 3):
+        return uniform_geometry(arr[0], arr[1])
+    if arr.ndim >= 3 and arr.shape[-1] == 3:
+        return structured_geometry(arr)
+    return None
+
+
+def geometry_from_arrays(arrays):
+    """The geometry stored among `arrays` (an .npz's members, a remote reply),
+    in either form above, or None when it holds none."""
+    if GEOMETRY_KEY in arrays:
+        return decode_geometry(arrays[GEOMETRY_KEY])
+    if "sieve_points" in arrays:
+        return structured_geometry(arrays["sieve_points"])
+    if "sieve_origin" in arrays and "sieve_spacing" in arrays:
+        return uniform_geometry(arrays["sieve_origin"], arrays["sieve_spacing"])
+    return None
 
 
 class DatasetInfo:
@@ -92,6 +187,11 @@ class DatasetInfo:
         # WRITE one into a format that places its data in space (VTK). Shape:
         #
         #   {'kind': 'uniform', 'origin': (x,y,z), 'spacing': (dx,dy,dz)}
+        #   {'kind': 'structured', 'points': (nx,ny,nz,3) array}
+        #
+        # The second is a curvilinear grid (e.g. terrain-following), whose
+        # points no origin + spacing can describe. Inspect leaves `points` None
+        # (structured_pending(): they are bulk data); materialize reads them.
         #
         # None means index space — a legitimate result, and the honest one when
         # the source header does not say. NEVER synthesize a source origin that

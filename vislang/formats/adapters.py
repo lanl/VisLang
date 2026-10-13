@@ -14,7 +14,8 @@ import copy
 import numpy as np
 
 from vislang.formats.dataset_info import (DatasetInfo, geometry_from_edges,
-                                          uniform_geometry)
+                                          geometry_from_arrays, structured_geometry,
+                                          structured_pending, uniform_geometry)
 from vislang.interpreter.narrowing import (  # selection primitives now live in narrowing.py
     TAKE_ALL, Narrowing, narrowing_from_dimensions, apply_selection,
     _get_particle_indices, _get_grid_step,
@@ -747,6 +748,12 @@ class VTKAdapter(FormatAdapter):
                 geometry = uniform_geometry(mesh.origin, mesh.spacing)
                 attributes['vtk_origin'] = [float(v) for v in mesh.origin]
                 attributes['vtk_spacing'] = [float(v) for v in mesh.spacing]
+            else:
+                # Rectilinear / Structured: the file lists each point's
+                # position (a terrain-following z differs per column), so no
+                # origin + spacing describes it. Say the points exist; they are
+                # bulk data, read with the arrays (read_geometry).
+                geometry = structured_pending()
         else:
             dimensions['particles'] = int(mesh.n_points)
 
@@ -791,6 +798,137 @@ class VTKAdapter(FormatAdapter):
             raise ValueError(f"{name!r} is not a point-data array in {filepath}")
         return apply_selection(arr, selection)
 
+    def read_geometry(self, filepath):
+        """Every grid point's position, uncut, as a structured geometry (or None
+        for a mesh that is not a listed-point grid). load.materialize cuts it
+        with the same index ranges as the data, so the two stay aligned."""
+        mesh = self._read(filepath)
+        shape = getattr(mesh, 'dimensions', None)
+        if type(mesh).__name__ in ('PolyData', 'ImageData') or shape is None:
+            return None
+        nx, ny, nz = (int(d) for d in shape)
+        # VTK numbers points x-fastest; (nz, ny, nx) C-order, then axes swapped
+        # so index [i, j, k] is the point at x=i, y=j, z=k like every array.
+        pts = np.asarray(mesh.points).reshape(nz, ny, nx, 3).transpose(2, 1, 0, 3)
+        return structured_geometry(np.ascontiguousarray(pts))
+
+
+# ---------------------------------------------------------------------------
+# NumPy .npz
+# ---------------------------------------------------------------------------
+class NpzAdapter(FormatAdapter):
+    """NumPy .npz archives: what save() writes when asked for .npz or when a
+    source's own format has no writer, and a common way to pass arrays around.
+
+    numpy is the trusted library here, and every fact comes from the archive's
+    own member headers (shape, dtype) — nothing is inferred from values. What
+    the archive holds is decided from those shapes:
+
+      every data array >= 2-D with one shared shape  -> a grid of that shape
+      every data array 1-D with one shared length    -> particles (rows)
+      anything else                                  -> listed, no dimension
+
+    In the last case region/subsample refuse, as they do for any source whose
+    shape is unknown, rather than guess. 0-d and one-element members are
+    attributes.
+
+    Reserved `sieve_*` members are metadata, never variables: the provenance
+    record, and the geometry save() writes beside a grid (sieve_origin +
+    sieve_spacing, or sieve_points for a grid whose points are listed one by
+    one), so a cut that is read back still knows where it sits."""
+
+    name = "npz"
+    supports_strided_read = False      # np.load reads a member whole
+    supports_column_pushdown = True    # members are read one by one
+
+    _ZIP_MAGIC = b'PK\x03\x04'
+
+    @classmethod
+    def can_handle(cls, filepath):
+        if os.path.splitext(filepath)[1].lower() != '.npz':
+            return False
+        try:
+            with open(filepath, 'rb') as f:
+                return f.read(4) == cls._ZIP_MAGIC
+        except OSError:
+            return False
+
+    @staticmethod
+    def _headers(filepath):
+        """{member: (shape, dtype)} from each .npy header, without reading data."""
+        import zipfile
+        from numpy.lib import format as npformat
+        out = {}
+        with zipfile.ZipFile(filepath) as zf:
+            for entry in zf.namelist():
+                if not entry.endswith('.npy'):
+                    continue
+                with zf.open(entry) as f:
+                    version = npformat.read_magic(f)
+                    read = (npformat.read_array_header_1_0 if version == (1, 0)
+                            else npformat.read_array_header_2_0)
+                    shape, _fortran, dtype = read(f)
+                out[entry[:-len('.npy')]] = (tuple(int(n) for n in shape), dtype)
+        return out
+
+    def inspect(self, filepath):
+        headers = self._headers(filepath)
+        # A 0-d or one-element member is an attribute (a scalar, or a label
+        # saved as np.array(["…"])), not a column.
+        def _scalar(shape):
+            return len(shape) == 0 or shape == (1,)
+        data = {k: v for k, v in headers.items()
+                if not k.startswith('sieve_') and not _scalar(v[0])}
+        if not data:
+            raise UnsupportedFormatError(
+                f"{os.path.basename(filepath)} holds no data arrays")
+
+        attributes = {}
+        scalars = [k for k, v in headers.items()
+                   if not k.startswith('sieve_') and _scalar(v[0])]
+        if scalars:
+            with np.load(filepath, allow_pickle=False) as z:
+                for k in scalars:
+                    value = z[k].reshape(-1)[0].item()
+                    attributes[k] = value if isinstance(value, (int, float, str)) \
+                        else str(value)
+
+        shapes = {shape for shape, _ in data.values()}
+        dimensions = {}
+        if len(shapes) == 1:
+            shape = next(iter(shapes))
+            if len(shape) >= 2:
+                dimensions['grid'] = shape
+            else:
+                dimensions['particles'] = shape[0]
+
+        geometry = None
+        if 'grid' in dimensions:
+            if 'sieve_points' in headers:
+                geometry = structured_pending()      # bulk: read with the data
+            elif 'sieve_origin' in headers and 'sieve_spacing' in headers:
+                with np.load(filepath, allow_pickle=False) as z:
+                    geometry = geometry_from_arrays(
+                        {k: z[k] for k in ('sieve_origin', 'sieve_spacing')})
+
+        info = DatasetInfo(filepath, self.name, list(data), dimensions=dimensions,
+                           attributes=attributes,
+                           itemsizes={k: int(dt.itemsize) for k, (_, dt) in data.items()})
+        info.geometry = geometry
+        return info
+
+    def read_array(self, filepath, location, selection):
+        with np.load(filepath, allow_pickle=False) as z:
+            arr = z[str(location)]
+        return apply_selection(arr, selection)
+
+    def read_geometry(self, filepath):
+        """The listed-point positions save() stored beside a grid, uncut."""
+        with np.load(filepath, allow_pickle=False) as z:
+            if 'sieve_points' not in z.files:
+                return None
+            return structured_geometry(z['sieve_points'])
+
 
 # ---------------------------------------------------------------------------
 # Registry
@@ -805,7 +943,8 @@ class VTKAdapter(FormatAdapter):
 # other order every .vtkhdf would be read as an anonymous HDF5 tree. VTKAdapter
 # only claims an HDF5-magic file when it actually has a /VTKHDF root group, so
 # putting it first costs plain HDF5 files nothing.
-REGISTRY = [YTAdapter, VTKAdapter, HDF5Adapter, AstropyAdapter, GenericIOAdapter]
+REGISTRY = [YTAdapter, VTKAdapter, HDF5Adapter, AstropyAdapter, GenericIOAdapter,
+            NpzAdapter]
 
 _BY_NAME = {a.name: a for a in REGISTRY}
 
@@ -852,7 +991,7 @@ def _ensure_generated_loaded():
 def get_adapter(filepath):
     """Return an adapter for filepath.
 
-    Tier 0: registered readers (yt, HDF5, FITS, GenericIO).
+    Tier 0: registered readers (yt, VTK, HDF5, FITS, GenericIO, npz).
     Tier 1: a previously-frozen LLM-generated adapter, else one generated now.
     Raises UnsupportedFormatError if nothing can read it.
     """

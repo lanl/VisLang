@@ -43,8 +43,19 @@ def inspect_file(filepath, positions=None):
     # Resolve which variables are spatial coordinates once, at the format
     # boundary, so render/etc. stay meaning-blind. None when there are no
     # explicit coordinate variables (e.g. a grid).
-    info.positions = positions if positions is not None else detect_positions(info.variables)
+    info.positions = positions if positions is not None else _auto_positions(info)
     return info
+
+
+def _auto_positions(info):
+    """Coordinate variables guessed from the names — but never for a grid.
+    A grid's coordinates are its indices (and its geometry); a grid that
+    happens to hold `vx, vy, vz` must not be taken for a point set, which
+    would turn every region on it into a world-coordinate box."""
+    dims = info.dimensions or {}
+    if "grid" in dims and "particles" not in dims:
+        return None
+    return detect_positions(info.variables)
 
 
 class SchemaUnavailable(Exception):
@@ -172,7 +183,7 @@ def _build_remote_info(uri, meta, positions):
     if positions is not None:
         info.positions = positions
     elif not getattr(info, "positions", None):
-        info.positions = detect_positions(info.variables)
+        info.positions = _auto_positions(info)
     return info
 
 

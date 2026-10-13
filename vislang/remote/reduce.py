@@ -55,14 +55,15 @@ import numpy as np
 
 import vislang.runtime.timing as timing        # per-phase seconds/bytes -> timings.jsonl
 import vislang.runtime.provenance as provenance  # the derivation record -> the artifact
-from vislang.formats.dataset_info import DatasetInfo
+from vislang.formats.dataset_info import (DatasetInfo, GEOMETRY_KEY, decode_geometry,
+                                          encode_geometry, geometry_from_arrays)
 from vislang.remote.catalog import ExtentCatalog, make_source_id
 from vislang.remote.download import (establish_connection, transfer, transfer_dir,
                          _parse_remote, remote_stat, remote_header_hash, run_remote,
                          measure_bandwidth, host_reachable, connect_command)
 from vislang.dsl.ast_serialize import to_plan_json
 from vislang.dsl.nodes import (SourceNode, FieldsNode, RegionNode, SubsampleNode,
-                             ThresholdNode, CompressNode, TimestepsNode)
+                             ThresholdNode)
 
 _NARROWING = ("fields", "region", "subsample", "threshold")
 
@@ -456,6 +457,37 @@ def _projection_of(prefix):
     return keep
 
 
+# Where a cut sits in space comes back with its data. For a grid it is requested,
+# cached and reused under GEOMETRY_KEY exactly like a variable — so a re-run
+# reuses it, and a cache filled before it existed fetches just that piece. Point
+# data carries its positions in its own columns and needs none.
+def _wants_geometry(schema):
+    dims = (schema or {}).get("dimensions") or {}
+    return "grid" in dims and not (schema or {}).get("positions")
+
+
+def _with_geometry(variables, schema):
+    """The catalog request: `variables` plus the geometry piece for a grid —
+    or for a source whose modality is not known yet (no schema): the reducer
+    answers it only for a grid, so asking costs a point set nothing."""
+    if variables is None or (schema is not None and not _wants_geometry(schema)):
+        return variables
+    return list(variables) + [GEOMETRY_KEY]
+
+
+def _data_vars(names):
+    """`names` without the geometry piece (None stays None)."""
+    return None if names is None else [v for v in names if v != GEOMETRY_KEY]
+
+
+def _geometry_in(*mappings):
+    """The geometry held under GEOMETRY_KEY by the first mapping that has it."""
+    for m in mappings:
+        if GEOMETRY_KEY in m:
+            return decode_geometry(m[GEOMETRY_KEY])
+    return None
+
+
 # ---------------------------------------------------------------------------
 def _catalog_schema(schema):
     """The persistable part of a schema. `itemsizes` is live inspect metadata and
@@ -730,9 +762,9 @@ def remote_reduce_tags(src, middle, confirm=False):
     with timing.phase("catalog_delta"):
         for t in tags:
             have[t], missing[t] = ({}, None) if want is None else \
-                catalog.delta(sid, want, keys[t])
+                catalog.delta(sid, _with_geometry(want, schema), keys[t])
     need = [t for t in tags if missing[t] is None or missing[t]]
-    held = [t for t in tags if have[t]]
+    held = [t for t in tags if _data_vars(have[t])]
     if held:
         steps.append(f"catalog: cached extents for box(es) {', '.join(held)}")
 
@@ -756,8 +788,9 @@ def remote_reduce_tags(src, middle, confirm=False):
             if schema is not None and all(checked[t] is not None for t in need):
                 estimate = estimate_boxes_cost(
                     info=_info_from_schema(src.uri, schema), site="remote",
-                    boxes=[(checked[t], 1, missing[t] or list(schema["variables"]))
-                           for t in need], net_bw_bps=net_bw)
+                    boxes=[(checked[t], 1, _data_vars(missing[t])
+                            or list(schema["variables"])) for t in need],
+                    net_bw_bps=net_bw)
                 if any(_row_cutting(checked[t]) for t in need):
                     estimate.notes.append(
                         "value-dependent row cut — the count survives only after "
@@ -792,8 +825,10 @@ def remote_reduce_tags(src, middle, confirm=False):
             fetched[t][var] = arr
             total += arr.nbytes
             catalog.store(sid, var, keys[t], arr)
-        steps.append(f"pulled {len(bundle)} (box,var) array(s), {total / 1e6:.1f} MB "
-                     f"over the wire")
+        n_geom = sum(1 for k in bundle if k.endswith("/" + GEOMETRY_KEY))
+        steps.append(f"pulled {len(bundle) - n_geom} (box,var) array(s)"
+                     + (f" + {n_geom} grid position piece(s)" if n_geom else "")
+                     + f", {total / 1e6:.1f} MB over the wire")
     else:
         steps.append("catalog: full hit — nothing crossed the wire")
     if schema is None:
@@ -803,11 +838,12 @@ def remote_reduce_tags(src, middle, confirm=False):
     info_s = _info_from_schema(src.uri, schema)
     cut = []
     for t in tags:
-        data = dict(have[t])
-        data.update(fetched[t])
+        geometry = _geometry_in(fetched[t], have[t])
+        data = {v: a for v, a in {**have[t], **fetched[t]}.items() if v != GEOMETRY_KEY}
         order = want if want is not None else list(data)
         variables = [v for v in order if v in data]
         loaded = _remote_info(src, schema, variables, data, {"source_id": sid})
+        loaded.geometry = geometry
         loaded.selection_info = {"variables_loaded": variables,
                                  "dimension_selection": keys[t], "site": "remote"}
         notes = []
@@ -816,11 +852,14 @@ def remote_reduce_tags(src, middle, confirm=False):
         provenance.note_region_box(None, boxes, tag=t)
         cut.append((t, loaded))
     timing.note(result_bytes=int(sum(a.nbytes for _, l in cut for a in l.data.values())),
-                fetched_vars=len({v for f in fetched.values() for v in f}))
+                fetched_vars=len({v for f in fetched.values() for v in f
+                                  if v != GEOMETRY_KEY}))
     _note_remote_provenance(
-        schema, prefix, {v: a for t in tags for v, a in have[t].items()},
-        {v: a for t in tags for v, a in fetched[t].items()},
-        sorted({v for t in need for v in (missing[t] or [])}), fetched_bytes=total)
+        schema, prefix,
+        {v: a for t in tags for v, a in have[t].items() if v != GEOMETRY_KEY},
+        {v: a for t in tags for v, a in fetched[t].items() if v != GEOMETRY_KEY},
+        sorted({v for t in need for v in (_data_vars(missing[t]) or [])}),
+        fetched_bytes=total)
     steps.append(f"assembled {len(cut)} named box(es) "
                  f"({len(held)} with cached extents, {len(need)} fetched)")
     return cut, steps, estimate
@@ -854,17 +893,17 @@ def remote_reduce(src, middle, confirm=False):
     want = project if project is not None else (
         list(schema["variables"]) if schema else None)
 
-    have, missing = {}, want
+    have, missing = {}, _with_geometry(want, schema)
     if want is not None:
         with timing.phase("catalog_delta"):
-            have, missing = catalog.delta(sid, want, key)
+            have, missing = catalog.delta(sid, _with_geometry(want, schema), key)
         # want / have / missing counted in VARIABLES here (the single-file axis);
         # the folder path counts (timestep, variable) pairs.
-        timing.note(want_vars=len(want), cached_vars=len(have),
-                    missing_vars=len(missing or []),
+        timing.note(want_vars=len(want), cached_vars=len(_data_vars(have)),
+                    missing_vars=len(_data_vars(missing) or []),
                     cached_bytes=int(sum(a.nbytes for a in have.values())) if have else 0)
-        if have:
-            steps.append(f"catalog: cached {sorted(have)} for this narrowing")
+        if _data_vars(have):
+            steps.append(f"catalog: cached {sorted(_data_vars(have))} for this narrowing")
 
     # --- cost gate: estimate the wire transfer BEFORE shipping the read -------
     # Remote cost is bytes over ssh; we measure the link with a synthetic probe
@@ -883,8 +922,8 @@ def remote_reduce(src, middle, confirm=False):
 
     if want is None or missing:
         with timing.phase("cost_estimate"):
-            estimate = _reduce_estimate(src, key, schema, missing, conn, steps,
-                                        narrowing=checked)
+            estimate = _reduce_estimate(src, key, schema, _data_vars(missing), conn,
+                                        steps, narrowing=checked)
         if estimate is not None and estimate.over_budget and not confirm:
             raise BudgetHold(estimate, steps)
     else:
@@ -903,11 +942,20 @@ def remote_reduce(src, middle, confirm=False):
 
     fetched = {}
     if want is None or missing:
-        meta, fetched = _run_remote_prefix(conn, remote_path, src, prefix, missing, steps)
+        # Only the geometry missing (a cache filled before it was kept): the
+        # reducer still needs one column to cut, and it comes back too.
+        fetch = None if missing is None else (_data_vars(missing) or want[:1])
+        meta, pulled = _run_remote_prefix(conn, remote_path, src, prefix, fetch, steps)
         schema = _keep_attributes(meta["schema"], schema)
         catalog.store_schema(sid, _catalog_schema(schema))
+        # The reducer's .npz holds the cut's geometry under reserved keys.
+        fetched = {k: a for k, a in pulled.items() if not k.startswith("sieve_")}
         for var, arr in fetched.items():
             catalog.store(sid, var, key, arr)
+        if _wants_geometry(schema):
+            fetched_geom = encode_geometry(geometry_from_arrays(pulled))
+            catalog.store(sid, GEOMETRY_KEY, key, fetched_geom)
+            have = {**have, GEOMETRY_KEY: fetched_geom}
     else:
         steps.append("catalog: full hit — nothing crossed the wire")
 
@@ -915,7 +963,8 @@ def remote_reduce(src, middle, confirm=False):
         raise RemoteUnavailable("no schema for cached-only assembly")   # defensive
 
     # --- assemble the loaded DatasetInfo for the local suffix -----------------
-    data = dict(have)
+    geometry = _geometry_in(have)
+    data = {v: a for v, a in have.items() if v != GEOMETRY_KEY}
     data.update(fetched)
     order = want if want is not None else list(data)
     variables = [v for v in order if v in data]
@@ -929,14 +978,17 @@ def remote_reduce(src, middle, confirm=False):
     info.positions = tuple(schema["positions"]) if schema.get("positions") else None
     info.data = {v: data[v] for v in data}
     info.loaded = True
+    info.geometry = geometry
     info.selection_info = {"variables_loaded": variables,
                            "dimension_selection": key,
                            "site": "remote"}
     total = sum(a.nbytes for a in data.values())
     timing.note(result_bytes=int(total), fetched_vars=len(fetched))
-    _note_remote_provenance(schema, prefix, have, fetched, missing)
+    _note_remote_provenance(schema, prefix,
+                            {v: a for v, a in have.items() if v != GEOMETRY_KEY},
+                            fetched, _data_vars(missing))
     steps.append(f"assembled {len(data)} var(s), {total / 1e6:.1f} MB "
-                 f"({len(have)} cached, {len(fetched)} fetched)")
+                 f"({len(_data_vars(have))} cached, {len(fetched)} fetched)")
     return info, steps, estimate
 
 
@@ -1013,7 +1065,10 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
         arrays = {k: z[k] for k in z.files}
     os.remove(pulled)                       # extents are the durable copy
     total = sum(a.nbytes for a in arrays.values())
-    steps.append(f"pulled {len(arrays)} var(s), {total / 1e6:.1f} MB over the wire")
+    n_data = sum(1 for k in arrays if not k.startswith("sieve_"))
+    steps.append(f"pulled {n_data} var(s)"
+                 + (" + the grid's positions" if n_data < len(arrays) else "")
+                 + f", {total / 1e6:.1f} MB over the wire")
     return meta, arrays
 
 
@@ -1027,38 +1082,8 @@ def _parse_meta(stdout_text):
 
 
 # ---------------------------------------------------------------------------
-# Whole-folder (timeseries) reduce: ONE remote job, ONE directory pulled back
+# Whole-folder (timeseries) reduce: ONE remote job, ONE bundle pulled back
 # ---------------------------------------------------------------------------
-def _rebuild_folder_chain(remote_dir, positions, middle, ts_nodes):
-    """The remote chain for a folder reduce: source(remote-local DIR) ->
-    timesteps(range) -> the middle forms in written order. On the remote the dir
-    is a *local* folder, so plan_pipeline dispatches it to _plan_folder and maps
-    the chain over each timestep. Unlike _rebuild_prefix (single-file, catalog
-    projection) this keeps `fields` in place and carries `compress` too (it runs
-    remotely, shrinking the transfer)."""
-    node = SourceNode(uri=remote_dir,
-                      positions=tuple(positions) if positions else None)
-    if ts_nodes:                                   # inclusive #N range, as the planner folds it
-        lo = max(n.start for n in ts_nodes)
-        hi = min(n.stop for n in ts_nodes)
-        node = TimestepsNode(upstream=node, start=lo, stop=hi)
-    for n in middle:
-        if n.kind == "fields":
-            node = FieldsNode(upstream=node, keep=tuple(n.keep))
-        elif n.kind == "region":
-            node = dataclasses.replace(n, upstream=node)
-        elif n.kind == "subsample":
-            node = SubsampleNode(upstream=node, uniform=n.uniform, per_axis=n.per_axis)
-        elif n.kind == "threshold":
-            node = ThresholdNode(upstream=node, var=n.var, op=n.op, value=n.value)
-        elif n.kind == "compress":
-            node = CompressNode(upstream=node, variables=tuple(n.variables),
-                                error_bound=n.error_bound, mode=n.mode)
-        else:
-            raise ValueError(f"unknown form {n.kind!r} in folder chain")
-    return node
-
-
 def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
     """Reduce a remote folder timeseries as ONE remote job, CATALOG-AWARE: the
     local extent catalog is consulted per (timestep, variable), so only the delta
@@ -1076,9 +1101,14 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
     lists the missing (timestep, tag, variables) entries; each tag is written as
     its own series under the sink path.
 
-    Needs an explicit fields() projection to know each file's variables without a
-    per-file inspect; without one it falls back to the non-catalog save-to-dir
-    batch. Returns (local_out_dir, steps, report). Raises RemoteUnavailable (the
+    With no fields() projection the request is every variable of the series —
+    read from timestep 0's schema, which stands for the series (sharing one
+    schema is what makes a folder a series). Either way the remote only cuts and
+    returns arrays; the files are written here, by the same save() as every
+    other route, so each carries its provenance record. A grid's geometry (its
+    origin + spacing, or every point's position) is fetched and cached with it.
+
+    Returns (local_out_dir, steps, report). Raises RemoteUnavailable (the
     planner falls back to a whole-folder fetch) or RuntimeError for a real
     failure."""
     from vislang.remote.catalog import make_source_id
@@ -1101,14 +1131,6 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         if not conn.batch_ok:
             raise _session_hold(conn, steps)
     timing.note(host=host)
-
-    # No projection -> we can't know each file's variables from metadata; run the
-    # non-catalog whole-folder batch (still one remote job, one dir pull).
-    if project is None:
-        steps.append("no fields() projection — catalog needs an explicit variable "
-                     "set; running the non-catalog whole-folder batch")
-        return _folder_batch_savedir(conn, host, remote_dir, src, middle, ts_nodes,
-                                     out_local_dir, steps)
 
     from vislang.formats.inspect import remote_timestep_files_stat
     with timing.phase("list_timesteps"):
@@ -1145,16 +1167,39 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
     if tagged is not None:
         timing.note(tags=len(tags), boxes=len(units))
 
-    # --- catalog delta per timestep (local, no network) ----------------------
     catalog = ExtentCatalog(cache_root())
-    per = {}                                            # label -> {uri, sid}
+    per = {label: {"uri": uri, "sid": make_source_id(uri, size, mtime)}
+           for label, uri, size, mtime in files}       # label -> {uri, sid}
+
+    # --- timestep 0's schema stands for the series ----------------------------
+    # Needed before the delta: it is the variable list when there is no
+    # fields(), and it says whether this is a grid (whose geometry is fetched
+    # too). Free once the catalog holds it; otherwise one login-node inspect,
+    # which the run would have spent anyway. An outdated entry still answers
+    # "is it a grid"; only a missing variable list makes the inspect necessary.
+    label0 = files[0][0]
+    schema0 = catalog.schema(per[label0]["sid"])
+    known = schema0 or catalog.stale_schema(per[label0]["sid"])
+    if schema0 is None and (project is None or known is None):
+        _, _, ts0_path = _parse_remote(_normalize_remote(per[label0]["uri"]))
+        with timing.phase("login_node_inspect"):
+            schema0 = _prime_schema(conn, ts0_path, catalog, per[label0]["sid"], steps)
+        known = schema0 or known
+    if project is None:
+        if not (schema0 or {}).get("variables"):
+            raise RemoteUnavailable(
+                f"no fields() given and the variables of {src.uri} could not be "
+                f"read (login-node inspect of timestep #{label0} failed)")
+        project = list(schema0["variables"])
+        steps.append(f"no fields() — every variable of the series: {project}")
+    request = _with_geometry(project, known)
+
+    # --- catalog delta per timestep (local, no network) ----------------------
     have, missing = {}, {}                              # unit -> cached {var: arr} / [vars]
     with timing.phase("catalog_delta", n=len(units)):
-        for label, uri, size, mtime in files:
-            sid = make_source_id(uri, size, mtime)
-            per[label] = {"uri": uri, "sid": sid}
+        for label in plan:
             for t in plan[label]:
-                h, m = catalog.delta(sid, project, keys[(label, t)])
+                h, m = catalog.delta(per[label]["sid"], request, keys[(label, t)])
                 have[(label, t)] = h
                 if m:
                     missing[(label, t)] = m
@@ -1173,15 +1218,21 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
             for label, uri, size, mtime in files])
 
     n = len(files)
-    union_missing = sorted({v for vs in missing.values() for v in vs})
+    # Counted in data variables; the geometry piece rides along uncounted.
+    union_missing = sorted({v for vs in missing.values() for v in _data_vars(vs)})
     total_pairs = len(units) * len(project)             # (unit, variable) extents needed
-    fetched_pairs = sum(len(vs) for vs in missing.values())
+    fetched_pairs = sum(len(_data_vars(vs)) for vs in missing.values())
     reused_pairs = total_pairs - fetched_pairs
+    geom_only = sum(1 for vs in missing.values() if not _data_vars(vs))
     steps.append(f"catalog: reused {reused_pairs}/{total_pairs} {unit} "
                  f"extent(s)"
                  + (f"; fetching {union_missing} ({fetched_pairs} pair(s)) for "
-                    f"{len(fetch_labels)} timestep(s)" if missing
-                    else " — full hit, nothing crosses the wire"))
+                    f"{len(fetch_labels)} timestep(s)" if fetched_pairs
+                    else " — full hit, nothing crosses the wire" if not missing
+                    else "")
+                 + (f"; fetching the grid position(s) only for {geom_only} "
+                    f"{'box' if tagged is not None else 'timestep'}(s)"
+                    if geom_only else ""))
 
     # --- static check BEFORE the plan ships -----------------------------------
     # Same reasoning as the single-file path: a malformed request should not cost
@@ -1189,8 +1240,6 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
     # schema is what makes a folder a series. Free once the catalog holds it; one
     # login-node inspect on the very first sighting, which the run would have
     # spent anyway (the reduce stores the schema when it returns).
-    label0 = files[0][0]
-    schema0 = catalog.schema(per[label0]["sid"])
     if schema0 is None and missing:
         _, _, ts0_path = _parse_remote(_normalize_remote(per[label0]["uri"]))
         with timing.phase("login_node_inspect"):
@@ -1228,8 +1277,11 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
             catalog.store(per[label]["sid"], var, keys[(label, t)], arr)  # cache fresh
         for label in fetch_labels:
             catalog.store_schema(per[label]["sid"], schema)
-        steps.append(f"pulled delta: {len(fetched)} {unit.replace('variable', 'var')} "
-                     f"array(s), {total / 1e6:.2f} MB over the wire")
+        n_geom = sum(1 for (_, _, v) in fetched if v == GEOMETRY_KEY)
+        steps.append(f"pulled delta: {len(fetched) - n_geom} "
+                     f"{unit.replace('variable', 'var')} array(s)"
+                     + (f" + {n_geom} grid position piece(s)" if n_geom else "")
+                     + f", {total / 1e6:.2f} MB over the wire")
 
     # --- assemble each timestep from cached + fetched, then save -------------
     if schema is None:                                  # fully cached: schema from catalog
@@ -1261,6 +1313,9 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
                 data[var] = have[(label, t)][var]
             else:
                 data[var] = fetched[(label, t, var)]
+        geom = have[(label, t)].get(GEOMETRY_KEY)
+        if geom is None:
+            geom = fetched.get((label, t, GEOMETRY_KEY))
         loaded = DatasetInfo(f"{src.uri}#{label}", schema.get("filetype", "remote"),
                              list(project), dimensions=schema.get("dimensions") or {},
                              attributes={**(schema.get("attributes") or {}),
@@ -1268,6 +1323,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         loaded.positions = tuple(schema["positions"]) if schema.get("positions") else None
         loaded.data = data
         loaded.loaded = True
+        loaded.geometry = None if geom is None else decode_geometry(geom)
         for c in compresses:                            # compress is a LOCAL suffix (lossy; keep extents raw)
             loaded = _compress(loaded, list(c.variables), c.error_bound, c.mode)
         per_tag[t].append((label, loaded))
@@ -1289,11 +1345,12 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         if reused_pairs:
             groups["cache"] = {"columns": list(project),
                                "extents_reused": f"{reused_pairs} of {total_pairs}"}
-        if fetched:
+        if union_missing:
             groups["remote"] = {
                 "columns": union_missing,
                 "read": {"then": [n.kind for n in narrow_prefix]},
-                "fetched_bytes": int(sum(a.nbytes for a in fetched.values()))}
+                "fetched_bytes": int(sum(a.nbytes for (_, _, v), a in fetched.items()
+                                         if v != GEOMETRY_KEY))}
         provenance.note_columns_from(groups)
 
     from vislang.output.save import save_timeseries, save_tagged_series
@@ -1301,6 +1358,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
               "fetched_timesteps": len(fetch_labels), "fetched_vars": union_missing,
               "total_pairs": total_pairs, "reused_pairs": reused_pairs,
               "fetched_pairs": fetched_pairs,
+              "fetched_geometry": sum(1 for (_, _, v) in fetched if v == GEOMETRY_KEY),
               "timesteps": [lab for lab, *_ in files]}
     if tagged is None:
         per_step = per_tag[None]
@@ -1396,84 +1454,3 @@ def _rebuild_delta_source(remote_dir, positions, narrow_prefix):
         elif nn.kind == "threshold":
             node = ThresholdNode(upstream=node, var=nn.var, op=nn.op, value=nn.value)
     return node
-
-
-def _folder_batch_savedir(conn, host, remote_dir, src, middle, ts_nodes,
-                          out_local_dir, steps):
-    """Non-catalog whole-folder batch (the fallback when there's no fields()
-    projection): the remote runs its own _plan_folder over every timestep and
-    saves one file per step; we pull the directory once. One remote job, one dir
-    transfer, but no per-variable delta reuse.
-
-    The sink's extension is a conversion request, so it travels with the
-    remote's output path: the remote writes `<routdir>/` in that format (its
-    save drops the extension from the directory, as a local one does), and the
-    pull lands in the sink path minus the extension."""
-    from vislang.output.save import _EXT_FORMAT
-    terminal = _rebuild_folder_chain(remote_dir, src.positions, middle, ts_nodes)
-    plan = to_plan_json(terminal)
-
-    stem, ext = os.path.splitext(out_local_dir)
-    ext = ext.lower() if ext.lower() in _EXT_FORMAT else ""
-    if ext:
-        out_local_dir = stem
-    tag = os.urandom(4).hex()
-    base = _remote_tmp(conn.host)
-    routdir = f"{base}/vislang_reduce_{tag}"
-    requested = _srun_requested()
-    jobid = _discover_jobid(conn, steps) if requested == "auto" else requested
-    steps.append(f"remote folder {host}:{remote_dir}")
-    steps.append("ship plan.json (folder AST moved to the remote): " + plan)
-
-    timing.note(route="folder_batch_savedir", plan_bytes=len(plan), srun=bool(jobid))
-    if jobid is None:
-        cmd = _executor_cmd(routdir + ext, folder=True, host=conn.host)
-        with timing.phase("remote_exec", srun=False):
-            rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
-        rplan = None
-    else:
-        rplan = f"{base}/vislang_plan_{tag}.json"
-        steps.append(f"srun --jobid={jobid}: one step for the whole folder "
-                     f"(plan staged at {rplan})")
-        with timing.phase("ship_plan", bytes=len(plan)):
-            stc, _, ste = run_remote(conn, f"mkdir -p {base} && cat > {rplan}",
-                                     stdin_bytes=plan.encode())
-        if stc != 0:
-            raise RuntimeError(f"staging plan to {rplan} failed: {ste.strip()[-300:]}")
-        cmd = _executor_cmd(routdir + ext, plan_path=rplan, jobid=jobid, folder=True,
-                            host=conn.host)
-        with timing.phase("remote_exec", srun=True, jobid=jobid):
-            rc, out, err = run_remote(conn, cmd)
-
-    meta = _parse_meta(out)
-    if meta is None or not meta.get("ok", False):
-        detail = (meta or {}).get("error") or err.strip()[-_ERR_TAIL:] or f"rc={rc}"
-        raise RuntimeError(f"remote folder reduce failed: {_stale_remote_hint(detail)}")
-
-    remote_out = meta.get("outdir", routdir)
-    with timing.phase("pull"):
-        pulled = transfer_dir(conn, remote_out, out_local_dir)
-    cleanup = f"rm -rf {routdir}" + (f" {rplan}" if rplan else "")
-    run_remote(conn, cleanup)
-    if pulled is None:
-        raise RuntimeError("transfer of the reduced folder failed")
-    # A ParaView index is named after the folder it sits in, which on the remote
-    # was the transient one; its paths are relative, so only the name moves.
-    from vislang.output.save import pvd_path
-    pulled_pvd = os.path.join(out_local_dir, os.path.basename(pvd_path(remote_out)))
-    if os.path.exists(pulled_pvd):
-        os.replace(pulled_pvd, pvd_path(out_local_dir))
-
-    labels = meta.get("timesteps", [])
-    tags = meta.get("tags")
-    if tags:                                            # named boxes: one series per tag
-        steps.append(f"pulled {sum(len(v) for v in tags.values())} named box file(s) "
-                     f"in {len(tags)} series -> {out_local_dir}")
-    else:
-        steps.append(f"pulled {len(labels)} timestep file(s) -> {out_local_dir}")
-    report = {"n": len(labels), "host": host, "jobid": jobid, "cached": 0,
-              "fetched_timesteps": len(labels), "fetched_vars": None,
-              "timesteps": labels, "remote_steps": meta.get("steps", [])}
-    if tags:
-        report["tags"] = tags
-    return out_local_dir, steps, report

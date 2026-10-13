@@ -1,7 +1,7 @@
 """Write a materialized result to disk: convert on request, else preserve.
 
 The output format follows the sink path's extension when it is a known one
-(.npz / .h5 / .hdf5 / .hdf / .gio / .vti / .vtp / .vtk / .vtkhdf); with no
+(.npz / .h5 / .hdf5 / .hdf / .gio / .vti / .vts / .vtp / .vtk / .vtkhdf); with no
 recognized extension it defaults to the SOURCE's original format so a round-trip
 keeps the file type. So an extension IS the conversion request — `save(node,
 "roi.vti")` over an HDF5 source converts, and this holds for a timeseries too,
@@ -39,7 +39,13 @@ Named boxes (`region(center={tag: …})`) write one output per tag under the
 sink path: `<dir>/<tag>/timestep#N.<ext>` over a timeseries (each tag its own
 series), `<dir>/<tag>.<ext>` on one file. One format is chosen for every tag.
 
-For ParaView, a `.vti`/`.vtp` series also carries each file's timestep as
+A grid's place in space travels with it: `.vti` stores an origin + spacing,
+`.vts` every point's own position (a curvilinear grid, e.g. terrain-following,
+which no origin + spacing can describe), and `.npz` both, under reserved
+`sieve_*` keys the npz reader understands. A curvilinear result is never written
+as `.vti` — that would put it in the wrong place.
+
+For ParaView, a `.vti`/`.vts`/`.vtp` series also carries each file's timestep as
 `TimeValue` field data, and a `<dir>/<dir>.pvd` collection indexes the files
 — see `_write_pvd`.
 """
@@ -48,10 +54,13 @@ import os
 
 import numpy as np
 
+from vislang.formats.dataset_info import geometry_to_arrays
+
 # Recognized output extensions -> writer format key.
 _EXT_FORMAT = {".npz": "npz", ".h5": "hdf5", ".hdf5": "hdf5", ".hdf": "hdf5",
                ".gio": "genericio",
-               ".vti": "vtk", ".vtp": "vtk", ".vtk": "vtk", ".vtkhdf": "vtk",
+               ".vti": "vtk", ".vts": "vtk", ".vtp": "vtk", ".vtk": "vtk",
+               ".vtkhdf": "vtk",
                ".nc": "netcdf4", ".nc4": "netcdf4"}
 # Source filetype -> writer format key (formats we can round-trip). Anything not
 # here falls back to npz.
@@ -123,7 +132,12 @@ def _history(loaded, rec):
 
 def _write_npz(out, loaded):
     blob, _ = _prov_blob(loaded)
-    extra = {}
+    # Where a grid sits travels as reserved `sieve_*` members (origin + spacing,
+    # or every point's position), which the npz reader turns back into
+    # geometry — so a cut saved as .npz can be cut again and still land in the
+    # right place.
+    extra = geometry_to_arrays(getattr(loaded, "geometry", None)) \
+        if _is_grid(loaded) else {}
     if blob is not None:
         # A reserved key, skipped by the npz reader so it never surfaces as a
         # variable. np.savez needs arrays, hence the 0-d wrapper.
@@ -208,6 +222,12 @@ def _write_genericio(out, loaded):
         raise RuntimeError(f"pygio write failed: {tail}")
 
 
+def _is_grid(loaded):
+    """True when every array is one grid (>= 2-D, one shape)."""
+    shapes = {np.asarray(a).shape for a in (loaded.data or {}).values()}
+    return len(shapes) == 1 and len(next(iter(shapes))) >= 2
+
+
 # (_WRITERS is assembled below, once every writer above it is defined.)
 
 
@@ -279,22 +299,29 @@ def _genericio_blocker(loaded):
 # ---------------------------------------------------------------------------
 # VTK
 # ---------------------------------------------------------------------------
-# Which VTK dataset each extension can hold. `.vtk` (legacy) and `.vtkhdf` take
-# either; `.vti` is a uniform grid and `.vtp` is a point set, and asking for the
-# wrong one is a blocker rather than a silent conversion. Deliberately absent:
-# `.vtr` / `.vts`, which need per-axis or explicit point coordinates that no
-# source in the trust ladder currently provides — accepting them here would only
-# let us fail later with a worse message.
-_VTK_MODELS = {".vti": ("uniform",), ".vtp": ("points",),
-               ".vtk": ("uniform", "points"), ".vtkhdf": ("uniform", "points")}
+# Which VTK dataset each extension can hold, and asking for the wrong one is a
+# blocker rather than a silent conversion:
+#   .vti      a uniform grid (origin + spacing)
+#   .vts      a grid with every point's position — a curvilinear grid, or a
+#             uniform one written out point by point (no resampling either way)
+#   .vtp      a point set
+#   .vtk / .vtkhdf  any of them
+# Deliberately absent: `.vtr`, which needs per-axis coordinate arrays that
+# geometry does not carry — accepting it would only fail later, worse.
+_VTK_MODELS = {".vti": ("uniform",), ".vts": ("structured", "uniform"),
+               ".vtp": ("points",),
+               ".vtk": ("uniform", "structured", "points"),
+               ".vtkhdf": ("uniform", "structured", "points")}
 
 
 def _vtk_model(loaded):
-    """(model, reason): 'uniform' or 'points' for this result, else None + why.
+    """(model, reason): 'uniform', 'structured' or 'points' for this result,
+    else None + why.
 
     Decided from the arrays themselves, the same way the rest of the pipeline
     infers modality — 3-D arrays are a grid, equal-length 1-D columns with
-    coordinates are a point set."""
+    coordinates are a point set. A grid is 'structured' when its geometry lists
+    every point's position (and those positions match the grid's shape)."""
     data = loaded.data
     if not data:
         return None, "no arrays to write"
@@ -303,6 +330,12 @@ def _vtk_model(loaded):
         shapes = {np.asarray(a).shape for a in data.values()}
         if len(shapes) > 1:
             return None, f"3-D arrays have differing shapes {sorted(shapes)}"
+        geom = getattr(loaded, "geometry", None) or {}
+        if geom.get("kind") == "structured" and geom.get("points") is not None:
+            if tuple(np.asarray(geom["points"]).shape[:-1]) != next(iter(shapes)):
+                return None, (f"point positions {np.asarray(geom['points']).shape[:-1]} "
+                              f"do not match the grid {next(iter(shapes))}")
+            return "structured", None
         return "uniform", None
     if ndims == {1}:
         lengths = {np.asarray(a).shape[0] for a in data.values()}
@@ -325,7 +358,8 @@ def _vtk_default_ext(loaded):
     undecidable result falls back to the table default and the blocker then
     reports why it cannot be written."""
     model, _ = _vtk_model(loaded)
-    return {"points": ".vtp", "uniform": ".vti"}.get(model, _FORMAT_EXT["vtk"])
+    return {"points": ".vtp", "uniform": ".vti",
+            "structured": ".vts"}.get(model, _FORMAT_EXT["vtk"])
 
 
 def _vtk_blocker(loaded, ext):
@@ -334,6 +368,13 @@ def _vtk_blocker(loaded, ext):
     if reason:
         return reason
     allowed = _VTK_MODELS.get(ext, ())
+    if model == "structured" and "uniform" in allowed and model not in allowed:
+        # Not a resampling question: the grid is the same, but .vti can only say
+        # "origin + fixed spacing", and these points are not evenly spaced.
+        # Written anyway it would sit in the wrong place in ParaView.
+        return (f"its points are listed one by one (a curvilinear grid, e.g. "
+                f"terrain-following) and {ext} stores only an origin and a fixed "
+                f"spacing, which would put it in the wrong place; write .vts")
     if model not in allowed:
         want = " or ".join(allowed)
         # Turning a point cloud into a grid (or back) is a RESAMPLING — a
@@ -358,11 +399,21 @@ def _write_vtk(out, loaded):
     model, _ = _vtk_model(loaded)
     geom = getattr(loaded, "geometry", None) or {}
 
-    if model == "uniform":
+    if model in ("uniform", "structured"):
         shape = np.asarray(next(iter(loaded.data.values()))).shape
-        mesh = pv.ImageData(dimensions=shape,
-                            origin=geom.get("origin", (0.0, 0.0, 0.0)),
-                            spacing=geom.get("spacing", (1.0, 1.0, 1.0)))
+        if model == "uniform":
+            mesh = pv.ImageData(dimensions=shape,
+                                origin=geom.get("origin", (0.0, 0.0, 0.0)),
+                                spacing=geom.get("spacing", (1.0, 1.0, 1.0)))
+        else:
+            mesh = pv.StructuredGrid()
+            # (nx, ny, nz, 3) -> VTK's x-fastest point list.
+            mesh.points = np.ascontiguousarray(
+                np.asarray(geom["points"]).transpose(2, 1, 0, 3).reshape(-1, 3))
+            mesh.dimensions = shape
+        if model == "uniform" and ext == ".vts":
+            # A uniform grid asked for as .vts: the same points, listed.
+            mesh = mesh.cast_to_structured_grid()
         for name, arr in loaded.data.items():
             # NaNs from a grid threshold are written through: VTK understands
             # them and ParaView renders them as blanked.
@@ -534,8 +585,6 @@ _VTK_UNSUPPORTED = {
     ".vtu": "unstructured meshes need connectivity-aware region/subsample",
     ".vtr": "rectilinear output needs per-axis coordinate arrays, which "
             "DatasetInfo.geometry does not carry yet",
-    ".vts": "curvilinear output needs explicit point coordinates, which "
-            "DatasetInfo.geometry does not carry yet",
 }
 
 
@@ -544,7 +593,7 @@ def _reject_unsupported_ext(path):
     ext = os.path.splitext(path)[1].lower()
     if ext in _VTK_UNSUPPORTED:
         raise ValueError(f"cannot write {path}: {_VTK_UNSUPPORTED[ext]}. Use "
-                         f".vti for a grid or .vtp for a point set.")
+                         f".vti or .vts for a grid, .vtp for a point set.")
 
 
 def _format_for_source(source_filetype):
@@ -651,7 +700,7 @@ def read_embedded(path):
 
 def save_loaded(loaded, path):
     """Write one materialized DatasetInfo to `path`, preserving its format (or
-    honoring an explicit .npz/.hdf5/.gio/.vti/.vtp/.vtk/.vtkhdf extension on the
+    honoring an explicit .npz/.hdf5/.gio/.vti/.vts/.vtp/.vtk/.vtkhdf extension on the
     path). Returns the path."""
     filetype = getattr(loaded, "filetype", None)
     fmt, out, explicit = _resolve(path, filetype)
@@ -663,6 +712,10 @@ def save_loaded(loaded, path):
         how = " (LLM-read source)" if str(filetype).endswith(" (LLM)") else ""
         note = f" (no writer for {filetype}{how}; wrote npz)"
     elif fmt == "vtk":
+        if not explicit:
+            # Preserving a VTK source: name the file after what the result is
+            # (.vts for listed points, .vtp for a point set), not always .vti.
+            out = path + _vtk_default_ext(loaded)
         blocker = _vtk_blocker(loaded, os.path.splitext(out)[1].lower())
         if blocker is not None:
             if explicit:
@@ -771,7 +824,7 @@ def _write_series(per_step, path, fmt, ext, degraded):
 # Extensions a ParaView collection (.pvd) can list, and that carry TimeValue.
 # ParaView's collection reader takes VTK XML only: legacy .vtk and .vtkhdf are
 # refused ("could not determine the data type").
-_PVD_EXTS = (".vti", ".vtp")
+_PVD_EXTS = (".vti", ".vts", ".vtp")
 
 
 def pvd_path(root):
@@ -850,7 +903,7 @@ def save_tagged_series(per_tag, path, source_filetype):
     """Named boxes over a timeseries: one series per tag, written to
     `<dir>/<tag>/timestep#N.<ext>` — each tag folder a valid timeseries that
     source() reads back, holding only the timesteps that tag's box exists at —
-    plus, for .vti/.vtp, `<dir>/<dir>.pvd` indexing every tag for ParaView.
+    plus, for .vti/.vts/.vtp, `<dir>/<dir>.pvd` indexing every tag for ParaView.
     `per_tag` is [(tag, [(label, loaded)])]. Format as for one series, decided
     once for every tag. Returns `<dir>`."""
     from vislang.runtime import provenance
@@ -873,7 +926,7 @@ def save_tagged_series(per_tag, path, source_filetype):
 
 def save_tagged(per_tag, path, source_filetype):
     """Named boxes on one file: `<dir>/<tag>.<ext>` per tag (each carrying its
-    own provenance record), plus, for .vti/.vtp, `<dir>/<dir>.pvd` so ParaView
+    own provenance record), plus, for .vti/.vts/.vtp, `<dir>/<dir>.pvd` so ParaView
     opens every box at once. `per_tag` is [(tag, loaded)]. One format for every
     tag, decided before anything is written. Returns `<dir>`."""
     from vislang.runtime import provenance

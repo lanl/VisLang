@@ -1388,19 +1388,6 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
     if held is not None:
         timing.note(route="held_session")
         return held
-    if mode != "off" and has_narrowing and per_step_regions_in(middle) \
-            and not any(n.kind == "fields" for n in middle):
-        # The non-catalog batch checks coverage only on the remote, after a job
-        # starts; list once here so a missing centre costs one ssh call. (The
-        # catalog route lists anyway and checks there.)
-        from vislang.formats.inspect import remote_timestep_files_stat
-        listed = remote_timestep_files_stat(src.uri)
-        if listed is not None:
-            available = [f[0] for f in listed]
-            if ts_nodes:
-                lo, hi = max(n.start for n in ts_nodes), min(n.stop for n in ts_nodes)
-                listed = [f for f in listed if lo <= f[0] <= hi]
-            _check_remote_coverage(middle, listed, available, steps)
     if mode != "off" and has_narrowing:
         from vislang.remote.reduce import (remote_folder_reduce, RemoteUnavailable,
                                    SessionHold)
@@ -1421,29 +1408,21 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
                         cached_timesteps=report.get("cached"),
                         fetched_timesteps=report.get("fetched_timesteps"))
             steps += rsteps
-            # The remote ran its OWN plan_pipeline (same tracing code, on darwin) —
-            # surface what it actually did when it reports it (non-catalog batch),
-            # prefixed so local vs remote is visible at a glance.
-            if report.get("remote_steps"):
-                steps.append(f"remote:  --- what ran on {report['host']} ---")
-                for s in report["remote_steps"]:
-                    steps.append(f"remote:  {s}")
             n = report["n"]
             cached, fetched = report.get("cached", 0), report.get("fetched_timesteps", n)
             job = f" (srun jobid={report['jobid']})" if report.get("jobid") else ""
-            if report.get("total_pairs") is not None:
-                # catalog-aware path: report reuse at the (timestep, variable) level
-                reused, tot = report["reused_pairs"], report["total_pairs"]
-                deltamsg = (f"fetched {report['fetched_vars']} — "
-                            f"{report['fetched_pairs']} (timestep,variable) pair(s) "
-                            f"crossed the wire"
-                            if report["fetched_pairs"] else
-                            "nothing crossed the wire (full catalog hit)")
-                steps.append(f"remote compute on {report['host']}{job}: reused "
-                             f"{reused}/{tot} extent(s) from the catalog; {deltamsg}")
-            else:
-                steps.append(f"remote compute: {n}/{n} timestep(s) reduced next to "
-                             f"the data on {report['host']}{job}, dir pulled once")
+            # Reuse reported at the (timestep, variable) level.
+            reused, tot = report["reused_pairs"], report["total_pairs"]
+            n_geom = report.get("fetched_geometry") or 0
+            deltamsg = (f"fetched {report['fetched_vars']} — "
+                        f"{report['fetched_pairs']} (timestep,variable) pair(s) "
+                        f"crossed the wire"
+                        if report["fetched_pairs"] else
+                        f"only the grid positions crossed the wire ({n_geom} piece(s))"
+                        if n_geom else
+                        "nothing crossed the wire (full catalog hit)")
+            steps.append(f"remote compute on {report['host']}{job}: reused "
+                         f"{reused}/{tot} extent(s) from the catalog; {deltamsg}")
             steps.append(f"local:   -> save one series per tag -> {out}/<tag>/"
                          if report.get("tags") else
                          f"local:   -> save timeseries -> {out}")

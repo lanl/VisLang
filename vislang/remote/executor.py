@@ -213,41 +213,6 @@ def _run_single(text, out):
     return 0
 
 
-def _run_folder(text, outdir):
-    """FOLDER (timeseries) reduce: the source is a *local* directory here (we run
-    next to the data), so plan_pipeline dispatches to _plan_folder, which lists
-    the timesteps, narrows each, and save_timeseries()-writes one file per step
-    into `outdir`. We report the dir + per-timestep labels — NOT the arrays (the
-    caller pulls the directory once). Must not np.load / inspect the source as a
-    file: the source is a directory."""
-    from vislang.dsl.forms import save
-    from vislang.interpreter.planner import plan_pipeline
-
-    terminal, err = _rebuild(text)
-    if err is not None:
-        return err
-    try:
-        result = plan_pipeline(save(terminal, outdir), dry_run=False,
-                               confirm=_CONFIRMED)  # dir, not .npz
-    except Exception as e:
-        return _fail(f"{type(e).__name__}: {e}")
-    held = _held_reason(result)
-    if held:
-        return _fail(held)
-
-    meta = {
-        "vislang_exec": PLAN_VERSION,
-        "ok": True,
-        "outdir": result.get("output") or outdir,
-        "timesteps": result.get("timesteps", []),
-        "steps": result["steps"],
-    }
-    if result.get("tags"):                     # named boxes: {tag: [labels]}
-        meta["tags"] = result["tags"]
-    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
-    return 0
-
-
 def _manifest_entries(manifest):
     """[(label|None, tag|None, vars|None)] from a delta manifest, validated —
     it crossed the wire. Two forms: the folder form {"<label>": [vars]}, and the
@@ -301,10 +266,17 @@ def _run_folder_delta(text, manifest_path, outdir):
     file is inspected once and all its pieces are cut together (one read where
     the format slices in memory), bundled into ONE outdir/bundle.npz keyed as
     reduce.delta_key, so a single directory pull carries only the delta.
-    Fully-cached pieces are absent from the manifest and never touched here."""
+    Fully-cached pieces are absent from the manifest and never touched here.
+
+    A piece's vars may name GEOMETRY_KEY: the cut's place in space (a grid's
+    origin + spacing, or every point's position), returned as one array under
+    that name. A piece that needs only that still cuts one column to carry it,
+    but does not send the column back. A null vars list (every variable) also
+    gets the geometry of a grid."""
     import json as _json
     import numpy as np
     from vislang.dsl.nodes import upstream_of
+    from vislang.formats.dataset_info import GEOMETRY_KEY, encode_geometry
     from vislang.formats.inspect import timestep_files, inspect_file
     from vislang.interpreter.planner import _materialize_units
     from vislang.interpreter.track import tagged_region
@@ -359,12 +331,23 @@ def _run_folder_delta(text, manifest_path, outdir):
                           "positions": list(info.positions) if info.positions else None,
                           "filetype": info.filetype,
                           "attributes": _jsonable_attrs(info.attributes)}
-            cut = _materialize_units(info, [_unit_middle(narrowing, keep, tag)
-                                            for tag, keep in pieces],
-                                     label, tags=[t for t, _ in pieces])
-            for (tag, keep), (loaded, _) in zip(pieces, cut):
-                for var, arr in loaded.data.items():
-                    bundle[delta_key(label, tag, var)] = np.asarray(arr)
+            grid = "grid" in (info.dimensions or {})
+            units = []                       # (tag, keep, columns to read, send geometry)
+            for tag, keep in pieces:
+                cols = None if keep is None else [v for v in keep if v != GEOMETRY_KEY]
+                geom = grid and (keep is None or GEOMETRY_KEY in keep)
+                read = cols if cols != [] else list(info.variables[:1])
+                units.append((tag, keep, cols, read, geom))
+            cut = _materialize_units(info, [_unit_middle(narrowing, read, tag)
+                                            for tag, _, _, read, _ in units],
+                                     label, tags=[u[0] for u in units])
+            for (tag, keep, cols, _, geom), (loaded, _) in zip(units, cut):
+                if cols != []:
+                    for var, arr in loaded.data.items():
+                        bundle[delta_key(label, tag, var)] = np.asarray(arr)
+                if geom:
+                    bundle[delta_key(label, tag, GEOMETRY_KEY)] = \
+                        encode_geometry(loaded.geometry)
                 fetched.append({"label": label, "tag": tag, "vars": keep})
     except Exception as e:
         where = f"timestep #{label}: " if label is not None else ""
@@ -385,7 +368,8 @@ def main(argv=None):
     src.add_argument("--stdin", action="store_true", help="read plan.json from stdin")
     out = ap.add_mutually_exclusive_group(required=False)
     out.add_argument("--out", help="output .npz path (single-file reduce)")
-    out.add_argument("--outdir", help="output DIRECTORY (folder/timeseries reduce)")
+    out.add_argument("--outdir", help="output DIRECTORY for a catalog delta bundle "
+                                      "(with --manifest)")
     ap.add_argument("--manifest", help="catalog delta manifest — {label: [vars]}, or "
                                        "[{label, tag, vars}] for named boxes (with "
                                        "--outdir: fetch only these pieces)")
@@ -405,9 +389,15 @@ def main(argv=None):
     except OSError as e:
         return _fail(f"cannot read plan: {e}")
 
-    if args.outdir and args.manifest:
+    if args.outdir:
+        # The remote only cuts and returns arrays; files are written on the
+        # caller's side, where the provenance record is made. So a directory
+        # reduce is always a catalog delta.
+        if not args.manifest:
+            return _fail("--outdir needs --manifest (the remote no longer writes "
+                         "output files itself; update the caller's checkout)")
         return _run_folder_delta(text, args.manifest, args.outdir)
-    return _run_folder(text, args.outdir) if args.outdir else _run_single(text, args.out)
+    return _run_single(text, args.out)
 
 
 if __name__ == "__main__":

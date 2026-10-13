@@ -48,9 +48,13 @@ message), and known optimizations:
   could push into the read instead of read-full-then-slice. Until then
   `VTKAdapter.supports_strided_read` stays False and `VTK` stays out of
   `estimate._READ_REDUCIBLE`, so the cost estimate keeps telling the truth.
-- **Rectilinear / curvilinear output** (`.vtr` / `.vts`): needs per-axis or
-  explicit point coordinates, which `geometry` does not yet carry. Deliberately
-  not in `_EXT_FORMAT` rather than accepted-then-failed.
+- **Rectilinear output** (`.vtr`): a rectilinear source is read and written as
+  a structured grid (`.vts`, every point listed — correct, but larger than
+  per-axis coordinates). `.vtr` itself stays refused until geometry carries
+  per-axis arrays.
+- **Cost estimate for listed points**: the remote estimate prices the data
+  variables; a curvilinear grid's positions (3 numbers per point, fetched once
+  per box and then cached) are not counted yet.
 - **Remote conversion as a costed choice**: conversion runs at the local sink
   today, because a `save()` is often assembled from cached extents plus a fresh
   fetch and a remotely-converted file cannot join that assembly. It can still be
@@ -77,19 +81,15 @@ Follow-ups:
   a box in two pieces, which `BBox` cannot express).
 - **Superset reuse for moving boxes**: the catalog keys each timestep on its
   centre and reuses only exact matches; a grown box could slice a cached one.
-- **Geometry on the catalog route**: per-timestep `DatasetInfo` built from the
-  cached schema carries no `geometry`, so grid boxes saved on that route land at
-  the index origin (an existing gap, sharper now that boxes move).
-- **Curvilinear output** (`.vts`) so terrain-following grids keep their point
-  positions through the crop.
 
 ## Named boxes — v1 realized
 `region(node, center={tag: {N: …}} | {tag: (x, y, z)} | track="f.csv" with a
 tag column)` cuts several named boxes per file — a different number at each
 timestep — and writes one output per tag (`<dir>/<tag>/…`), with a ParaView
 `.pvd` index and `TimeValue` so the boxes open together, time-aligned, gaps
-shown. Every route runs them: local, a remote file, the remote catalog folder
-route (unit = (timestep, tag)), and the plain remote folder batch.
+shown. Every route runs them: local, a remote file, and the remote catalog
+folder route (unit = (timestep, tag)) — which is also the route with no
+`fields()`, requesting every variable of the series.
 Follow-ups:
 - **Tracking itself**: tags are identity the author (or an external tracker)
   vouches for. Deriving the centres in VisLang — feature detection per

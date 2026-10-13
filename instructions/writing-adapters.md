@@ -71,8 +71,8 @@ violation + traceback: fix the module and call `submit_adapter` again.
 
 ## Worked examples
 
-Two frozen adapters show the shape end-to-end:
-- `generated_adapters/npz.py` — numpy `.npz`, splits arrays into variables.
+A frozen adapter shows the shape end-to-end (`.npz` once had one too; it is
+now the Tier-0 `NpzAdapter`, since numpy itself is the trusted reader):
 - `generated_adapters/raw.py` — headerless `<name>_<nx>x<ny>x<nz>_<dtype>.raw`,
   parses shape/dtype from the filename and **verifies the byte count** before
   trusting it (the sanctioned raw-bytes exception: a declared, checkable convention).

@@ -341,7 +341,8 @@ def main():
         check("cold run: one remote job for the whole folder",
               len(EXECS) == n_execs0 + 1, f"{len(EXECS) - n_execs0}")
         check("cold run: manifest asks density for every timestep",
-              MANIFESTS[-1] == {str(t): ["density"] for t in labels}, str(MANIFESTS[-1:]))
+              MANIFESTS[-1] == {str(t): ["density", "sieve_geometry"] for t in labels},
+              str(MANIFESTS[-1:]))
         check("one output file per timestep",
               sorted(os.listdir(out_all)) ==
               [f"timestep#{t}.hdf5" for t in labels], str(os.listdir(out_all)))
@@ -410,7 +411,8 @@ def main():
               sorted(os.listdir(out_rng)) == ["timestep#2.hdf5", "timestep#3.hdf5"],
               str(os.listdir(out_rng)))
         check("range manifest covers only #2,#3",
-              MANIFESTS[-1] == {"2": ["density"], "3": ["density"]}, str(MANIFESTS[-1:]))
+              MANIFESTS[-1] == {"2": ["density", "sieve_geometry"],
+                                "3": ["density", "sieve_geometry"]}, str(MANIFESTS[-1:]))
         with h5py.File(os.path.join(out_rng, "timestep#2.hdf5"), "r") as f:
             check("ranged timestep 2 correct",
                   np.array_equal(f["density"][:], expect(dens_by_t, 2)))
