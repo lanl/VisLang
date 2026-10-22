@@ -366,10 +366,11 @@ def _narrow_key(middle, label=None):
     forms = []
     for n in middle:
         if n.kind == "region" and n.per_step:
-            row = next((r for r in n.centers if r[0] == label), None)
-            if row is None:
+            from vislang.interpreter.track import box_at
+            at = box_at(n, label)
+            if at is None:
                 raise ValueError(f"region: no centre for timestep #{label}")
-            forms.append(["region_at", list(row[1:]), list(n.size)])
+            forms.append(["region_at", list(at[0]), list(at[1])])
         elif n.kind == "region":
             forms.append(["region", [[a, lo, hi] for a, lo, hi in n.ranges]])
         elif n.kind == "subsample":
@@ -1096,7 +1097,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
     npz bundle of just those (timestep, var) arrays; we merge them with the
     cached extents locally, store the fresh ones, and write one file per timestep.
 
-    Named boxes (region(center={tag: {N: …}})) make the unit (timestep, tag):
+    Named boxes (region(center={tag: [(N, …), …]})) make the unit (timestep, tag):
     each box is its own extent, keyed by its own centre and size; the manifest
     lists the missing (timestep, tag, variables) entries; each tag is written as
     its own series under the sink path.

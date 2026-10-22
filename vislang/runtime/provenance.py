@@ -549,17 +549,27 @@ def _tagged_lines(step, tag, grid, labels):
     entries = step.get("tags") or []
     names = [e[0] for e in entries]
     mine = next((e for e in entries if e[0] == tag), None)
+    own = {}
     if mine is not None:
         size, rows = mine[1], mine[2]
+        own = {lab: sz for lab, sz in (mine[3] if len(mine) > 3 else [])}
     else:
         size = dict((t, sz) for t, sz in step.get("tag_sizes") or []).get(tag) \
             or step.get("size") or []
         rows = None
-    size = ", ".join("whole" if v is None else _num(v) for v in size)
     centre = {r[0]: list(r[1:]) for r in rows or ()}
-    if not labels:
-        at = f" centred at {_flow_text(centre[None])}" if None in centre else ""
-        head = f"keep the box named {tag}: size ({size}){at}"
+    if len(labels) == 1:
+        size = own.get(labels[0], size)
+    size = ", ".join("whole" if v is None else _num(v) for v in size)
+    if len(labels) > 1 and own:
+        size += "; some timesteps give their own size"
+    if None in centre:                          # a box that stays put
+        at = ("" if not labels else f" at #{labels[0]}" if len(labels) == 1
+              else f" at each of its {len(labels)} timesteps here")
+        head = (f"keep the box named {tag}: size ({size}) centred at "
+                f"{_flow_text(centre[None])}{at}")
+    elif not labels:
+        head = f"keep the box named {tag}: size ({size})"
     elif len(labels) == 1:
         lab = labels[0]
         at = (f"centred at {_flow_text(centre[lab])}" if lab in centre
@@ -603,8 +613,16 @@ def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
         elif kind == "region" and "centers" in step:
             size = ", ".join("whole" if v is None else _num(v)
                              for v in step.get("size") or [])
-            head = (f"keep a box of size ({size}) centred on each timestep's "
-                    f"own centre")
+            if step.get("step_sizes"):
+                size += "; some timesteps give their own size"
+            centers = step.get("centers") or []
+            if len(centers) == 1 and centers[0][0] is None:
+                head = (f"keep a box of size ({size}) centred at "
+                        f"{_flow_text(list(centers[0][1:]))}"
+                        + (" at every timestep" if series else ""))
+            else:
+                head = (f"keep a box of size ({size}) centred on each timestep's "
+                        f"own centre")
             src = (f"centres from {os.path.basename(step['track'])}"
                    if step.get("track") else
                    f"{len(step.get('centers') or [])} centres given in the spec")

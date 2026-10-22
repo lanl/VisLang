@@ -1,9 +1,9 @@
-"""Per-timestep regions: region(series, center={N: ...} | track="f.csv", size=S).
+"""Per-timestep regions: region(series, center=[(N, x, y, z), …] | "f.csv", size=S).
 
 Plain-python asserts (no pytest on the cluster). Run from the repo root:
     python tests/test_region_track.py
 
-Covers: form validation, the int-keyed centre dict crossing the sandbox, the
+Covers: form validation, the centre rows crossing the sandbox, the
 wire round-trip (and that a fixed region keeps its old shape), track-file
 parsing + hashing, per-timestep boxes on a grid series (index space, clipped)
 and a particle series (world coordinates), coverage errors raised before any
@@ -81,46 +81,59 @@ def run(sink_node, spec_text="# test\n"):
 def test_form():
     print("== form ==")
     src = source("/data/series")
-    r = region(src, center={300: (1, 2, 3), 279: (4.5, 5, 6)}, size=10)
+    r = region(src, center=[(300, 1, 2, 3), (279, 4.5, 5, 6)], size=10)
     check("centres sorted by label", r.centers == ((279, 4.5, 5, 6), (300, 1, 2, 3)),
           r.centers)
     check("scalar size expands", r.size == (10, 10, 10), r.size)
     check("per_step flag", r.per_step and not region(src, x=(0, 1)).per_step)
-    r2 = region(src, center={0: (1, 2)}, size=(4, None))
+    r2 = region(src, center=[(0, 1, 2)], size=(4, None))
     check("2-D centre, None keeps an axis", r2.size == (4, None), r2.size)
     t = region(src, track="halo.csv", size=30)
     check("track kept unresolved", t.track == "halo.csv" and t.size == (30,), t)
+    check("center=\"f.csv\" is the track file",
+          region(src, center="halo.csv", size=30) == t)
+    check("a track may leave the size to its rows",
+          region(src, center="halo.csv").size == ())
+    r3 = region(src, center=[(0, 1, 2, 3, 6), (1, 1, 2, 3)], size=4)
+    check("a row's own size", r3.size == (4, 4, 4)
+          and r3.step_sizes == ((0, (6, 6, 6)),), r3)
+    r4 = region(src, center=(1, 2, 3), size=4)
+    check("one centre stays put", r4.centers == ((None, 1, 2, 3),) and r4.per_step
+          and not r4.moves, r4)
+    raises("old {step: centre} dict", lambda: region(src, center={0: (1, 2)}, size=1),
+           TypeError, "list of rows")
 
     raises("ranges and center exclusive",
-           lambda: region(src, x=(0, 1), center={0: (1, 2)}, size=1), ValueError)
+           lambda: region(src, x=(0, 1), center=[(0, 1, 2)], size=1), ValueError)
     raises("center and track exclusive",
-           lambda: region(src, center={0: (1, 2)}, track="a.csv", size=1), ValueError)
-    raises("size required", lambda: region(src, center={0: (1, 2)}), ValueError,
+           lambda: region(src, center=[(0, 1, 2)], track="a.csv", size=1), ValueError)
+    raises("size required", lambda: region(src, center=[(0, 1, 2)]), ValueError,
            "needs size")
     raises("size without centre", lambda: region(src, x=(0, 1), size=3), ValueError)
-    raises("bad size", lambda: region(src, center={0: (1, 2)}, size=0), ValueError)
-    raises("size length", lambda: region(src, center={0: (1, 2)}, size=(1, 2, 3)),
+    raises("bad size", lambda: region(src, center=[(0, 1, 2)], size=0), ValueError)
+    raises("size length", lambda: region(src, center=[(0, 1, 2)], size=(1, 2, 3)),
            ValueError)
-    raises("all-None size", lambda: region(src, center={0: (1, 2)}, size=(None, None)),
+    raises("all-None size", lambda: region(src, center=[(0, 1, 2)], size=(None, None)),
            ValueError)
-    raises("non-int label", lambda: region(src, center={0.5: (1, 2)}, size=1), TypeError)
+    raises("non-int label", lambda: region(src, center=[(0.5, 1, 2)], size=1), TypeError)
     raises("labels and tags mixed",
-           lambda: region(src, center={"a": (1, 2), 0: (1, 2)}, size=1), ValueError,
-           "not a mix")
-    raises("bool coordinate", lambda: region(src, center={0: (True, 2)}, size=1),
+           lambda: region(src, center={"a": (1, 2), 0: (1, 2)}, size=1), TypeError,
+           "keys name the boxes")
+    raises("bool coordinate", lambda: region(src, center=[(0, True, 2)], size=1),
            TypeError)
     raises("mixed dimension",
-           lambda: region(src, center={0: (1, 2), 1: (1, 2, 3)}, size=1), ValueError)
+           lambda: region(src, center=[(0, 1, 2), (1, 1, 2, 3, 4)], size=1), ValueError,
+           "2-D vs 3-D")
 
 
 def test_sandbox():
     print("== sandbox ==")
     from vislang.runtime.sandbox import execute
     reset_sinks()
-    execute("save(region(source('/d/s'), center={279: (1.0, 2.0, 3.0), "
-            "300: (4.0, 5.0, 6.0)}, size=30), 'out.npz')", form_namespace())
+    execute("save(region(source('/d/s'), center=[(279, 1.0, 2.0, 3.0), "
+            "(300, 4.0, 5.0, 6.0)], size=30), 'out.npz')", form_namespace())
     r = collected_sinks()[0].upstream
-    check("int-keyed dict crosses the sandbox",
+    check("centre rows cross the sandbox",
           isinstance(r, RegionNode) and r.centers == ((279, 1.0, 2.0, 3.0),
                                                       (300, 4.0, 5.0, 6.0)),
           getattr(r, "centers", r))
@@ -134,11 +147,21 @@ def test_wire():
     check("fixed region keeps the old wire shape",
           set(to_plan(fixed)["chain"][1]) == {"kind", "ranges"})
     moving = save(region(fields(source("/d/s"), ["x"]),
-                         center={1: (1.0, 2.0, 3.0), 2: (2.0, 3.0, 4.0)},
+                         center=[(1, 1.0, 2.0, 3.0), (2, 2.0, 3.0, 4.0)],
                          size=(5, 5, None)), "o.npz")
     back = from_plan_json(to_plan_json(moving)).upstream
     check("centres round-trip", back.centers == ((1, 1.0, 2.0, 3.0), (2, 2.0, 3.0, 4.0))
           and back.size == (5, 5, None), back)
+    for name, n in [("row sizes", region(source("/d/s"), size=4,
+                                         center=[(1, 1, 2, 3, 6), (2, 1, 2, 3)])),
+                    ("a centre that stays put", region(source("/d/s"), center=(1, 2, 3), size=4)),
+                    ("an unread track, no size", region(source("/d/s"), center="t.csv"))]:
+        check(f"{name} round-trip", from_plan_json(to_plan_json(save(n, "o.npz"))).upstream == n)
+    bad = to_plan(save(region(source("/d/s"), size=4, center=[(1, 1, 2, 3, 6), (2, 1, 2, 3)]),
+                       "o.npz"))
+    bad["chain"][1]["step_sizes"][0][0] = 9
+    raises("a step size for a timestep with no centre", lambda: from_plan(bad),
+           PlanValidationError, "step size")
     plan = to_plan(moving)
     bad = json.loads(json.dumps(plan))
     bad["chain"][2]["ranges"] = [["x", 0, 1]]
@@ -160,15 +183,26 @@ def test_track_file():
     p = os.path.join(TMP, "t.csv")
     with open(p, "w") as f:
         f.write("# halo 11521140891\nstep,x,y,z\n300,4,5,6\n279,1,2,3\n")
-    rows, sha = track.load_track(p)
+    rows = track.resolve_tracks([region(source("/d"), center=p, size=1)])[0].centers
+    sha = track.read_track(p)[2]
     check("track rows sorted", rows == ((279, 1.0, 2.0, 3.0), (300, 4.0, 5.0, 6.0)), rows)
     with open(p, "a") as f:
         f.write("301,7,8,9\n")
-    check("hash follows content", track.load_track(p)[1] != sha)
+    check("hash follows content", track.read_track(p)[2] != sha)
     resolved = track.resolve_tracks([region(source("/d"), track=p, size=8)])[0]
     check("resolve inlines rows + expands size",
           len(resolved.centers) == 3 and resolved.size == (8, 8, 8)
           and resolved.track_sha)
+    ps = os.path.join(TMP, "t_sized.csv")
+    with open(ps, "w") as f:
+        f.write("step,x,y,size\n0,1,2,4\n1,1,2,6\n")
+    r = track.resolve_tracks([region(source("/d"), center=ps)])[0]
+    check("a size column: no size= needed, 2-D read from the header",
+          r.centers == ((0, 1.0, 2.0), (1, 1.0, 2.0)) and r.size == (4.0, 4.0)
+          and r.step_sizes == ((1, (6.0, 6.0)),), r)
+    raises("no size anywhere",
+           lambda: track.resolve_tracks([region(source("/d"), center=p)]), ValueError,
+           "needs size")
     for name, body, text in [
             ("bad header", "t,x,y\n0,1,2\n", "header"),
             ("extra column", "step,x,y\n0,1,2,3\n", "value(s)"),
@@ -178,19 +212,20 @@ def test_track_file():
         q = os.path.join(TMP, "bad.csv")
         with open(q, "w") as f:
             f.write(body)
-        raises(f"track: {name}", lambda: track.load_track(q), Exception, text)
-    raises("track: missing file", lambda: track.load_track(os.path.join(TMP, "nope.csv")),
+        raises(f"track: {name}", lambda: track.resolve_tracks(
+            [region(source("/d"), center=q, size=1)]), Exception, text)
+    raises("track: missing file", lambda: track.read_track(os.path.join(TMP, "nope.csv")),
            FileNotFoundError)
     raises("track size vs dimension",
            lambda: track.resolve_tracks([region(source("/d"), track=p, size=(1, 2))]),
-           ValueError, "3-D centres")
+           ValueError, "2-D vs 3-D")
 
 
 def test_grid_series():
     print("== grid series ==")
     d = grid_series()
     out = os.path.join(TMP, "g_out")
-    c = {0: (4, 4, 8), 1: (8, 8, 8), 2: (14, 14, 8)}
+    c = [(0, 4, 4, 8), (1, 8, 8, 8), (2, 14, 14, 8)]
     reset_sinks()
     res = run(save(region(source(d), center=c, size=(6, 6, None)), out + ".npz"),
               "save(region(source(d), center=..., size=(6, 6, None)), 'g_out.npz')")
@@ -219,7 +254,7 @@ def test_grid_series():
     p = os.path.join(TMP, "g.csv")
     with open(p, "w") as f:
         f.write("step,x,y,z\n" + "".join(f"{t},{x},{y},{z}\n"
-                                          for t, (x, y, z) in c.items()))
+                                          for t, x, y, z in c))
     out2 = os.path.join(TMP, "g_out2")
     reset_sinks()
     run(save(region(source(d), track=p, size=(6, 6, None)), out2 + ".npz"))
@@ -229,7 +264,7 @@ def test_grid_series():
     check("track file == inline centres", same)
     tr = provenance.record_for(out2)["logical"]["resolved"]["region_track"]
     check("provenance: track path + sha", tr["path"] == p
-          and tr["sha256"] == track.load_track(p)[1], tr)
+          and tr["sha256"] == track.read_track(p)[2], tr)
 
     # timesteps() narrows the selection; a longer track is fine.
     reset_sinks()
@@ -255,19 +290,19 @@ def test_coverage_before_read():
     try:
         reset_sinks()
         raises("missing centre raises",
-               lambda: plan_pipeline(save(region(source(d), center={0: (4, 4, 4)},
+               lambda: plan_pipeline(save(region(source(d), center=[(0, 4, 4, 4)],
                                                  size=4), os.path.join(TMP, "c1.npz"))),
                ValueError, "#1, #2")
         reset_sinks()
         raises("centre for a timestep that does not exist",
                lambda: plan_pipeline(save(region(source(d),
-                                                 center={t: (4, 4, 4) for t in (0, 1, 2, 9)},
+                                                 center=[(t, 4, 4, 4) for t in (0, 1, 2, 9)],
                                                  size=4), os.path.join(TMP, "c2.npz"))),
                ValueError, "#9")
         reset_sinks()
         raises("box entirely outside the grid",
                lambda: plan_pipeline(save(region(source(d),
-                                                 center={t: (40, 4, 4) for t in (0, 1, 2)},
+                                                 center=[(t, 40, 4, 4) for t in (0, 1, 2)],
                                                  size=4), os.path.join(TMP, "c3.npz"))),
                ValueError, "entirely outside")
         check("nothing was read", not calls, calls)
@@ -276,7 +311,7 @@ def test_coverage_before_read():
     reset_sinks()
     raises("single-file source refused",
            lambda: plan_pipeline(save(region(source(os.path.join(d, "snap#0.hdf5")),
-                                             center={0: (4, 4, 4)}, size=4),
+                                             center=[(0, 4, 4, 4)], size=4),
                                       os.path.join(TMP, "c4.npz"))),
            ValueError, "folder")
     reset_sinks()
@@ -286,12 +321,12 @@ def test_particle_series():
     print("== particle series ==")
     d = particle_series()
     out = os.path.join(TMP, "p_out")
-    c = {279: (20.0, 20.0, 20.0), 300: (70.0, 70.0, 70.0)}
+    c = [(279, 20.0, 20.0, 20.0), (300, 70.0, 70.0, 70.0)]
     reset_sinks()
     run(save(region(fields(source(d, positions=("x", "y", "z")), ["x", "y", "z"]),
                     center=c, size=20), out + ".npz"))
     ok = True
-    for t, (cx, cy, cz) in c.items():
+    for t, cx, cy, cz in c:
         with np.load(os.path.join(out, f"timestep#{t}.npz")) as z:
             xyz = np.stack([z["x"], z["y"], z["z"]])
         lo = np.array([cx, cy, cz])[:, None] - 10
@@ -308,7 +343,7 @@ def test_remote_pieces():
     from vislang.remote.executor import _unit_middle
     from vislang.formats.inspect import inspect_file
     reset_sinks()
-    r = region(source("/d"), center={1: (4, 4, 4), 2: (8, 8, 8)}, size=4)
+    r = region(source("/d"), center=[(1, 4, 4, 4), (2, 8, 8, 8)], size=4)
     k1, k2 = _narrow_key([r], 1), _narrow_key([r], 2)
     check("catalog key per timestep", k1 != k2 and k1["forms"][0][0] == "region_at",
           (k1, k2))

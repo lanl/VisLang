@@ -95,8 +95,9 @@ def _is_number(v):
 def _check_size(size, ndim):
     """`size` -> per-axis tuple of length `ndim` (None = keep that axis whole)."""
     if size is None:
-        raise ValueError("region(center=/track=...) needs size=, the box edge "
-                         "length (a number, or one per axis; None keeps an axis whole)")
+        raise ValueError("region(center=...) needs size=, the box edge length "
+                         "(a number, or one per axis; None keeps an axis whole), "
+                         "unless every row gives its own")
     per_axis = (size,) * ndim if _is_number(size) else size
     if not isinstance(per_axis, (tuple, list)) or len(per_axis) != ndim:
         raise ValueError(f"region(size={size!r}): give one number, or {ndim} "
@@ -109,34 +110,6 @@ def _check_size(size, ndim):
         raise ValueError(f"region(size={size!r}): every axis is None, which keeps "
                          f"the whole domain — drop region() instead")
     return tuple(per_axis)
-
-
-def check_centers(rows, where="region(center=...)"):
-    """Validate centre rows (label, cx, cy[, cz]) and return them sorted by label.
-    Shared with the track-file reader so both paths enforce the same rules."""
-    rows = [tuple(r) for r in rows]
-    if not rows:
-        raise ValueError(f"{where}: no centres given")
-    ndim = len(rows[0]) - 1
-    if ndim not in (2, 3):
-        raise ValueError(f"{where}: a centre is (x, y) or (x, y, z), got "
-                         f"{len(rows[0]) - 1} coordinate(s)")
-    seen = set()
-    for r in rows:
-        label, coords = r[0], r[1:]
-        if isinstance(label, bool) or not isinstance(label, int):
-            raise TypeError(f"{where}: timestep labels must be integers (the N in "
-                            f"…#N), got {label!r}")
-        if label in seen:
-            raise ValueError(f"{where}: timestep {label} has more than one centre")
-        seen.add(label)
-        if len(coords) != ndim:
-            raise ValueError(f"{where}: timestep {label} has {len(coords)} "
-                             f"coordinate(s), the others have {ndim}")
-        if not all(_is_number(c) for c in coords):
-            raise TypeError(f"{where}: timestep {label} centre must be numbers, "
-                            f"got {coords!r}")
-    return tuple(sorted(rows))
 
 
 # A tag names an output folder (or file), so it is held to what is safe as one
@@ -159,7 +132,10 @@ def _check_tag(tag, where):
 
 def _track_size(size):
     """A size whose dimension is only known once a track file is read: a scalar
-    is kept as a 1-tuple and expanded by the planner (track.resolve_tracks)."""
+    is kept as a 1-tuple and expanded by the planner (track.resolve_tracks).
+    None is allowed here — the file may give every row its own size."""
+    if size is None:
+        return ()
     if _is_number(size):
         _check_size(size, 1)
         return (size,)
@@ -167,74 +143,161 @@ def _track_size(size):
     return _check_size(size, ndim if ndim in (2, 3) else 3)
 
 
-def _check_tag_sizes(size, tags, where):
-    """A `size={tag: …}` dict, checked against the tags it must cover exactly."""
-    for t in size:
-        _check_tag(t, f"{where} size=")
-    missing = [t for t in tags if t not in size]
-    extra = [t for t in size if t not in tags]
-    if missing:
-        raise ValueError(f"{where}: size= has no entry for tag(s) "
-                         f"{', '.join(map(repr, missing))}")
-    if extra:
-        raise ValueError(f"{where}: size= names tag(s) "
-                         f"{', '.join(map(repr, extra))} that have no centre")
+_OLD_FORM = ("region(center=...): a box over a timeseries is now a list of rows "
+             "(step, x, y[, z][, size]), e.g. center=[(3, 1.0, 2.0, 3.0), (11, …)] "
+             "or center={{\"halo\": [(3, 1.0, 2.0, 3.0), …]}}; got {got}")
 
 
-def build_tags(center, size, where="region(center=...)"):
-    """Validate named boxes and return RegionNode.tags.
-
-    `center` is {tag: (x, y[, z])} for one file, or {tag: {N: (x, y[, z])}} over
-    a timeseries (every tag the same kind); `size` is one number, one per axis,
-    or {tag: either}. Shared with the track-file reader so both enforce the
-    same rules. Tags keep the order written: it is the order of the outputs."""
-    tags = list(center)
-    if not tags:
+def _box_spec(value, where):
+    """One box as written -> ("fixed", (x, y[, z])) or ("rows", [row, …])."""
+    if isinstance(value, dict):
+        raise TypeError(_OLD_FORM.format(got="a {timestep: centre} dict"))
+    if isinstance(value, (tuple, list)) and not value:
         raise ValueError(f"{where}: no centres given")
-    seen = {}
-    for t in tags:
-        _check_tag(t, where)
-        if t.lower() in seen:
-            # A case-insensitive filesystem (macOS, Windows) would write both
-            # into one folder.
-            raise ValueError(f"{where}: tags {seen[t.lower()]!r} and {t!r} differ "
-                             f"only in case, so their outputs would collide")
-        seen[t.lower()] = t
-    series = [isinstance(center[t], dict) for t in tags]
-    if any(series) and not all(series):
-        raise ValueError(f"{where}: give every tag a {{timestep: (x, y[, z])}} dict "
-                         f"(a timeseries) or every tag one (x, y[, z]) centre (one "
-                         f"file), not a mix")
-    rows_by_tag = {}
-    for t in tags:
-        v = center[t]
-        tw = f"{where} tag {t!r}"
-        if isinstance(v, dict):
-            rows = check_centers([(k, *c) if isinstance(c, (tuple, list)) else (k, c)
-                                  for k, c in v.items()], tw)
+    if not isinstance(value, (tuple, list)):
+        raise TypeError(f"{where}: expected a centre (x, y[, z]) or a list of rows "
+                        f"(step, x, y[, z][, size]), got {value!r}")
+    if all(isinstance(r, (tuple, list)) for r in value):
+        return "rows", [tuple(r) for r in value]
+    if any(isinstance(r, (tuple, list)) for r in value):
+        raise TypeError(f"{where}: give one centre (x, y[, z]) or a list of rows "
+                        f"(step, x, y[, z][, size]), not a mix: {value!r}")
+    return "fixed", tuple(value)
+
+
+def _infer_ndim(boxes, size, where, ndim=None):
+    """How many coordinates a centre has. A row's length alone can be read two
+    ways — (step, x, y, z) or (step, x, y, size) — so every unambiguous cue is
+    gathered (a fixed centre, a row of 3 or 5 values, a per-axis size, a track
+    file's header as `ndim`) and must agree; with no cue a 4-value row is 3-D."""
+    cues = {ndim} if ndim else set()
+    for kind, v in boxes.values():
+        if kind == "fixed":
+            cues.add(len(v))
+            continue
+        for r in v:
+            rest = r[1:]
+            if rest and isinstance(rest[-1], (tuple, list)):
+                cues.add(len(rest) - 1)
+            elif len(rest) in (2, 4):
+                cues.add(len(rest) // 2 + 1)
+    for s in (size.values() if isinstance(size, dict) else (size,)):
+        if isinstance(s, (tuple, list)):
+            cues.add(len(s))
+    cues &= {2, 3}
+    if len(cues) > 1:
+        raise ValueError(f"{where}: centres and sizes disagree on 2-D vs 3-D; "
+                         f"every centre needs the same number of coordinates")
+    return cues.pop() if cues else 3
+
+
+def _parse_rows(rows, ndim, where):
+    """Rows (step, x, y[, z][, size]) -> (sorted centre rows (label, cx, cy[, cz]),
+    {label: per-axis size} for the rows that carry their own)."""
+    axes = ", ".join(_CENTER_AXES[:ndim])
+    out, sizes, seen = [], {}, set()
+    for r in rows:
+        if not r:
+            raise ValueError(f"{where}: empty row")
+        label, rest = r[0], r[1:]
+        if isinstance(label, bool) or not isinstance(label, int):
+            raise TypeError(f"{where}: a row starts with its timestep (the N in "
+                            f"…#N), an integer; got {label!r} in {r!r}")
+        if label in seen:
+            raise ValueError(f"{where}: timestep {label} has more than one centre")
+        seen.add(label)
+        if len(rest) == ndim + 1:
+            coords = rest[:-1]
+            sizes[label] = _check_size(rest[-1], ndim)
+        elif len(rest) == ndim:
+            coords = rest
         else:
-            if not isinstance(v, (tuple, list)):
-                raise TypeError(f"{tw}: expected a centre (x, y[, z]) or a dict "
-                                f"{{timestep: (x, y[, z])}}, got {type(v).__name__}")
+            raise ValueError(f"{where}: row {r!r} should be (step, {axes}[, size])")
+        if not all(_is_number(c) for c in coords):
+            raise TypeError(f"{where}: timestep {label} centre must be numbers, "
+                            f"got {tuple(coords)!r}")
+        out.append((label, *coords))
+    if not out:
+        raise ValueError(f"{where}: no centres given")
+    return tuple(sorted(out)), sizes
+
+
+def resolve_center(center, size, where="region(center=...)", ndim=None):
+    """Validate a centre spec and return the RegionNode fields it fills.
+
+    `center` is one box or {tag: box}; a box is a centre (x, y[, z]) — a box
+    that stays put, on one file or at every timestep of a series — or a list
+    of rows (step, x, y[, z][, size]) placing it per timestep, where a row's
+    own size overrides the box's. `size` is one number, one per axis, or {tag:
+    either}; it may be left out where every row carries a size. `ndim` fixes
+    the centre dimension when it is known (a track file's header). Returns
+    {"centers", "size", "step_sizes"} for one box, {"tags"} for named boxes
+    (tags keep the order written: it is the order of the outputs). Shared
+    with the track-file reader so both enforce the same rules."""
+    if isinstance(center, dict):
+        tags = list(center)
+        if not tags:
+            raise ValueError(f"{where}: no centres given")
+        if not all(isinstance(t, str) for t in tags):
+            if all(isinstance(t, int) and not isinstance(t, bool) for t in tags):
+                raise TypeError(_OLD_FORM.format(got="a {timestep: centre} dict"))
+            raise TypeError(f"{where}: keys name the boxes (strings), got "
+                            f"{[t for t in tags if not isinstance(t, str)]!r}")
+        seen = {}
+        for t in tags:
+            _check_tag(t, where)
+            if t.lower() in seen:
+                # A case-insensitive filesystem (macOS, Windows) would write
+                # both into one folder.
+                raise ValueError(f"{where}: tags {seen[t.lower()]!r} and {t!r} "
+                                 f"differ only in case, so their outputs would collide")
+            seen[t.lower()] = t
+        boxes = {t: _box_spec(center[t], f"{where} tag {t!r}") for t in tags}
+    else:
+        if isinstance(size, dict):
+            raise ValueError(f"{where}: size={{tag: …}} needs named boxes: "
+                             f"center={{tag: …}}")
+        boxes = {None: _box_spec(center, where)}
+    if isinstance(size, dict):
+        for t in size:
+            _check_tag(t, f"{where} size=")
+        extra = [t for t in size if t not in boxes]
+        if extra:
+            raise ValueError(f"{where}: size= names tag(s) "
+                             f"{', '.join(map(repr, extra))} that have no centre")
+    ndim = _infer_ndim(boxes, size, where, ndim)
+    out = []
+    for t, (kind, v) in boxes.items():
+        tw = where if t is None else f"{where} tag {t!r}"
+        written = size.get(t) if isinstance(size, dict) else size
+        default = None if written is None else _check_size(written, ndim)
+        if kind == "fixed":
             if len(v) not in (2, 3):
                 raise ValueError(f"{tw}: a centre is (x, y) or (x, y, z), got "
-                                 f"{len(v)} coordinate(s)")
+                                 f"{len(v)} value(s); a box per timestep is a list "
+                                 f"of rows [(step, x, y, z), …]")
+            if len(v) != ndim:
+                raise ValueError(f"{tw}: a {len(v)}-D centre, but the others are "
+                                 f"{ndim}-D")
             if not all(_is_number(c) for c in v):
-                raise TypeError(f"{tw}: centre must be numbers, got {tuple(v)!r}")
-            rows = ((None, *v),)
-        rows_by_tag[t] = rows
-    ndims = {len(rows[0]) - 1 for rows in rows_by_tag.values()}
-    if len(ndims) > 1:
-        raise ValueError(f"{where}: every tag needs the same number of coordinates, "
-                         f"got {sorted(ndims)}")
-    ndim = ndims.pop()
-    if isinstance(size, dict):
-        _check_tag_sizes(size, tags, where)
-        sizes = {t: _check_size(size[t], ndim) for t in tags}
-    else:
-        shared = _check_size(size, ndim)
-        sizes = {t: shared for t in tags}
-    return tuple((t, sizes[t], rows_by_tag[t]) for t in tags)
+                raise TypeError(f"{tw}: centre must be numbers, got {v!r}")
+            rows, sizes = ((None, *v),), {}
+        else:
+            rows, sizes = _parse_rows(v, ndim, tw)
+        if default is None:
+            unsized = [r[0] for r in rows if r[0] not in sizes]
+            if unsized:
+                if isinstance(size, dict):
+                    raise ValueError(f"{where}: size= has no entry for tag {t!r}")
+                _check_size(None, ndim)                 # raises: size= needed
+            default = sizes[rows[0][0]]
+        step_sizes = tuple((lab, s) for lab, s in sorted(sizes.items())
+                           if s != default)
+        out.append((t, default, rows, step_sizes))
+    if isinstance(center, dict):
+        return {"tags": tuple(out)}
+    _, default, rows, step_sizes = out[0]
+    return {"centers": rows, "size": default, "step_sizes": step_sizes}
 
 
 def region(node, center=None, size=None, track=None, **axes):
@@ -243,54 +306,49 @@ def region(node, center=None, size=None, track=None, **axes):
     read as a hyperslab); point data takes a world-coordinate bounding box on
     the position variables (computed: applied as a row mask after the read).
 
-    Over a timeseries the box can move: `center={N: (x, y[, z])}` or
-    `track="file.csv"` (columns step,x,y[,z]) gives the centre per timestep, and
-    `size` the box edge length in the same units, so the box is centre ± size/2.
+    Or place a box by its centre: centre ± size/2, `size` the edge length in
+    the same units (one number, or one per axis). `center` is
 
-    Several NAMED boxes: key `center` by tag (a string) — {tag: (x, y[, z])} on
-    one file, {tag: {N: (x, y[, z])}} over a timeseries, where each tag lists
-    only the timesteps its box exists at — or give a track file a leading `tag`
-    column. `size` may then be {tag: size}. save() writes one output per tag.
-    The track file is read by the planner, not here — forms read no data."""
+        (x, y[, z])                        a box that stays put — on one file,
+                                           or at every timestep of a series
+        [(step, x, y[, z][, size]), …]     a box per timestep; a row's own
+                                           size overrides size= there
+        "track.csv"                        the same rows from a file (header
+                                           step,x,y[,z][,size])
+        {tag: either of the first two}     several NAMED boxes; save() writes
+                                           one output per tag. size= may then
+                                           be {tag: size}.
+
+    A track file names its boxes with a leading `tag` column. The file is read
+    by the planner, not here — forms read no data. (`track=` is the older
+    spelling of center="track.csv".)"""
     _require_node(node, "region")
+    if isinstance(center, str):
+        if track is not None:
+            raise ValueError("region(): give the track file once, as center=")
+        center, track = None, center
     given = [name for name, v in (("axis ranges", axes), ("center=", center),
                                   ("track=", track)) if v]
     if len(given) > 1:
-        raise ValueError(f"region(): give one of axis ranges, center= or track=, "
+        raise ValueError(f"region(): give one of axis ranges or center=, "
                          f"not {' and '.join(given)}")
-    if center is not None or track is not None:
-        if track is not None:
-            if not isinstance(track, str) or not track:
-                raise TypeError(f"region(track=...): expected a CSV path, got {track!r}")
-            if isinstance(size, dict):
-                # Which tags the file holds is only known once it is read; the
-                # planner checks this dict against them (resolve_tracks).
-                for t, s in size.items():
-                    _check_tag(t, "region(track=..., size=...)")
-                    _track_size(s)
-                return RegionNode(upstream=node, track=track,
-                                  tag_sizes=tuple((t, _track_size(s))
-                                                  for t, s in size.items()))
-            return RegionNode(upstream=node, size=_track_size(size), track=track)
-        if not isinstance(center, dict):
-            raise TypeError(f"region(center=...): expected a dict "
-                            f"{{timestep: (x, y[, z])}} or {{tag: …}}, got "
-                            f"{type(center).__name__}")
-        named = [isinstance(k, str) for k in center]
-        if center and all(named):
-            return RegionNode(upstream=node, tags=build_tags(center, size))
-        if any(named):
-            raise ValueError("region(center=...): keys are either timestep numbers "
-                             "(one box) or tags (named boxes), not a mix")
+    if track is not None:
+        if not isinstance(track, str) or not track:
+            raise TypeError(f"region(center=...): expected a CSV path, got {track!r}")
         if isinstance(size, dict):
-            raise ValueError("region(size={tag: …}) needs named boxes: "
-                             "center={tag: …}")
-        rows = check_centers([(k, *v) if isinstance(v, (tuple, list)) else (k, v)
-                              for k, v in center.items()])
-        return RegionNode(upstream=node, centers=rows,
-                          size=_check_size(size, len(rows[0]) - 1))
+            # Which tags the file holds is only known once it is read; the
+            # planner checks this dict against them (resolve_tracks).
+            for t, s in size.items():
+                _check_tag(t, "region(center=\"….csv\", size=...)")
+                _track_size(s)
+            return RegionNode(upstream=node, track=track,
+                              tag_sizes=tuple((t, _track_size(s))
+                                              for t, s in size.items()))
+        return RegionNode(upstream=node, size=_track_size(size), track=track)
+    if center is not None:
+        return RegionNode(upstream=node, **resolve_center(center, size))
     if size is not None:
-        raise ValueError("region(size=...) only applies with center= or track=")
+        raise ValueError("region(size=...) only applies with center=")
     if not axes:
         raise ValueError("region() needs at least one axis range, e.g. region(d, x=(0, 50))")
     ranges = []

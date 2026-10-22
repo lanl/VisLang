@@ -874,7 +874,7 @@ def test_layout_series_run():
     for t in (0, 1, 2):
         make_grid(os.path.join(d, f"snap#{t}.hdf5"), (16, 16, 16))
     out = os.path.join(TMP, "layout_series_out")
-    centre = {0: (4, 4, 8), 1: (8, 8, 8), 2: (14, 14, 8)}
+    centre = [(0, 4, 4, 8), (1, 8, 8, 8), (2, 14, 14, 8)]
     spec = "# moving box\nsave(region(...), 'layout_series_out.npz')\n"
     run_spec(lambda: save(region(fields(timesteps(source(d), 0, 2), ["rho"]),
                                  center=centre, size=(6, 6, None)), out + ".npz"),

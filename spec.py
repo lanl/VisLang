@@ -1,16 +1,28 @@
-# MiraTitanU halo 11521140891 across two snapshots — a box that moves per step.
-# Series = symlinks halo#N -> STEPN/m000-N.bighaloparticles#3 (one partition each).
-# STEP279 centre from the fof_halo_tag census; STEP499 centre = densest 10 Mpc
-# cell of the STEP499 #3 sample. Verified: 97.4% of the halo's particle IDs are
-# in the STEP499 box, in one descendant halo (tag 11838708891).
 series = source(
-    "ssh://gpu-server//home.na1/ad.wsu.edu/aayush.shrestha/pvt/pvt/vislang_series/halo/"
+    "ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/MiraTitanU/Grid/M000/L2100/HACC000/analysis/Halos/b0168/Halopart/STEP279/"
 )
 
-box = region(
-    fields(series, ["x", "y", "z", "id", "fof_halo_tag"]),
-    center={279: (524.9862, 174.5147, 781.4316), 499: (523.0, 171.0, 783.0)},
-    size=30,
+boxes = region(
+    fields(timesteps(series, 3, 33), ["x", "y", "z", "id", "fof_halo_tag"]),
+    size={"halo": 20, "field": 40},
+    center={
+        "halo": [
+            # step   x      y      z    size
+            (3,  525.0, 174.5, 781.4),          # 20 (tag size)
+            (11, 525.0, 174.5, 781.4),          # 20
+            (19, 525.0, 174.5, 781.4, 25),      # halo grows
+            (27, 525.0, 174.5, 781.4, 30),
+            (33, 525.0, 174.5, 781.4, 35),
+        ],
+        "field": [
+            # step   x      y      z    size
+            (3,  480.0, 150.0, 760.0),          # 40 (tag size)
+            (11, 485.0, 150.0, 760.0),
+            (19, 490.0, 150.0, 760.0),
+            (27, 495.0, 150.0, 760.0),
+            (33, 500.0, 150.0, 760.0),
+        ],
+    },
 )
 
-save(box, "/Users/agoosh11/Projects/VisLang/unOrg/hacc/01_halo_track.npz")
+save(boxes, "/Users/agoosh11/Projects/VisLang/unOrg/tagged_regions/boxes.vtp")

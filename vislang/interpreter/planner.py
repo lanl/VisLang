@@ -373,8 +373,8 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
             # zero-network (as _plan_remote does): there timesteps() is the folder
             # signal — it applies only to a folder — else we preview the single-file
             # plan. The actual run probes and dispatches for real.
-            is_folder = (bool(ts_nodes or moving or (tagged is not None
-                                                     and tagged.tag_series))
+            is_folder = (bool(ts_nodes or any(n.moves for n in moving)
+                              or (tagged is not None and tagged.tag_series))
                          if (dry_run or sink is None) else remote_is_dir(src.uri))
         else:
             is_folder = os.path.isdir(src.uri)
@@ -388,11 +388,11 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
         elif ts_nodes:
             raise ValueError("timesteps() applies only to a folder (timeseries) "
                              f"source; {src.uri!r} is a single file.")
-        elif moving:
-            raise ValueError("region(center=/track=...) gives a box per timestep, "
-                             "so it needs a folder (timeseries) source; "
-                             f"{src.uri!r} is a single file. Use an ordinary "
-                             "region(x=..., y=...) here.")
+        elif any(n.moves for n in moving):
+            raise ValueError("region(center=[(step, …), …]) gives a box per "
+                             "timestep, so it needs a folder (timeseries) source; "
+                             f"{src.uri!r} is a single file. Give one centre "
+                             "here: center=(x, y, z).")
         elif remote_src:
             result = _plan_remote(src, middle, sink, terminal, dry_run, confirm)
         else:
@@ -408,18 +408,13 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
 
 
 def _check_tag_shape(tagged, is_folder, uri):
-    """Named boxes are placed per timestep over a folder and once on a file;
-    the other way round is a spec that cannot mean what it says."""
-    if is_folder and not tagged.tag_series:
-        raise ValueError(
-            f"{uri!r} is a timeseries, so each named box needs its timesteps: "
-            f"center={{tag: {{N: (x, y, z)}}}}, or a track file with a `step` "
-            f"column (tag,step,x,y,z)")
+    """Named boxes placed per timestep need a folder; on one file each box is
+    one centre. (A box that stays put works on either.)"""
     if not is_folder and tagged.tag_series:
         raise ValueError(
-            f"region(center={{tag: {{N: …}}}}) places each box per timestep, but "
-            f"{uri!r} is a single file; on one file give each tag one centre: "
-            f"center={{tag: (x, y, z)}}")
+            f"region(center={{tag: [(step, …), …]}}) places a box per timestep, "
+            f"but {uri!r} is a single file; on one file give each tag one "
+            f"centre: center={{tag: (x, y, z)}}")
 
 
 def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
@@ -1116,7 +1111,7 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
     per file exactly as for one file. render over a series isn't supported — pick
     one timestep, or save the range (one file per timestep, original format).
 
-    Named boxes (region(center={tag: {N: …}})) run per (timestep, tag): each file
+    Named boxes (region(center={tag: …})) run per (timestep, tag): each file
     is inspected once and every tag whose box exists there is cut from it (one
     read where the format slices in memory); each tag is then saved as its own
     series under the sink path. Timesteps where no tag has a box are not read."""

@@ -95,8 +95,8 @@ def first_cell(lo, t):
     return float(256 * lo[0] + 16 * lo[1] + lo[2] + t)
 
 
-C = {"v1": {10: (4, 4, 4), 11: (5, 5, 5), 12: (6, 6, 6)},
-     "v2": {10: (12, 12, 12), 12: (14, 14, 14)}}
+C = {"v1": [(10, 4, 4, 4), (11, 5, 5, 5), (12, 6, 6, 6)],
+     "v2": [(10, 12, 12, 12), (12, 14, 14, 14)]}
 
 
 # ---------------------------------------------------------------------------
@@ -107,11 +107,11 @@ def test_form():
     check("tags keep the order written", track.tag_names(r) == ["v1", "v2"])
     check("tagged, not per_step", r.tagged and r.tag_series and not r.per_step)
     check("rows per tag, sorted by label",
-          r.tags[1] == ("v2", (4, 4, 4), ((10, 12, 12, 12), (12, 14, 14, 14))), r.tags)
+          r.tags[1] == ("v2", (4, 4, 4), ((10, 12, 12, 12), (12, 14, 14, 14)), ()), r.tags)
     one = region(src, center={"core": (1, 2, 3), "jet": (4, 5, 6)},
                  size={"core": 10, "jet": (2, 2, 8)})
     check("single-file boxes carry a null label",
-          one.tags[0] == ("core", (10, 10, 10), ((None, 1, 2, 3),)) and not one.tag_series,
+          one.tags[0] == ("core", (10, 10, 10), ((None, 1, 2, 3),), ()) and not one.tag_series,
           one.tags)
     check("size per tag", one.tags[1][1] == (2, 2, 8))
     t = region(src, track="f.csv", size={"a": 4, "b": (1, 2, 3)})
@@ -124,22 +124,39 @@ def test_form():
     raises("tags differing by case",
            lambda: region(src, center={"V1": (1, 2), "v1": (3, 4)}, size=1), ValueError,
            "differ only in case")
-    raises("file and series boxes mixed",
-           lambda: region(src, center={"a": (1, 2), "b": {0: (1, 2)}}, size=1), ValueError,
-           "not a mix")
+    mixed = region(src, center={"a": (1, 2), "b": [(0, 1, 2)]}, size=1)
+    check("a box that stays put beside a moving one",
+          mixed.tags[0][2] == ((None, 1, 2),) and mixed.tag_series, mixed.tags)
+    sized = region(src, size={"a": 4, "b": 6},
+                   center={"a": [(0, 1, 2, 3), (1, 1, 2, 3, 8), (2, 1, 2, 3, (2, 2, None))],
+                           "b": [(0, 5, 5, 5, 9), (1, 5, 5, 5, 9)]})
+    check("a row's own size overrides its tag's",
+          sized.tags[0][1] == (4, 4, 4)
+          and sized.tags[0][3] == ((1, (8, 8, 8)), (2, (2, 2, None))), sized.tags)
+    check("a tag whose every row is sized needs no tag size",
+          region(src, center={"b": [(0, 5, 5, 5, 9), (1, 5, 5, 5, 9)]}).tags[0][1:]
+          == ((9, 9, 9), ((0, 5, 5, 5), (1, 5, 5, 5)), ()))
+    check("a 3-value row fixes 2-D, so 4 values carry a size",
+          region(src, center={"a": [(0, 1, 2), (1, 1, 2, 7)]}, size=1).tags[0][3]
+          == ((1, (7, 7)),))
+    raises("old {step: centre} dict",
+           lambda: region(src, center={"a": {0: (1, 2)}}, size=1), TypeError, "list of rows")
+    raises("a tag's rows not all sized",
+           lambda: region(src, center={"a": [(0, 1, 2, 3, 4), (1, 1, 2, 3)]}), ValueError,
+           "needs size")
     raises("tags of different dimension",
            lambda: region(src, center={"a": (1, 2), "b": (1, 2, 3)}, size=1), ValueError,
            "same number of coordinates")
     raises("size dict missing a tag",
            lambda: region(src, center={"a": (1, 2), "b": (3, 4)}, size={"a": 1}),
-           ValueError, "no entry for tag(s) 'b'")
+           ValueError, "no entry for tag 'b'")
     raises("size dict with an extra tag",
            lambda: region(src, center={"a": (1, 2)}, size={"a": 1, "z": 2}),
            ValueError, "'z'")
     raises("size dict without tags",
-           lambda: region(src, center={0: (1, 2)}, size={"a": 1}), ValueError, "named boxes")
+           lambda: region(src, center=[(0, 1, 2)], size={"a": 1}), ValueError, "named boxes")
     raises("empty timestep dict",
-           lambda: region(src, center={"a": {}}, size=1), ValueError, "no centres")
+           lambda: region(src, center={"a": []}, size=1), ValueError, "no centres")
     raises("bad centre type", lambda: region(src, center={"a": 3}, size=1), TypeError)
     raises("size still required", lambda: region(src, center={"a": (1, 2)}), ValueError,
            "needs size")
@@ -149,11 +166,12 @@ def test_sandbox():
     print("== sandbox ==")
     from vislang.runtime.sandbox import execute
     reset_sinks()
-    execute("save(region(source('/d/s'), size=4, center={'v1': {10: (1.0, 2.0, 3.0)},"
-            " 'v2': {12: (4.0, 5.0, 6.0)}}), 'out.vti')", form_namespace())
+    execute("save(region(source('/d/s'), size=4, center={'v1': [(10, 1.0, 2.0, 3.0)],"
+            " 'v2': [(12, 4.0, 5.0, 6.0, 8)]}), 'out.vti')", form_namespace())
     r = collected_sinks()[0].upstream
-    check("tag-keyed dict crosses the sandbox",
-          isinstance(r, RegionNode) and track.tag_names(r) == ["v1", "v2"], r)
+    check("tag-keyed rows cross the sandbox",
+          isinstance(r, RegionNode) and track.tag_names(r) == ["v1", "v2"]
+          and r.tags[1][3] == ((12, (8, 8, 8)),), r)
     reset_sinks()
 
 
@@ -164,6 +182,10 @@ def test_wire():
                 "o.vti")
     back = from_plan_json(to_plan_json(node)).upstream
     check("named boxes round-trip", back.tags == node.upstream.tags, back)
+    sized = save(region(source("/d/s"), size=4, center={
+        "a": [(1, 1, 2, 3), (2, 1, 2, 3, 6)], "b": (4, 5, 6)}), "o.vti")
+    check("per-row sizes and a box that stays put round-trip",
+          from_plan_json(to_plan_json(sized)).upstream.tags == sized.upstream.tags)
     one = save(region(source("/d/f.h5"), center={"a": (1, 2, 3)}, size=2), "o.vti")
     check("single-file boxes round-trip",
           from_plan(to_plan(one)).upstream.tags == one.upstream.tags)
@@ -195,21 +217,33 @@ def test_track_file():
     with open(p, "w") as f:
         f.write("# two vortices\ntag,step,x,y,z\nv1,10,4,4,4\nv2,10,12,12,12\n"
                 "v1,11,5,5,5\nv1,12,6,6,6\nv2,12,14,14,14\n")
-    kind, rows, sha = track.read_track(p)
-    check("tag,step header", kind == "tag_step" and len(rows) == 5 and sha)
+    center, _, sha, _ = track.read_track(p)
+    check("tag,step header", list(center) == ["v1", "v2"]
+          and sum(map(len, center.values())) == 5 and sha)
     r = track.resolve_tracks([region(source("/d"), track=p, size=4)])[0]
     inline = region(source("/d"), center=C, size=4)
     check("track == inline centres", r.tags == inline.tags and r.track_sha == sha, r.tags)
     r = track.resolve_tracks([region(source("/d"), track=p, size={"v1": 2, "v2": 6})])[0]
-    check("size per tag from a track", [s for _, s, _ in r.tags] == [(2, 2, 2), (6, 6, 6)])
+    check("size per tag from a track", [s for _, s, _, _ in r.tags] == [(2, 2, 2), (6, 6, 6)])
+    ps = os.path.join(TMP, "tags_sized.csv")
+    with open(ps, "w") as f:
+        f.write("tag,step,x,y,z,size\nv1,10,4,4,4,\nv1,11,5,5,5,9\n")
+    r = track.resolve_tracks([region(source("/d"), center=ps, size=4)])[0]
+    check("a size column overrides its row; blank keeps size=",
+          r.tags[0][1] == (4, 4, 4) and r.tags[0][3] == ((11, (9.0, 9.0, 9.0)),), r.tags)
 
     q = os.path.join(TMP, "one.csv")
     with open(q, "w") as f:
         f.write("tag,x,y,z\ncore,1,2,3\njet,4,5,6\n")
     r = track.resolve_tracks([region(source("/d/f.h5"), track=q, size=2)])[0]
     check("tag,x,y,z header: boxes on one file",
-          r.tags[1] == ("jet", (2, 2, 2), ((None, 4.0, 5.0, 6.0),)) and not r.tag_series)
-    raises("load_track refuses a tagged file", lambda: track.load_track(q), ValueError, "tag")
+          r.tags[1] == ("jet", (2, 2, 2), ((None, 4.0, 5.0, 6.0),), ()) and not r.tag_series)
+    qs = os.path.join(TMP, "one_sized.csv")
+    with open(qs, "w") as f:
+        f.write("tag,x,y,z,size\ncore,1,2,3,7\njet,4,5,6,\n")
+    r = track.resolve_tracks([region(source("/d/f.h5"), center=qs, size=2)])[0]
+    check("tag,x,y,z,size: the column sizes its box",
+          [s for _, s, _, _ in r.tags] == [(7.0, 7.0, 7.0), (2, 2, 2)], r.tags)
     for name, body, text in [
             ("duplicate tag+step", "tag,step,x,y\na,0,1,2\na,0,3,4\n", "more than one"),
             ("duplicate tag on a file", "tag,x,y\na,1,2\na,3,4\n", "more than one"),
@@ -250,8 +284,8 @@ def test_grid_series():
           os.listdir(out))
     import pyvista as pv
     ok = True
-    for tag, by_t in C.items():
-        for t, c in by_t.items():
+    for tag, rows in C.items():
+        for t, *c in rows:
             m = pv.read(os.path.join(out, tag, f"timestep#{t}.vti"))
             lo = [ci - 2 for ci in c]
             ok &= tuple(m.dimensions) == (4, 4, 4)
@@ -295,7 +329,7 @@ def test_grid_series():
     run(save(region(source(d), track=p, size=4), out2 + ".vti"))
     same = all(np.array_equal(pv.read(os.path.join(out, tag, f"timestep#{t}.vti"))["rho"],
                               pv.read(os.path.join(out2, tag, f"timestep#{t}.vti"))["rho"])
-               for tag, by_t in C.items() for t in by_t)
+               for tag, rows in C.items() for t, *_ in rows)
     check("track file == inline centres", same)
     rec2 = provenance.record_for(os.path.join(out2, "v1"))
     check("record: track path + its boxes",
@@ -347,8 +381,8 @@ def test_reviewed_edges():
         with h5py.File(os.path.join(d, f"s#{t}.hdf5"), "w") as f:
             f["rho"] = np.arange(n ** 3, dtype=np.float32).reshape(n, n, n)
     for name, node in [
-            ("unnamed", region(source(d), center={1: (8, 8, 8), 2: (24, 24, 24)}, size=4)),
-            ("named", region(source(d), center={"a": {1: (8, 8, 8), 2: (24, 24, 24)}},
+            ("unnamed", region(source(d), center=[(1, 8, 8, 8), (2, 24, 24, 24)], size=4)),
+            ("named", region(source(d), center={"a": [(1, 8, 8, 8), (2, 24, 24, 24)]},
                              size=4))]:
         out = os.path.join(TMP, f"grow_{name}")
         reset_sinks()
@@ -364,15 +398,15 @@ def test_reviewed_edges():
     reset_sinks()
     raises("unnamed box's unknown timestep still refused",
            lambda: plan_pipeline(save(region(region(
-               source(g), center={10: (8, 8, 8), 11: (8, 8, 8), 12: (8, 8, 8),
-                                  99: (8, 8, 8)}, size=10),
-               center={"a": {10: (8, 8, 8)}}, size=4), os.path.join(TMP, "mix.npz"))),
+               source(g), center=[(10, 8, 8, 8), (11, 8, 8, 8), (12, 8, 8, 8),
+                                  (99, 8, 8, 8)], size=10),
+               center={"a": [(10, 8, 8, 8)]}, size=4), os.path.join(TMP, "mix.npz"))),
            ValueError, "#99")
     reset_sinks()
     raises("unnamed box's missing timestep still refused",
            lambda: plan_pipeline(save(region(region(
-               source(g), center={10: (8, 8, 8)}, size=10),
-               center={"a": {10: (8, 8, 8), 11: (8, 8, 8)}}, size=4),
+               source(g), center=[(10, 8, 8, 8)], size=10),
+               center={"a": [(10, 8, 8, 8), (11, 8, 8, 8)]}, size=4),
                os.path.join(TMP, "mix2.npz"))),
            ValueError, "#11")
 
@@ -385,8 +419,8 @@ def test_reviewed_edges():
     try:
         reset_sinks()
         plan_pipeline(save(region(subsample(source(p, positions=("x", "y", "z")), 0.5),
-                                  center={"a": {1: (50.0, 50.0, 50.0)},
-                                          "b": {1: (50.0, 50.0, 50.0)}}, size=30),
+                                  center={"a": [(1, 50.0, 50.0, 50.0)],
+                                          "b": [(1, 50.0, 50.0, 50.0)]}, size=30),
                            os.path.join(TMP, "sampled_out.npz")))
     finally:
         load._read = orig
@@ -395,6 +429,61 @@ def test_reviewed_edges():
         check("one sample per file: identical boxes, identical rows",
               a["mass"].size > 0 and np.array_equal(a["mass"], b["mass"]))
     check("one sample per file: one read", len(reads) == 1, reads)
+
+
+def test_still_and_sized():
+    print("== boxes that stay put, sizes per row ==")
+    import pyvista as pv
+    d = grid_series()
+    out = os.path.join(TMP, "still")
+    reset_sinks()
+    res = run(save(region(source(d), size=4, center={
+        "still": (4, 4, 4),
+        "grow": [(10, 8, 8, 8), (11, 8, 8, 8, 6), (12, 8, 8, 8)]}), out + ".vti"))
+    ok = True
+    for t in (10, 11, 12):
+        m = pv.read(os.path.join(out, "still", f"timestep#{t}.vti"))
+        ok &= tuple(m.dimensions) == (4, 4, 4)
+        ok &= float(m.point_data["rho"][0]) == first_cell((2, 2, 2), t)
+    check("a box that stays put is cut at every timestep", ok, res.get("tags"))
+    dims = {t: tuple(pv.read(os.path.join(out, "grow", f"timestep#{t}.vti")).dimensions)
+            for t in (10, 11, 12)}
+    check("a row's own size is used at its timestep only",
+          dims == {10: (4, 4, 4), 11: (6, 6, 6), 12: (4, 4, 4)}, dims)
+    m = pv.read(os.path.join(out, "grow", "timestep#11.vti"))
+    check("the sized box is centred on its row",
+          float(m.point_data["rho"][0]) == first_cell((5, 5, 5), 11))
+    text = provenance.record_text(os.path.join(out, "still"))
+    check("the record says the box stays put", "centred at (4, 4, 4)" in text, text)
+
+    # The unnamed box: one centre stays put on a file and over a series.
+    f10 = os.path.join(d, "snap#10.hdf5")
+    reset_sinks()
+    a = os.path.join(TMP, "still_one.npz")
+    b = os.path.join(TMP, "still_ranges.npz")
+    run(save(region(source(f10), center=(4, 4, 4), size=4), a))
+    run(save(region(source(f10), x=(2, 6), y=(2, 6), z=(2, 6)), b))
+    with np.load(a) as x, np.load(b) as y:
+        check("center=(x, y, z) on a file == the same axis ranges",
+              np.array_equal(x["rho"], y["rho"]) and x["rho"].shape == (4, 4, 4))
+    reset_sinks()
+    o = os.path.join(TMP, "still_series")
+    res = run(save(region(timesteps(source(d), 10, 11), center=(4, 4, 4), size=4), o + ".npz"))
+    check("center=(x, y, z) over a series: every selected timestep",
+          res.get("timesteps") == [10, 11], res)
+    reset_sinks()
+    res = run(save(region(source(d), center=[(10, 8, 8, 8, 2), (11, 8, 8, 8), (12, 8, 8, 8)],
+                          size=4), os.path.join(TMP, "rows.npz")))
+    with np.load(os.path.join(TMP, "rows", "timestep#10.npz")) as x, \
+            np.load(os.path.join(TMP, "rows", "timestep#11.npz")) as y:
+        check("unnamed rows: a row's size beats size=",
+              x["rho"].shape == (2, 2, 2) and y["rho"].shape == (4, 4, 4))
+    reset_sinks()
+    raises("unnamed rows: a selected timestep with no row is refused",
+           lambda: plan_pipeline(save(region(source(d), center=[(10, 8, 8, 8, 2), (11, 8, 8, 8)],
+                                             size=4), os.path.join(TMP, "never2.npz"))),
+           ValueError, "#12")
+    reset_sinks()
 
 
 def test_refusals_before_read():
@@ -408,21 +497,19 @@ def test_refusals_before_read():
     try:
         cases = [
             ("timestep with no file",
-             region(source(d), center={"a": {10: (4, 4, 4), 99: (4, 4, 4)}}, size=4), "#99"),
+             region(source(d), center={"a": [(10, 4, 4, 4), (99, 4, 4, 4)]}, size=4), "#99"),
             ("no tag in the selection",
-             region(timesteps(source(d), 11, 11), center={"a": {10: (4, 4, 4)}}, size=4),
+             region(timesteps(source(d), 11, 11), center={"a": [(10, 4, 4, 4)]}, size=4),
              "no tag has a box"),
             ("a box entirely outside the grid",
-             region(source(d), center={"a": {10: (4, 4, 4)}, "b": {12: (40, 4, 4)}}, size=4),
+             region(source(d), center={"a": [(10, 4, 4, 4)], "b": [(12, 40, 4, 4)]}, size=4),
              "box 'b'"),
-            ("one centre per tag on a folder",
-             region(source(d), center={"a": (4, 4, 4)}, size=4), "needs its timesteps"),
             ("timesteps on a single file",
-             region(source(os.path.join(d, "snap#10.hdf5")), center={"a": {10: (4, 4, 4)}},
+             region(source(os.path.join(d, "snap#10.hdf5")), center={"a": [(10, 4, 4, 4)]},
                     size=4), "single file"),
             ("two named-box regions",
-             region(region(source(d), center={"a": {10: (4, 4, 4)}}, size=8),
-                    center={"b": {10: (4, 4, 4)}}, size=2), "only one region"),
+             region(region(source(d), center={"a": [(10, 4, 4, 4)]}, size=8),
+                    center={"b": [(10, 4, 4, 4)]}, size=2), "only one region"),
         ]
         for name, node, text in cases:
             reset_sinks()
@@ -481,8 +568,8 @@ def test_equivalence_and_shared_read():
     print("== same boxes as unnamed regions; one read per file ==")
     d = particle_series()
     pos = ("x", "y", "z")
-    c = {"near": {1: (20.0, 20.0, 20.0), 2: (25.0, 25.0, 25.0)},
-         "far": {1: (70.0, 70.0, 70.0), 2: (60.0, 60.0, 60.0)}}
+    c = {"near": [(1, 20.0, 20.0, 20.0), (2, 25.0, 25.0, 25.0)],
+         "far": [(1, 70.0, 70.0, 70.0), (2, 60.0, 60.0, 60.0)]}
     reads = []
     orig = load._read
     load._read = lambda *a, **k: reads.append(a[0].filepath) or orig(*a, **k)
@@ -503,7 +590,7 @@ def test_equivalence_and_shared_read():
                                   center=by_t, size=20),
                            os.path.join(TMP, f"pts_{tag}.npz")))
         same = True
-        for t in by_t:
+        for t, *_ in by_t:
             with np.load(os.path.join(TMP, "pts", tag, f"timestep#{t}.npz")) as a, \
                     np.load(os.path.join(TMP, f"pts_{tag}", f"timestep#{t}.npz")) as b:
                 same &= sorted(a.files) == sorted(b.files) and all(
@@ -719,6 +806,23 @@ def test_remote():
         check("remote estimate: boxes listed and priced, nothing shipped",
               len(EXECS) == n0 and "named boxes: 5" in text and "#12: x:(12,16)" in text,
               text)
+
+        # -- a box that stays put + a row's own size, through the catalog ----
+        n0 = len(EXECS)
+        reset_sinks()
+        res = run(save(region(fields(source(f"u@fakehost:{d}"), ["rho"]), size=4, center={
+            "still": (4, 4, 4), "grow": [(10, 8, 8, 8), (11, 8, 8, 8, 6)]}),
+            os.path.join(TMP, "r_still.vti")))
+        root = os.path.join(TMP, "r_still")
+        check("remote: the box that stays put runs at every timestep",
+              res.get("tags") == {"still": [10, 11, 12], "grow": [10, 11]}, res.get("tags"))
+        m = pv.read(os.path.join(root, "still", "timestep#11.vti"))
+        g = pv.read(os.path.join(root, "grow", "timestep#11.vti"))
+        check("remote: fixed box placed, row size honoured",
+              float(m["rho"][0]) == first_cell((2, 2, 2), 11)
+              and tuple(g.dimensions) == (6, 6, 6)
+              and float(g["rho"][0]) == first_cell((5, 5, 5), 11), (m.dimensions, g.dimensions))
+        check("remote: one job", len(EXECS) == n0 + 1, len(EXECS) - n0)
     finally:
         for k in ("VISLANG_CACHE", "VISLANG_REMOTE", "VISLANG_REMOTE_TMP"):
             os.environ.pop(k, None)
@@ -761,6 +865,7 @@ if __name__ == "__main__":
     test_grid_series()
     test_reviewed_edges()
     test_refusals_before_read()
+    test_still_and_sized()
     test_single_file()
     test_equivalence_and_shared_read()
     test_remote()

@@ -37,61 +37,83 @@ Crop to a per-axis range.
 - **Point data:** a **world-coordinate** bounding box on the coordinate variables
   (`info.positions`) — keep points whose coords fall in the box.
 
-### A box that moves per timestep: region(node, center=..., size=...) | region(node, track=..., size=...)
-Over a **folder (timeseries)**, give each timestep its own box by its centre:
+### A box placed by its centre: region(node, center=..., size=...)
+Give the box's centre and edge length instead of axis ranges. The box is
+**centre ± size/2**, in the coordinates `region` already uses: **cell indices
+on grids**, **world coordinates on point data**. `center` takes one of three
+shapes:
 ```python
-box = region(series, center={279: (524.99, 174.51, 781.43),
-                             300: (526.10, 175.02, 780.88)}, size=30)
-box = region(series, track="halo_track.csv", size=30)      # the same, from a file
+region(data, center=(524.99, 174.51, 781.43), size=30)   # stays put (one file, or every timestep)
+
+region(series, size=30, center=[                          # one box per timestep
+    # step   x       y       z     [size]
+    (279, 524.99, 174.51, 781.43),
+    (300, 526.10, 175.02, 780.88, 40),                   # this row only: 40
+])
+
+region(series, center="halo_track.csv", size=30)          # the same rows, from a file
 ```
-- The box is **centre ± size/2**, in the coordinates `region` already uses:
-  **cell indices on grids**, **world coordinates on point data**.
-- `center` maps the `#N` timestep label to `(x, y)` or `(x, y, z)`. `size` is
-  one number or one per coordinate; `None` keeps that axis whole, and an axis
-  the centre leaves out is kept whole (a fire tracked on `(x, y)` keeps every
-  vertical level).
-- `track` is a CSV with header `step,x,y` or `step,x,y,z` (blank lines and `#`
+- A **row** is `(step, x, y[, z][, size])`: `step` is the `#N` timestep label;
+  the optional trailing `size` overrides `size=` for that row only. A row's
+  size may also be a per-axis tuple, e.g. `(279, 1, 2, 3, (30, 30, None))`.
+- `size` is one number or one per coordinate; `None` keeps that axis whole, and
+  an axis the centre leaves out is kept whole (a fire tracked on `(x, y)` keeps
+  every vertical level). It may be left out when every row has its own size.
+- Rows of 3 values are 2-D and rows of 5 are 3-D with a size; a 4-value row
+  `(step, a, b, c)` is read as a 3-D centre unless another row, a fixed centre
+  or a per-axis `size` says the centres are 2-D (then `c` is that row's size).
+- A centre with **no step** is a box that stays put: on one file it is that
+  box, and over a timeseries it is the same box at every selected timestep.
+- A track file is a CSV with header `step,x,y[,z][,size]` (blank lines and `#`
   comments allowed), one row per timestep, path relative to the working
-  directory. The planner reads it once, before any data read, inlines its rows
-  into the plan (so a remote run never needs the file) and records its sha256
-  in provenance.
-- Give exactly one of axis ranges, `center=` or `track=`; `size` only goes with
-  the latter two. A single-file source raises — use a fixed `region(x=…)`.
-- **Checked before any bulk read:** every selected timestep needs a centre (drop
-  timesteps with `timesteps(...)`; a track longer than the selection is fine),
-  and a centre for a timestep that is not in the folder raises.
+  directory. A `size` cell overrides `size=` for its row; a blank one does not.
+  The planner reads the file once, before any data read, inlines its rows into
+  the plan (so a remote run never needs the file) and records its sha256 in
+  provenance.
+- Give axis ranges or `center=`, not both; `size` only goes with `center=`.
+  Rows (a box per timestep) on a single-file source raise.
+- **Checked before any bulk read:** every selected timestep needs a row (drop
+  timesteps with `timesteps(...)`; rows beyond the selection are fine), and a
+  row for a timestep that is not in the folder raises.
 - A grid box crossing the edge is **clipped** to the grid and the clip is
   reported; a box with nothing left raises. Point boxes are not clipped, and
   periodic wrap-around (a halo straddling a cosmology box edge) is not handled.
 - The dry run lists each timestep's box; every output's provenance records them
   under `resolved.region_boxes`. Over a remote folder the extent catalog keys
-  each timestep on its own centre, so it reuses a cached box only on an exact
-  match.
+  each timestep on its own centre and size, so it reuses a cached box only on
+  an exact match.
 
 ### Several named boxes: region(node, center={tag: …}, size=...)
 Name each box with a **tag** (a string), the way you would assign it to a
-variable, and every box is cut and written to its own output:
+variable, and every box is cut and written to its own output. Each tag takes
+either shape above — rows, or a centre that stays put:
 ```python
-# Over a timeseries: each tag lists the timesteps its box exists at.
-boxes = region(series, size=20, center={
-    "v1": {10: (50, 60, 70), 11: (52, 61, 70), 12: (54, 62, 71)},
-    "v2": {10: (200, 40, 90), 12: (198, 42, 88)},          # gone at #11
+boxes = region(series, size={"v1": 20, "v2": 40}, center={
+    "v1": [
+        # step  x    y    z   [size]
+        (10,   50,  60,  70),
+        (11,   52,  61,  70),
+        (12,   54,  62,  71, 25),                       # v1 grows at #12
+    ],
+    "v2":   [(10, 200, 40, 90), (12, 198, 42, 88)],     # gone at #11
+    "core": (150, 150, 150),                            # stays put: every timestep
 })
-save(boxes, "roi.vti")   # roi/v1/timestep#10…#12.vti, roi/v2/timestep#10,#12.vti, roi/roi.pvd
+save(boxes, "roi.vti")   # roi/v1/…, roi/v2/timestep#10,#12.vti, roi/core/…, roi/roi.pvd
 
 # On one file: one centre per tag; size may differ per tag.
 save(region(snapshot, center={"core": (150, 150, 150), "jet": (40, 151, 150)},
             size={"core": 40, "jet": (10, 10, 60)}), "boxes.vti")   # boxes/core.vti, boxes/jet.vti
 ```
-- The key type says what you mean: `{N: centre}` is one unnamed moving box,
-  `{tag: …}` names boxes. Mixing the two raises, as does mixing per-timestep
-  tags with single-centre tags.
+- A box's size comes from, most specific first: the row's own size, its tag's
+  entry in `size={tag: …}`, or a plain `size=` shared by every tag. A tag left
+  out of the dict must give a size on every row.
+- Every centre has the same number of coordinates, across all tags.
 - A tag names its box's output, so it is letters, digits, `_`, `-` or `.`, not
   starting with `.`; two tags must differ by more than case.
-- `size` is one number, one per coordinate, or `{tag: size}` naming every tag.
-- A track file names its boxes with a leading `tag` column: `tag,step,x,y[,z]`
-  over a timeseries (rows sharing a step are separate boxes) or `tag,x,y[,z]`
-  for one file. `size={tag: …}` works with it too.
+- A track file names its boxes with a leading `tag` column:
+  `tag,step,x,y[,z][,size]` (rows sharing a step are separate boxes) or
+  `tag,x,y[,z][,size]` for boxes that stay put. `size={tag: …}` works with it
+  too.
 - **The tag is the box's identity**, and the interpreter cannot check it: it
   does not know that `v1` at #11 is the same object as `v1` at #10. Whoever
   wrote the centres — you, or the tracker that produced the CSV — vouches for

@@ -283,7 +283,7 @@ def test_structured_series():
     P = terrain_points()
     out = os.path.join(TMP, "fire_roi")
     res = run(save(region(fields(timesteps(source(d), 1000, 2000), ["w"]),
-                          center={1000: (4, 4, 4), 2000: (6, 5, 4)}, size=4), out))
+                          center=[(1000, 4, 4, 4), (2000, 6, 5, 4)], size=4), out))
     files = sorted(f for f in os.listdir(out) if not f.startswith("."))
     check("series: .vts per timestep + index",
           files == ["fire_roi.pvd", "timestep#1000.vts", "timestep#2000.vts"], files)

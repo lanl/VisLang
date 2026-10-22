@@ -46,6 +46,17 @@ if [[ $dry -eq 0 && -n "$(git status --porcelain)" ]]; then
 fi
 sha="$(git rev-parse --short HEAD)"
 
+# A taken tag would only fail at `git tag`, after the whole build and test run.
+# Replacing a published tag is deliberate: delete it here and on $remote first.
+if [[ -n "$tag" && $dry -eq 0 ]]; then
+    if git rev-parse -q --verify "refs/tags/$tag" > /dev/null \
+        || git ls-remote --exit-code --tags "$remote" "refs/tags/$tag" > /dev/null; then
+        echo "tag '$tag' already exists; pick another, or delete it first:" >&2
+        echo "  git tag -d $tag && git push $remote --delete refs/tags/$tag" >&2
+        exit 1
+    fi
+fi
+
 paths=()
 while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%%#*}"

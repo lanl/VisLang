@@ -69,7 +69,7 @@ message), and known optimizations:
   `instructions/provenance.md`.
 
 ## Per-timestep regions — v1 realized
-`region(series, center={N: …} | track="f.csv", size=S)` cuts each timestep with
+`region(series, center=[(N, x, y, z[, size]), …] | "f.csv", size=S)` cuts each timestep with
 its own box (centre ± size/2, index space on grids, world space on points),
 checked for coverage before any read and recorded per timestep in provenance.
 Follow-ups:
@@ -83,8 +83,8 @@ Follow-ups:
   centre and reuses only exact matches; a grown box could slice a cached one.
 
 ## Named boxes — v1 realized
-`region(node, center={tag: {N: …}} | {tag: (x, y, z)} | track="f.csv" with a
-tag column)` cuts several named boxes per file — a different number at each
+`region(node, center={tag: [(N, …), …] | (x, y, z)} | "f.csv" with a tag
+column)` cuts several named boxes per file — a different number at each
 timestep — and writes one output per tag (`<dir>/<tag>/…`), with a ParaView
 `.pvd` index and `TimeValue` so the boxes open together, time-aligned, gaps
 shown. Every route runs them: local, a remote file, and the remote catalog

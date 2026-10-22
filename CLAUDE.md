@@ -29,10 +29,12 @@ with no sink is a **dry run** — you get the inferred plan, nothing is read.
 ## The forms (available in a spec with no imports)
 
 `source(uri, positions=None)` · `fields(node, keep)` · `region(node, x=(a,b), …)`
-(over a timeseries also `region(node, center={N: (x,y[,z])} | track="f.csv", size=s)`
-— a box per timestep, centre ± size/2; several **named boxes** with
-`center={tag: {N: (x,y[,z])}}`, or `{tag: (x,y[,z])}` on one file — `save` writes
-one output per tag, `<dir>/<tag>/…`)
+(or by centre: `region(node, center=…, size=s)`, box = centre ± size/2, where
+`center` is `(x,y[,z])` — stays put, on a file or every timestep — or rows
+`[(step, x,y[,z][, size]), …]` — a box per timestep, a row's size overriding
+`size=` — or `"f.csv"` with those columns; several **named boxes** with
+`center={tag: either}`, `size=` then a number or `{tag: s}` — `save` writes one
+output per tag, `<dir>/<tag>/…`)
 · `subsample(node, f)` / `subsample(node, x=…, y=…)` · `threshold(node, "var > v")`
 · `timesteps(node, start, stop)` · `compress(node, variables, error_bound)` ·
 `save(node, path)` [sink] · `render(node, cmap=None, opacity=None)` [sink]. Full
