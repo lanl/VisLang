@@ -41,7 +41,7 @@ def fixtures(d):
     rng = np.random.default_rng(0)
     np.savez(os.path.join(d, "pts.npz"), x=rng.uniform(0, 10, 4000),
              y=rng.uniform(0, 10, 4000), z=rng.uniform(0, 10, 4000),
-             m=np.arange(4000.0))
+             m=np.arange(4000.0), v=np.ones(4000))
     s = os.path.join(d, "series")
     os.makedirs(s)
     for t in (3, 4, 5):

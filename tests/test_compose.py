@@ -82,6 +82,14 @@ def test_compose():
     check("positions named when given; stride 1 adds nothing",
           text.strip().split("\n") == ["src = source('/d/halo.gio', positions=('x', 'y', 'z'))",
                                        "save(src, '/o/p.vtp')"], text)
+    text = compose_spec({**POINTS, "positions": ["x", "y", "z"]},
+                        {"output": "/o/p.vtp", "fields": ["vx", "fof_halo_tag"],
+                         "stride": 200})
+    check("narrowed points keep their positions",
+          "fields(src, ['x', 'y', 'z', 'vx', 'fof_halo_tag'])" in text, text)
+    check("a grid's field list is left as asked",
+          "fields(src, ['rho'])" in compose_spec(CELLS, {"output": "/o/o.vti",
+                                                         "fields": ["rho"]}))
     check("a broken spec is reported, not raised",
           check_spec("save(region(source('/d'), x=(5, 1)), 'o.npz')")["ok"] is False)
 

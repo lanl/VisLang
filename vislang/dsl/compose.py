@@ -59,7 +59,14 @@ def compose_spec(descriptor, params):
             a, b = (int(v) for v in params["timesteps"])
             step(f"timesteps({cur}, {a}, {b})")
     if params.get("fields"):
-        step(f"fields({cur}, {list(params['fields'])!r})")
+        # Points are placed by their positions: a narrowed field list still
+        # keeps them (a points file cannot be written, nor a box applied,
+        # without them). Clients list only the other variables.
+        keep = list(params["fields"])
+        pos = list(positions or descriptor.get("positions") or []) \
+            if descriptor.get("modality") == "particles" else []
+        keep = [p for p in pos if p not in keep] + keep
+        step(f"fields({cur}, {keep!r})")
     if params.get("box"):
         axes, coords = view_box_to_region(descriptor, params["box"])
         if axes:

@@ -150,6 +150,14 @@ print("== points ==")
 p = overview(Source=path("pts.npz"))
 check("points arrive as points", p.GetDataInformation().GetDataSetTypeAsString()
       .endswith("PolyData") or bounds(p)[1] > 9, bounds(p))
+pn = overview(Source=path("pts.npz"))
+pn.Fields = ["m"]                    # narrowed: positions are not in the list
+pn.UpdatePipeline()
+names = [a.Name for a in pn.PointData]
+check("narrowed points still arrive as points (their positions are kept)",
+      pn.GetDataInformation().GetNumberOfPoints() == 4000
+      and "m" in names and "v" not in names, (names, spec(pn)))
+Delete(pn)
 pd = SieveDetail(Input=p)
 pd.BoxCorner, pd.BoxSize = [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]
 b = bounds(pd)
