@@ -433,6 +433,7 @@ class SieveSource(_Sieve):
         self._uri = ""
         self._positions = ""
         self._desc_job = None
+        self._desc_failed = None     # the (uri, positions) a descriptor was refused for
 
     def _out_ext(self):
         return (self._desc or {}).get("out_ext", ".vti")
@@ -458,6 +459,9 @@ class SieveSource(_Sieve):
                     'the secret goes straight to ssh.</Documentation></Property>')
     def Connect(self):
         if not self._uri:
+            self._status = ("Set Source to a remote path (ssh://host/path) and press "
+                            "Apply first: ParaView passes Source on only at Apply.")
+            self.Modified()
             return
         sess = _session()
         _, workdir = sess.next_dir("connect")
@@ -469,7 +473,7 @@ class SieveSource(_Sieve):
         self._status = ("Connected. Press Apply." if r.get("status") == "ok"
                         else "Could not connect:\n" + (r.get("message") or r.get("error")
                                                        or ""))
-        self._desc = None
+        self._desc = self._desc_failed = None    # ask again on the next Apply
         self.Modified()
 
     @smproperty.doublevector(name="TimestepValues", information_only="1",
@@ -483,6 +487,8 @@ class SieveSource(_Sieve):
         """Ask for the source's descriptor once per source; True while waiting."""
         if not self._uri or self._desc is not None:
             return False
+        if self._desc_failed == (self._uri, self._positions):
+            return False                 # refused: wait for Connect or a new Source
         job = self._desc_job
         if job is not None and job.request.get("uri") == self._uri \
                 and job.state in ("queued", "running"):
@@ -495,7 +501,8 @@ class SieveSource(_Sieve):
         job = core.Job("inspect", req, workdir, label="inspect")
         self._desc_job = job
         _runner().submit(("inspect", id(self)), job)
-        self._status = "Reading the source's metadata…"
+        self._status = ("Checking the session to the remote host…"
+                        if core.is_remote(self._uri) else "Reading the source's metadata…")
         if _sync():
             _runner().wait(job)
             self._take_descriptor(job)
@@ -505,6 +512,8 @@ class SieveSource(_Sieve):
     def _take_descriptor(self, job):
         job._handled = True
         r = job.result or {}
+        if r.get("status") != "ok":
+            self._desc_failed = (job.request.get("uri"), self._positions)
         if r.get("status") == "ok":
             self._desc = r
             have = {self._fields.GetArrayName(i)
@@ -518,6 +527,10 @@ class SieveSource(_Sieve):
                             + (f", {len(ts)} timesteps" if ts else "")
                             + f". Region coordinates: {r.get('region_text') or r['coords']}."
                             + "\nFetching the overview…")
+        elif r.get("status") == "needs_session" and r.get("reachable") is False:
+            self._status = ((r.get("message") or "The remote host is not reachable.")
+                            + ".\nNo password was asked for: it could not reach ssh. "
+                            "Check the network/VPN, then press Connect.")
         elif r.get("status") == "needs_session":
             self._status = ("Not connected to the remote host. Press Connect "
                             "(a password dialog opens), then Apply.")

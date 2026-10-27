@@ -25,6 +25,7 @@ Sieve's interpreter at ParaView's own libraries.
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -63,6 +64,14 @@ def clean_env(extra=None):
         else:
             env[k] = str(v)
     return env
+
+
+# scheme:// or user@host:  — the same test as vislang.formats.inspect.is_remote.
+_REMOTE = re.compile(r"^[a-z][a-z0-9+.-]*://|^[^/\s]+@[^/\s]+:")
+
+
+def is_remote(uri):
+    return bool(_REMOTE.match(uri or ""))
 
 
 def request_key(kind, uri, params, extra=None):

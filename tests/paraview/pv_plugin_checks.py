@@ -239,6 +239,17 @@ if FAKE:
     check("no allocation: held, and the panel shows the salloc to ask for",
           ra.GetDataInformation().GetNumberOfPoints() == 0
           and "salloc" in status(ra) and "shared HPC time" in status(ra), status(ra))
+    plugin._runner().base_env = {"FAKE_UNREACHABLE": "1"}
+    un = SieveSource(Source=f"u@fakehost:{path('cube.vti')}")
+    un.UpdatePipeline()
+    n = len(glob.glob(os.path.join(SESSIONS, "*", "*-inspect")))
+    for _ in range(3):              # what ParaView's timer and re-renders do
+        un.SMProxy.MarkModified(un.SMProxy)
+        un.UpdatePipeline()
+    again = len(glob.glob(os.path.join(SESSIONS, "*", "*-inspect")))
+    check("an unreachable host: says so, asks for no password, and does not retry",
+          "not reachable" in status(un) and "No password" in status(un) and again == n,
+          (status(un), n, again))
     plugin._runner().base_env = {}
     lines = [json.loads(ln) for f in glob.glob(os.path.join(SESSIONS, "*",
                                                             "session.jsonl"))
