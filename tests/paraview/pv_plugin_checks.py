@@ -47,6 +47,13 @@ def spec(p):
     return p.GetPropertyValue("Spec")
 
 
+def spec_path(p):
+    lines = [json.loads(ln) for f in glob.glob(os.path.join(SESSIONS, "*",
+                                                            "session.jsonl"))
+             for ln in open(f)]
+    return [ln for ln in lines if ln.get("spec_path")][-1]["spec_path"]
+
+
 def bounds(p, t=None):
     p.UpdatePipeline(t) if t is not None else p.UpdatePipeline()
     return [round(v, 6) for v in p.GetDataInformation().GetBounds()]
@@ -157,6 +164,20 @@ sp.UpdatePipeline()
 check("a typed spec runs and its first file is shown",
       sp.GetDataInformation().GetNumberOfPoints() == 64
       and os.path.exists(os.path.join(SESSIONS, "typed", "boxes", "b.vti")), status(sp))
+
+print("== promote to spec ==")
+hd.SMProxy.InvokeCommand("PromoteToSpec")
+promoted = [p for p in GetSources().values() if p.GetXMLName() == "SieveSpec"
+            and p is not sp]
+check("Promote To Spec makes a Sieve Spec holding the detail's spec",
+      len(promoted) == 1 and "x=(10, 20), y=(4, 12), coords='cells'" in promoted[0].SpecText
+      and "save(view, 'out.vti')" in promoted[0].SpecText, promoted[0].SpecText
+      if promoted else None)
+pr = promoted[0]
+pr.UpdatePipeline()
+check("the promoted spec reproduces the detail, in its own folder",
+      [round(v, 6) for v in pr.GetDataInformation().GetBounds()] == bounds(hd)
+      and "spec" in os.path.basename(os.path.dirname(spec_path(pr))), status(pr))
 
 print("== in the background, as the GUI runs it ==")
 os.environ["SIEVE_PV_SYNC"] = "0"

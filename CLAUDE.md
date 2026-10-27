@@ -103,6 +103,17 @@ all — as one time-aligned dataset.
 - **`provenance(filepath, spec_only=False)`** — read the derivation record an
   output carries, and check whether its source has changed since.
 
+## ParaView front end
+
+`plugins/paraview/SieveParaView.py` — Sieve Source (overview), Sieve Detail
+(the native box → `region(..., coords=)`), Sieve Spec (typed) — a thin client
+of `sieve api` (`vislang/server/api.py`, JSON in/out over the same `run_spec`,
+gates and records; specs composed by `vislang/dsl/compose.py`). Each ParaView
+session writes `.vislang/paraview/<id>/session.jsonl` — every request with its
+spec, holds, bytes, reuse and run id; `bench/replay_session.py` replays it
+(cold / warm / no-catalog / full-download) for the evaluation. →
+`instructions/paraview.md`
+
 ## The LLM lives in *this* session — no external API
 
 VisLang's LLM judgment runs on the **session model (you)**, never a separate API.

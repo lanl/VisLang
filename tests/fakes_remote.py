@@ -76,15 +76,28 @@ def install_fake_remote():
             return r.returncode, r.stdout.decode(errors="replace"), r.stderr.decode(errors="replace")
         return 1, "", f"unexpected remote command: {command}"
 
+    # Bytes are counted as the real transfer counts them (download._measured),
+    # so a run's wire_bytes means the same thing faked or real.
+    from vislang.runtime import timing
+
+    def counted(local, kind):
+        n = timing.dir_bytes(local)
+        timing.count("transfers")
+        if n:
+            timing.count("wire_bytes", n)
+            timing.count(f"wire_bytes_{kind}", n)
+
     def fake_transfer(conn, remote_path, local_path, size_warn_mb=500):
         os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
         shutil.copyfile(remote_path, local_path)
         FETCHES.append(remote_path)
+        counted(local_path, "file")
         return local_path
 
     def fake_transfer_dir(conn, remote_dir, local_dir):
         shutil.copytree(remote_dir, local_dir, dirs_exist_ok=True)   # rsync -a recurses
         FETCHES.append(remote_dir)
+        counted(local_dir, "dir")
         return local_dir
 
     for mod in (reduce, download):

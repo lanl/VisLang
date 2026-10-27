@@ -113,7 +113,13 @@ fingerprint, what came out, and a plain-words explanation of each step —
 embedded in the file where the format allows and in a companion file where it
 does not. See [instructions/provenance.md](instructions/provenance.md).
 
-Both front ends call the same engine in `vislang/server/cli_core.py`.
+**From ParaView**: load `plugins/paraview/SieveParaView.py` (Tools → Manage
+Plugins). *Sieve Source* shows a cheap overview of local or remote data; drag
+the box of a *Sieve Detail* over a feature and it arrives at full resolution;
+the time slider walks a folder's timesteps. Each step is a spec Sieve checks,
+prices, caches and records — see [instructions/paraview.md](instructions/paraview.md).
+
+Every front end calls the same engine in `vislang/server/cli_core.py`.
 
 ## Layout
 
@@ -125,7 +131,9 @@ vislang/
   output/       the sinks: render to a browser, save to disk
   remote/       ship the narrowing to the data over ssh
   runtime/      caches, tracing, timing, and the spec sandbox
-  server/       the MCP server and the sieve CLI
+  server/       the MCP server, the sieve CLI, and `sieve api` (JSON) for GUIs
+plugins/        the ParaView plugin (a thin client of `sieve api`)
+bench/          case studies, session replay, figures
 instructions/   the reference docs, also served as MCP resources
 examples/       specs to start from
 tests/          the suite; run any file directly

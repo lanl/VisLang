@@ -76,6 +76,21 @@ def main():
         print(r.stderr[-3000:])
         sys.exit(1)
 
+    # The paper's figure script draws a recorded session (overview + boxes).
+    sessions = sorted(os.path.join(tmp, "sessions", d)
+                      for d in os.listdir(os.path.join(tmp, "sessions"))
+                      if os.path.exists(os.path.join(tmp, "sessions", d, "session.jsonl")))
+    png = os.path.join(tmp, "figure.png")
+    f = subprocess.run([PVPYTHON, os.path.join(REPO, "bench", "pv_session_figure.py"),
+                        sessions[0], png, "--size", "640x480"],
+                       capture_output=True, text=True, env=env, timeout=300)
+    ok = f.returncode == 0 and os.path.exists(png) and os.path.getsize(png) > 10_000
+    print(("  ok  " if ok else "FAIL ") + "the session figure renders the overview "
+          "and its details")
+    if not ok:
+        print(f.stdout[-2000:], f.stderr[-2000:])
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

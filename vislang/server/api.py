@@ -252,7 +252,9 @@ def _summarize(res, text, spec_path):
     pipe_rec = (rec.get("pipelines") or [{}])[0]
     errors = [p["error"] for p in pipes if p.get("error")] + \
         ([res["error"]] if res.get("error") else [])
-    output = first.get("output")
+    # A spec may save to a relative path; it resolved against this process's
+    # working folder, and a client needs it absolute.
+    output = os.path.abspath(first["output"]) if first.get("output") else None
     return {"api": API,
             "status": _STATUS.get(res["status"], "error"),
             "report_status": res["status"],

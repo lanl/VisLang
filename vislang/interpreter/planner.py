@@ -500,7 +500,10 @@ def _plan_remote(src, middle, sink, terminal, dry_run, approval=None):
                     loaded, rsteps, estimate = remote_reduce(src, middle, approval)
                 else:
                     cut, rsteps, estimate = remote_reduce_tags(src, middle, approval)
-            timing.note(route="remote_reduce")
+            # A full catalog hit ships nothing and prices nothing (no
+            # estimate): keep the route remote_reduce recorded for it.
+            timing.note(route="remote_reduce" if estimate is not None
+                        else "catalog_full_hit")
             timing.note_estimate(estimate)
             steps += rsteps
             pending_compress = [n for n in middle if n.kind == "compress"]

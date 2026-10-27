@@ -361,6 +361,30 @@ class _Sieve(VTKPythonAlgorithmBase):
         self._status = "Cancelled."
         self.Modified()
 
+    @smproperty.xml('<Property name="PromoteToSpec" label="Promote To Spec" '
+                    'command="PromoteToSpec" panel_widget="command_button">'
+                    '<Documentation>Copy the spec this object last ran into a new '
+                    'Sieve Spec, to edit it freely (several boxes, a track, more '
+                    'forms).</Documentation></Property>')
+    def PromoteToSpec(self):
+        if not self._spec:
+            self._status = "Nothing to promote yet: Apply first."
+            self.Modified()
+            return
+        # The copy saves by file name alone: a Sieve Spec runs in its own step
+        # folder, so it never writes over the output it was copied from.
+        text = re.sub(r"(save\(.*?,\s*)(['\"])([^'\"]+)\2(\s*\))",
+                      lambda m: f"{m.group(1)}{m.group(2)}{os.path.basename(m.group(3))}"
+                                f"{m.group(2)}{m.group(4)}", self._spec, flags=re.S)
+        try:
+            from paraview import simple
+            proxy = simple.SieveSpec(SpecText=text)
+            simple.RenameProxy(proxy, "sources", f"Spec from {self.NAME}")
+            self._status += "\nCopied the spec into a new Sieve Spec: edit it there."
+        except Exception as e:
+            self._status += f"\nCould not create a Sieve Spec: {type(e).__name__}: {e}"
+        self.Modified()
+
     @smproperty.xml('<Property name="Prefetch" command="Prefetch" '
                     'panel_widget="command_button"><Documentation>Fetch every '
                     'timestep of a series in one request, so the time slider shows '
