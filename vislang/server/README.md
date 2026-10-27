@@ -1,10 +1,11 @@
-# `server/` — the two front doors
+# `server/` — the front doors
 
 | File | What it holds |
 |---|---|
-| `cli_core.py` | the shared engine both front ends call — all the logic lives here |
+| `cli_core.py` | the shared engine every front end calls — all the logic lives here |
 | `mcp_server.py` | the MCP tool surface, driven by an LLM session |
 | `cli.py` | the `sieve` terminal CLI, driven by a human |
+| `api.py` | `sieve api`: JSON in, JSON out, for graphical clients (the ParaView plugin) — the same `run_spec`, gates and records, reported as data |
 
 Neither front end holds logic of its own. `mcp_server.py` contributes the tool
 docstrings a model reads; `cli.py` contributes argument parsing; `cli_core.py`

@@ -231,7 +231,7 @@ def main():
                     "output": None, "materialized": False, "needs_session": True,
                     "connect_cmd": "sieve connect h", "session_reason": "no session"}
         cli_core.plan_pipeline = held_plan
-        ok, hold, _ = cli_core._run_one(object(), dry_run=False)
+        ok, hold, *_ = cli_core._run_one(object(), dry_run=False)
         check("_run_one classifies the session hold", hold == "session")
 
         spec = os.path.join(REPO, ".vislang", "test_session_spec.py")

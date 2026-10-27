@@ -7,6 +7,7 @@ a script. Only a sink (`save`, `render`) causes work.
 |---|---|
 | `forms.py` | the nine form constructors a spec may call |
 | `nodes.py` | the node types, plus the per-run sink registry |
+| `compose.py` | specs written for a front end: panel settings and a dragged box -> the spec a person would write (`region(..., coords=)` explicit) |
 | `ast_serialize.py` | AST ⇄ JSON, with the strict validator used on the wire |
 | `__init__.py` | `form_namespace()` — the dict injected into a spec's exec namespace |
 

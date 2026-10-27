@@ -39,6 +39,8 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime
 
+from vislang.runtime import events
+
 # The env knobs that change what a run does — snapshotted per run so a table row
 # carries its own configuration (which arm of an experiment it belongs to).
 _ENV_KEYS = ("VISLANG_REMOTE", "VISLANG_SRUN_JOBID", "VISLANG_SRUN_NAME",
@@ -183,6 +185,7 @@ def phase(name, **fields):
            "pipeline": _pipe["index"] if _pipe is not None else None}
     rec.update(fields)
     t0 = time.perf_counter()
+    events.emit("phase", name=rec["name"], state="start")
     try:
         yield rec
     except BaseException as e:
@@ -190,6 +193,8 @@ def phase(name, **fields):
         raise
     finally:
         rec["s"] = round(time.perf_counter() - t0, 4)
+        events.emit("phase", name=rec["name"], state="end", s=rec["s"],
+                    bytes=rec.get("bytes"))
         # Defensive: a cancelled run's finalizers can unwind against a
         # later run's freshly-reset _stack (it is module-global), which
         # would otherwise IndexError and fail every subsequent run.
@@ -221,6 +226,11 @@ def note_estimate(est):
     — the predicted half of the predicted-vs-actual table."""
     if not enabled() or _run is None or est is None:
         return
+    try:
+        import dataclasses
+        events.emit("estimate", **dataclasses.asdict(est))
+    except Exception:
+        pass
     note(est_site=getattr(est, "site", None),
          est_read_mb=getattr(est, "read_mb", None),
          est_output_mb=getattr(est, "output_mb", None),

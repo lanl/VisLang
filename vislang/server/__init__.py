@@ -1,8 +1,9 @@
-"""Two front doors onto one implementation.
+"""Front doors onto one implementation.
 
     mcp_server.py   the MCP server, driven by an LLM session
     cli.py          the `sieve` terminal CLI, driven by a human
-    cli_core.py     the shared engine both of them call
+    api.py          `sieve api`: JSON in/out for graphical clients (ParaView)
+    cli_core.py     the shared engine all of them call
 
 The split matters: a tool added to one front end but not the other is a bug, so
 neither file holds logic of its own. `mcp_server.py` contributes the tool

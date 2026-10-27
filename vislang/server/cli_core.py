@@ -260,15 +260,35 @@ def _run_one(node, dry_run, confirm=False):
                 else 'allocation' if result.get("needs_allocation")
                 else 'fetch' if result.get("needs_fetch_approval")
                 else 'confirm' if result.get("needs_confirm") else None)
-        return True, hold, format_result(result)
+        return True, hold, format_result(result), result, None
     except Exception as e:
-        return False, None, f"[{getattr(node, 'kind', '?')}] FAILED: {type(e).__name__}: {e}"
+        err = f"{type(e).__name__}: {e}"
+        return False, None, f"[{getattr(node, 'kind', '?')}] FAILED: {err}", None, err
 
 
 def do_execute(spec_path, confirm=False, force_dry=False, without_allocation=False,
                allow_fetch=False):
     """Execute (or, with force_dry, only plan+cost) the DSL spec at spec_path and
-    return the formatted execution report.
+    return the formatted execution report (run_spec's text)."""
+    return run_spec(spec_path, confirm=confirm, force_dry=force_dry,
+                    without_allocation=without_allocation,
+                    allow_fetch=allow_fetch)["report"]
+
+
+def _failed_before_run(text):
+    return {"status": "ERROR", "report": text, "pipelines": [], "run_id": None,
+            "timing": {}, "output_text": ""}
+
+
+def run_spec(spec_path, confirm=False, force_dry=False, without_allocation=False,
+             allow_fetch=False, client=None):
+    """Execute (or, with force_dry, only plan+cost) the DSL spec at spec_path.
+
+    Returns {"status", "report" (the formatted report), "pipelines": [{"ok",
+    "hold", "text", "result" (plan_pipeline's dict), "error"}], "run_id",
+    "timing" (the run's timing record), "output_text"}. `client` ({"name",
+    "session", "step"}, optional) is recorded on the timing record, so runs a
+    front end made can be grouped by session and step.
 
     force_dry=True is the `estimate` path: forms are built and static-checked
     against the source schema and the run is costed, but NOTHING is materialized
@@ -282,7 +302,7 @@ def do_execute(spec_path, confirm=False, force_dry=False, without_allocation=Fal
     # that point at the wrong thing (a binary read as UTF-8; "not found" for a
     # path that was never meant to be opened), so name the actual problem.
     if is_remote(spec_path):
-        return (f"ERROR: a spec is a LOCAL file, but this looks like a remote "
+        return _failed_before_run(f"ERROR: a spec is a LOCAL file, but this looks like a remote "
                 f"source URI:\n  {spec_path}\n\n"
                 f"The remote path goes INSIDE the spec, in source():\n"
                 f"    # spec.py\n"
@@ -294,17 +314,17 @@ def do_execute(spec_path, confirm=False, force_dry=False, without_allocation=Fal
         with open(spec_path) as f:
             spec_code = f.read()
     except FileNotFoundError:
-        return f"ERROR: spec file not found: {spec_path}"
+        return _failed_before_run(f"ERROR: spec file not found: {spec_path}")
     except (UnicodeDecodeError, IsADirectoryError) as e:
         why = ("it is a directory" if isinstance(e, IsADirectoryError)
                else "it is binary, not Python source")
-        return (f"ERROR: {spec_path} is not a spec — {why}.\n\n"
+        return _failed_before_run(f"ERROR: {spec_path} is not a spec — {why}.\n\n"
                 f"`estimate`/`execute` take a spec file (a few lines of DSL forms), "
                 f"not a data file. For a data file you want:\n"
                 f"    sieve inspect {spec_path}       # its schema, metadata only\n"
                 f"    sieve render-cost {spec_path}   # its render payload cost")
     except Exception as e:
-        return f"ERROR reading spec: {type(e).__name__}: {e}"
+        return _failed_before_run(f"ERROR reading spec: {type(e).__name__}: {e}")
 
     from vislang.runtime.trace import session_banner, log_run
     from vislang.remote.download import clear_remote_caches
@@ -326,8 +346,9 @@ def do_execute(spec_path, confirm=False, force_dry=False, without_allocation=Fal
     # One id for the run's timing record and every provenance record it writes,
     # so an output can be joined to how its run went (realization.run).
     run_id = uuid.uuid4().hex[:12]
+    extra = {"client": client} if client else {}
     with timing.run(spec_path, spec_code=spec_code, confirm=confirm,
-                    run_id=run_id) as meta, \
+                    run_id=run_id, **extra) as meta, \
             provenance.run(spec_path, spec_code=spec_code, run_id=run_id):
         reset_sinks()
         # One sampling seed per run, not per process: the MCP server is long-
@@ -344,7 +365,9 @@ def do_execute(spec_path, confirm=False, force_dry=False, without_allocation=Fal
             meta["status"] = "BUILD FAILED"
             meta["error"] = f"{type(e).__name__}: {e}"
             log_run(spec_path, report)
-            return report
+            return {"status": "BUILD FAILED", "report": report, "pipelines": [],
+                    "run_id": run_id, "timing": meta, "output_text": "",
+                    "error": f"{type(e).__name__}: {e}"}
 
         sinks = collected_sinks()
         has_sinks = bool(sinks)
@@ -358,6 +381,7 @@ def do_execute(spec_path, confirm=False, force_dry=False, without_allocation=Fal
         # Execute (or dry-run). This is where reads happen, so capture stdout here.
         buf = io.StringIO()
         results = []
+        pipelines = []
         any_failed = False
         any_budget_hold = False
         any_fetch_hold = False
@@ -369,7 +393,10 @@ def do_execute(spec_path, confirm=False, force_dry=False, without_allocation=Fal
 
         with redirect_stdout(buf), redirect_stderr(buf):
             for t in targets:
-                passed, hold, text = _run_one(t, dry_run=dry, confirm=approval)
+                passed, hold, text, result, error = _run_one(t, dry_run=dry,
+                                                             confirm=approval)
+                pipelines.append({"ok": passed, "hold": hold, "text": text,
+                                  "result": result, "error": error})
                 any_failed = any_failed or not passed
                 any_budget_hold = any_budget_hold or (hold == 'confirm')
                 any_fetch_hold = any_fetch_hold or (hold == 'fetch')
@@ -434,7 +461,8 @@ def do_execute(spec_path, confirm=False, force_dry=False, without_allocation=Fal
         parts.append(f"\n--- Output ---\n{output}")
     report = "\n".join(parts)
     log_run(spec_path, report)             # persist the full report (append) to the run log
-    return report
+    return {"status": status, "report": report, "pipelines": pipelines,
+            "run_id": run_id, "timing": meta, "output_text": output}
 
 
 def do_estimate(spec_path):

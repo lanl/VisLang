@@ -10,6 +10,7 @@ shell scripts and CI.
     sieve inspect ssh://darwin/path/to/data/     # explore a source's schema
     sieve estimate spec.py                        # static-check + cost, nothing read
     sieve execute spec.py [--confirm]             # run the reduction / transfer
+    sieve api <op> --request F --result F         # JSON interface for front ends
     sieve render-cost heptane_302x302x302.raw     # per-file render payload estimate
     sieve submit-adapter FILE adapter.py          # verify+freeze a reader you wrote
     sieve submit-binding FILE binding.json        # verify+freeze an HDF5 binding
@@ -94,11 +95,24 @@ def build_parser():
     pb.add_argument("filepath", help="the HDF5 file the binding describes")
     pb.add_argument("binding", help="path to the binding .json")
 
+    papi = sub.add_parser("api", help="machine interface for front ends: JSON in, "
+                                      "JSON out (vislang/server/api.py)")
+    papi.add_argument("op", choices=("inspect", "run", "session", "connect",
+                                     "paths", "doctor"))
+    papi.add_argument("--request", help="request JSON file ('-' reads stdin)")
+    papi.add_argument("--result", help="write the result JSON here, atomically "
+                                       "(default: stdout)")
+    papi.add_argument("--events", help="append progress events here (JSON lines)")
+
     return p
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.cmd == "api":
+        # JSON in, JSON out; the outcome lives in the result, not the exit code.
+        from vislang.server import api
+        return api.main(args.op, args.request, args.result, args.events)
     try:
         if args.cmd == "connect":
             report = do_connect(args.host, timeout=args.timeout)

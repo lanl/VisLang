@@ -6,6 +6,7 @@
 | `paths.py` | the one place that decides where caches live, plus `REPO_ROOT` |
 | `trace.py` | human-readable narration of a run → `.vislang/trace.log` |
 | `timing.py` | the same runs as data → `.vislang/timings.jsonl` |
+| `events.py` | a run's progress while it runs (estimate, phases) → `$VISLANG_EVENTS_FILE`, for a front end to follow |
 | `provenance.py` | the derivation record → into the artifact, or beside it |
 
 Spec code is **untrusted**. It is authored by a model and arrives over the same
