@@ -516,7 +516,7 @@ class SieveSource(_Sieve):
                             + (f" {tuple(r['grid'])}" if r.get("grid") else "")
                             + (f", {len(ts)} timesteps" if ts else "")
                             + f". Region coordinates: {r.get('region_text') or r['coords']}."
-                            + "\nPress Apply for the overview.")
+                            + "\nFetching the overview…")
         elif r.get("status") == "needs_session":
             self._status = ("Not connected to the remote host. Press Connect "
                             "(a password dialog opens), then Apply.")
