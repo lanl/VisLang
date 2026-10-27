@@ -29,10 +29,12 @@ Each session's `session.json` records which were in force.
 
 1. **Sieve Source** — set *Source* to a file or a folder of `…#N` timesteps:
    a path, or `ssh://host/path` / `user@host:/path`. *Apply*: the panel shows
-   what it is (grid, points, timesteps, which coordinates a region takes);
-   the overview follows on its own, at a stride that keeps it cheap (*Stride* 0
-   = automatic). Press *Reset Camera* once it arrives (ParaView framed the
-   empty first output). *Fields* and *Value Filter* (`rho > 1.5`) narrow it.
+   what it is (grid, points, timesteps, which coordinates a region takes)
+   and what an overview at the automatic stride would cost. Nothing is
+   fetched yet. Pick *Fields*, *Stride* (0 = automatic) or a *Value Filter*
+   (`rho > 1.5`) and *Apply*, or press *Fetch Overview* to take it as it is.
+   Press *Reset Camera* once it arrives (ParaView framed the empty first
+   output).
 2. **Sieve Detail** — select the overview, add the filter, drag the box over a
    feature, *Apply*: that box comes at full resolution, drawn in place. Put a
    detail under a detail to zoom again.
@@ -70,8 +72,9 @@ pvpython cannot run ParaView's live-source timer, the box widget or the
 password dialog. With the plugin loaded in the ParaView GUI:
 
 1. **Live update.** Sieve Source on a remote file (or a large local one),
-   *Apply* once: ParaView stays usable while *Status* says "Fetching — …";
-   the overview appears by itself when it arrives.
+   *Apply*: *Status* describes it and fetches nothing. *Fetch Overview*:
+   ParaView stays usable while *Status* says "Fetching — …"; the overview
+   appears by itself when it arrives.
 2. **Fields list.** After the first *Apply*, *Fields* lists the variables.
 3. **Time slider.** On a folder, the slider shows the `#N` timesteps after the
    first *Apply*; moving it shows each timestep (revisits are instant).

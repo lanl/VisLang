@@ -173,11 +173,13 @@ class _Sieve(VTKPythonAlgorithmBase):
         self._stride = 0
         self._filter = ""
         self._fields = vtkDataArraySelection()
-        self._fields.AddObserver("ModifiedEvent", lambda *a: self.Modified())
+        self._fields.AddObserver("ModifiedEvent", lambda *a: self._settings_changed())
         self._last_refresh = 0.0
         self._desc = None
         self._base = None            # this view's request, without its timestep
         self._proxy = None           # this object's server-manager proxy (GUI side)
+        self._declared = None        # the grid extent ParaView was last told
+        self._kick = False           # a button asked for a pipeline pass
         self._shown_text = None      # the (status, spec) the panel last read
 
     def _key(self, params):
@@ -194,6 +196,9 @@ class _Sieve(VTKPythonAlgorithmBase):
             self._last_refresh = time.time()
             self._status = core.status_text(self._job, showing=self._shown_label)
             changed = True                     # refresh the status text
+        if self._shown_extent() != self._declared or self._kick:
+            self._kick = False
+            changed = True                     # declare the new data's extent
         if changed:
             self.Modified()
         self._refresh_panel()
@@ -290,6 +295,28 @@ class _Sieve(VTKPythonAlgorithmBase):
     def _decorate(self, data):
         """Subclasses tag the data with what downstream filters need."""
 
+    def _shown_extent(self):
+        get = getattr(self._shown, "GetExtent", None)
+        return tuple(get()) if get else None
+
+    def _declare_extent(self, outInfo):
+        """A grid's extent must be stated in RequestInformation: ParaView's
+        surface and volume representations draw only what it says (an
+        undeclared or inherited extent draws nothing). The data arrives
+        later, so this states the data now on screen; when that changes,
+        GetNeedsUpdate asks for another pass."""
+        info = outInfo.GetInformationObject(0)
+        ext = self._shown_extent()
+        if ext is None:
+            info.Remove(SDDP.WHOLE_EXTENT())
+        else:
+            info.Set(SDDP.WHOLE_EXTENT(), *ext)
+        self._declared = ext
+
+    def RequestInformation(self, request, inInfo, outInfo):
+        self._declare_extent(outInfo)
+        return 1
+
     def _serve(self, key, request, action, outInfo, label=None):
         """Show `key`'s data: on screen already, remembered, in flight, or asked
         for now. Never fetches the same thing twice."""
@@ -352,22 +379,30 @@ class _Sieve(VTKPythonAlgorithmBase):
     def SetStride(self, v):
         if v != self._stride:
             self._stride = int(v)
-            self.Modified()
+            self._settings_changed()
+
+    def _settings_changed(self):
+        """A setting the request is built from changed (pushed by Apply)."""
+        self.Modified()
 
     @smproperty.stringvector(name="ValueFilter", default_values="")
     def SetValueFilter(self, v):
         v = (v or "").strip()
         if v != self._filter:
             self._filter = v
-            self.Modified()
+            self._settings_changed()
 
     @smproperty.doublevector(name="BudgetGB", default_values=10.0)
     def SetBudgetGB(self, v):
-        self._budget_gb = float(v)
+        if float(v) != self._budget_gb:
+            self._budget_gb = float(v)
+            self._settings_changed()
 
     @smproperty.doublevector(name="BudgetMinutes", default_values=58.0)
     def SetBudgetMinutes(self, v):
-        self._budget_min = float(v)
+        if float(v) != self._budget_min:
+            self._budget_min = float(v)
+            self._settings_changed()
 
     @smproperty.xml('<Property name="FetchAnyway" label="Fetch Anyway" '
                     'command="FetchAnyway" panel_widget="command_button">'
@@ -459,6 +494,10 @@ class SieveSource(_Sieve):
         self._positions = ""
         self._desc_job = None
         self._desc_failed = None     # the (uri, positions) a descriptor was refused for
+        # The first Apply only reads the metadata; data is fetched once the
+        # user has seen it — an Apply that changes a setting, or Fetch Overview.
+        self._armed = False
+        self._filling = False        # the plugin itself is filling the Fields list
 
     def _out_ext(self):
         return (self._desc or {}).get("out_ext", ".vti")
@@ -468,7 +507,11 @@ class SieveSource(_Sieve):
         v = (v or "").strip()
         if v != self._uri:
             self._uri, self._desc = v, None
+            self._armed = False
+            self._shown = self._shown_key = None
+            self._filling = True
             self._fields.RemoveAllArrays()
+            self._filling = False
             self.Modified()
 
     @smproperty.stringvector(name="Positions", default_values="")
@@ -476,7 +519,27 @@ class SieveSource(_Sieve):
         v = (v or "").strip()
         if v != self._positions:
             self._positions, self._desc = v, None
+            self._armed = False
             self.Modified()
+
+    def _settings_changed(self):
+        if self._desc is not None and not self._filling:
+            self._armed = True           # an Apply after the metadata: fetch
+        self.Modified()
+
+    @smproperty.xml('<Property name="FetchOverview" label="Fetch Overview" '
+                    'command="FetchOverview" panel_widget="command_button">'
+                    '<Documentation>Fetch the overview with the settings as they '
+                    'are (Apply fetches too, once a setting is changed).'
+                    '</Documentation></Property>')
+    def FetchOverview(self):
+        if self._desc is None:
+            self._status = ("Press Apply first: the source's metadata is read "
+                            "before anything is fetched.")
+        else:
+            self._armed = True
+            self._kick = True
+        self.Modified()
 
     @smproperty.xml('<Property name="Connect" command="Connect" '
                     'panel_widget="command_button"><Documentation>Open a session '
@@ -543,15 +606,17 @@ class SieveSource(_Sieve):
             self._desc = r
             have = {self._fields.GetArrayName(i)
                     for i in range(self._fields.GetNumberOfArrays())}
+            self._filling = True
             for v in r.get("variables") or []:
                 if v not in have and v not in (r.get("positions") or []):
                     self._fields.AddArray(v)
+            self._filling = False
             ts = r.get("timesteps")
             self._status = (f"{r['filetype']} {r['modality']}"
                             + (f" {tuple(r['grid'])}" if r.get("grid") else "")
                             + (f", {len(ts)} timesteps" if ts else "")
                             + f". Region coordinates: {r.get('region_text') or r['coords']}."
-                            + "\nFetching the overview…")
+                            + "\n" + _ready_text(r))
         elif r.get("status") == "needs_session" and r.get("reachable") is False:
             self._status = ((r.get("message") or "The remote host is not reachable.")
                             + ".\nNo password was asked for: it could not reach ssh. "
@@ -581,6 +646,7 @@ class SieveSource(_Sieve):
 
     def RequestInformation(self, request, inInfo, outInfo):
         self._need_descriptor()
+        self._declare_extent(outInfo)
         info = outInfo.GetInformationObject(0)
         info.Remove(SDDP.TIME_STEPS())
         info.Remove(SDDP.TIME_RANGE())
@@ -595,6 +661,8 @@ class SieveSource(_Sieve):
     def RequestData(self, request, inInfo, outInfo):
         if not self._uri or self._need_descriptor() or self._desc is None:
             return 1
+        if not self._armed:
+            return 1                     # metadata only, until the user asks
         desc = self._desc
         info = outInfo.GetInformationObject(0)
         label = None
@@ -712,6 +780,14 @@ class SieveDetail(_Sieve):
         hi = [max(p, p + l) for p, l in zip(self._pos, self._len)]
         return {"lo": lo, "hi": hi}
 
+    def RequestUpdateExtent(self, request, inInfo, outInfo):
+        # This output is fetched, not computed from the input: ask the input
+        # for all of itself, never for this output's (different) extent.
+        info = inInfo[0].GetInformationObject(0)
+        if info.Has(SDDP.WHOLE_EXTENT()):
+            info.Set(SDDP.UPDATE_EXTENT(), *info.Get(SDDP.WHOLE_EXTENT()))
+        return 1
+
     def RequestData(self, request, inInfo, outInfo):
         source = vtkDataObject.GetData(inInfo[0])
         desc = _descriptor_of(source)
@@ -783,6 +859,30 @@ class SieveDetail(_Sieve):
         _Sieve._finished(self, job)
         if getattr(self, "_box_warning", ""):
             self._status += "\n" + self._box_warning
+
+
+def _ready_text(desc):
+    """What an overview at the automatic stride would bring, before any of it
+    is fetched."""
+    s = max(1, int(desc.get("suggested_stride") or 1))
+    per = sum((desc.get("itemsizes") or {}).get(v, 0)
+              for v in desc.get("variables") or []
+              if v not in (desc.get("positions") or []))
+    if desc.get("grid"):
+        n = 1
+        for d in desc["grid"]:
+            n *= -(-int(d) // s)
+    elif desc.get("particles"):
+        n = -(-int(desc["particles"]) // s)
+    else:
+        n = 0
+    size = (f" An overview of every field at stride {s} (the automatic choice) "
+            f"would be ~{core._mb(n * per / 1024 ** 2)}"
+            + (" per timestep" if desc.get("timesteps") else "") + "."
+            if n and per else "")
+    return (f"Nothing fetched yet.{size}\n"
+            "Choose Fields, Stride or a Value Filter and press Apply, or press "
+            "Fetch Overview to take it as it is.")
 
 
 def _covers(box, bounds, tol=1e-6):

@@ -361,8 +361,17 @@ def status_text(job, result=None, showing=None):
     st = r.get("status")
     est = r.get("estimate") or {}
     if st == "ok":
-        lines = [f"Fetched: result {_mb(est.get('output_mb'))}"
+        size = est.get("output_mb")
+        if size is None:                 # a cache hit is not priced: weigh the files
+            try:
+                size = sum(os.path.getsize(f["path"]) for f in r.get("files") or []) \
+                    / 1024 ** 2 or None
+            except (OSError, KeyError, TypeError):
+                size = None
+        lines = [f"Fetched: result {_mb(size)}"
                  + (f" in {r['total_s']:.1f} s" if r.get("total_s") else "")]
+        if r.get("route") == "catalog_full_hit":
+            lines.append("Served from the cache: nothing crossed the network.")
         if r.get("wire_bytes"):
             lines.append(f"Over the wire: {_mb(r['wire_bytes'] / 1024 ** 2)}"
                          + (f" (predicted {_mb(est.get('read_mb'))}"

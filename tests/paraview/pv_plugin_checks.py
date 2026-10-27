@@ -71,8 +71,48 @@ def path(name):
     return os.path.join(DATA, name)
 
 
+def overview(**kw):
+    """A Sieve Source as a user brings it up: Apply (metadata only), then
+    Fetch Overview."""
+    src = SieveSource(**kw)
+    src.UpdatePipeline()
+    src.SMProxy.InvokeCommand("FetchOverview")
+    src.UpdatePipeline()
+    return src
+
+
+VIEW = CreateView("RenderView")
+VIEW.ViewSize = [200, 150]
+
+
+def drawn(p):
+    """Points the view actually draws for p, after the timer's next tick (the
+    pass that states the new data's extent)."""
+    if p.GetClientSideObject().GetNeedsUpdate():
+        p.SMProxy.MarkModified(p.SMProxy)
+        p.UpdatePipeline()
+    rep = Show(p, VIEW)
+    Render(VIEW)
+    n = rep.GetRepresentedDataInformation().GetNumberOfPoints()
+    Hide(p, VIEW)
+    return n
+
+
+print("== the first Apply reads metadata only ==")
+m = SieveSource(Source=path("plain.h5"))
+m.UpdatePipeline()
+check("Apply on a new source fetches nothing, and says what an overview would cost",
+      m.GetDataInformation().GetNumberOfPoints() == 0
+      and not glob.glob(os.path.join(SESSIONS, "*", "*-source-overview"))
+      and "Nothing fetched yet" in status(m) and "would be ~0.1 MB" in status(m), status(m))
+m.Stride = 4                         # the user changes a setting and Applies
+m.UpdatePipeline()
+check("the next Apply that changes a setting fetches",
+      bounds(m) == [0.0, 28.0, 0.0, 28.0, 0.0, 28.0], status(m))
+Delete(m)
+
 print("== a uniform grid with geometry: world coordinates ==")
-s = SieveSource(Source=path("cube.vti"), Stride=2)
+s = overview(Source=path("cube.vti"), Stride=2)
 check("overview spans the source (every 2nd sample)", bounds(s) == [100.0, 131.0, -4.0, 88.0, 2.0, 32.0],
       bounds(s))
 d = SieveDetail(Input=s)
@@ -87,7 +127,7 @@ check("an untouched box asks for nothing", "Drag the box" in status(d2) or
 Delete(d2)
 
 print("== a grid with no geometry: cells, placed in the source's numbering ==")
-h = SieveSource(Source=path("plain.h5"), Stride=4)
+h = overview(Source=path("plain.h5"), Stride=4)
 check("overview over the whole grid (spacing = stride)",
       bounds(h) == [0.0, 28.0, 0.0, 28.0, 0.0, 28.0], bounds(h))
 hd = SieveDetail(Input=h)
@@ -103,9 +143,11 @@ hdd = SieveDetail(Input=hd)
 hdd.BoxCorner, hdd.BoxSize = [12.0, 5.0, 3.0], [2.0, 2.0, 2.0]
 check("a detail of a detail keeps the numbering",
       bounds(hdd) == [12.0, 14.0, 5.0, 7.0, 3.0, 5.0], bounds(hdd))
+check("the view draws the overview and the details (their extents are stated)",
+      all(drawn(x) > 0 for x in (h, hd, hdd)), [drawn(x) for x in (h, hd, hdd)])
 
 print("== points ==")
-p = SieveSource(Source=path("pts.npz"))
+p = overview(Source=path("pts.npz"))
 check("points arrive as points", p.GetDataInformation().GetDataSetTypeAsString()
       .endswith("PolyData") or bounds(p)[1] > 9, bounds(p))
 pd = SieveDetail(Input=p)
@@ -116,7 +158,7 @@ check("the box keeps only the points inside it",
       and pd.GetDataInformation().GetNumberOfPoints() > 0, b)
 
 print("== a curvilinear grid ==")
-c = SieveSource(Source=path("fire.vts"))
+c = overview(Source=path("fire.vts"))
 cb = bounds(c)
 cd = SieveDetail(Input=c)
 cd.BoxCorner, cd.BoxSize = [-6.0, cb[2], cb[4]], [6.0, cb[3] - cb[2], 4.0]
@@ -125,7 +167,7 @@ check("a curvilinear detail is a structured grid around the box",
       or bounds(cd)[0] >= -6.0 - 2.0, (bounds(cd), spec(cd)))
 
 print("== time ==")
-t = SieveSource(Source=path("series"), Stride=2)
+t = overview(Source=path("series"), Stride=2)
 t.UpdatePipelineInformation()
 check("the folder's timesteps reach the time slider",
       list(t.TimestepValues) == [3.0, 4.0, 5.0], list(t.TimestepValues))
@@ -145,7 +187,7 @@ bounds(td, 5.0)
 check("a detail follows the time", float(fetch(td).PointData["rho"][0]) == 5000.0)
 
 print("== held over budget, then approved ==")
-g = SieveSource(Source=path("plain.h5"), Stride=1, BudgetGB=1e-9)
+g = overview(Source=path("plain.h5"), Stride=1, BudgetGB=1e-9)
 g.UpdatePipeline()
 check("held: nothing shown, the panel says why",
       g.GetDataInformation().GetNumberOfPoints() == 0 and "Over the" in status(g),
@@ -181,9 +223,20 @@ check("the promoted spec reproduces the detail, in its own folder",
 
 print("== in the background, as the GUI runs it ==")
 os.environ["SIEVE_PV_SYNC"] = "0"
-a = SieveSource(Source=path("cube.vti"), Stride=4)
+a = SieveSource(Source=path("cube.vti"), Stride=2)
 a.UpdatePipeline()
 algo = a.GetClientSideObject()
+t0 = time.time()
+while time.time() - t0 < 60 and algo._desc is None:
+    if algo.GetNeedsUpdate():
+        a.SMProxy.MarkModified(a.SMProxy)
+        a.UpdatePipeline()
+    time.sleep(0.1)
+check("in the background too, the first Apply stops at the metadata",
+      a.GetDataInformation().GetNumberOfPoints() == 0 and "Nothing fetched" in status(a),
+      status(a))
+a.Stride = 4                         # Apply with a changed setting
+a.UpdatePipeline()
 t0 = time.time()
 while time.time() - t0 < 60:
     if algo.GetNeedsUpdate():
@@ -199,7 +252,7 @@ check("the result arrives through GetNeedsUpdate, without blocking the update",
 os.environ["SIEVE_PV_SYNC"] = "1"
 
 print("== prefetching a series ==")
-pf = SieveSource(Source=path("series"), Stride=4)
+pf = overview(Source=path("series"), Stride=4)
 bounds(pf, 3.0)
 pf.SMProxy.InvokeCommand("Prefetch")
 pf.UpdatePipeline(3.0)
@@ -225,7 +278,7 @@ if FAKE:
     print("== a remote source (simulated host) ==")
     import SieveParaView as plugin
     plugin._runner().sieve_cmd = FAKE
-    r = SieveSource(Source=f"u@fakehost:{path('plain.h5')}", Stride=4)
+    r = overview(Source=f"u@fakehost:{path('plain.h5')}", Stride=4)
     check("a remote overview, read next to the data",
           bounds(r) == [0.0, 28.0, 0.0, 28.0, 0.0, 28.0], status(r))
     rd = SieveDetail(Input=r)
