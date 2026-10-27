@@ -29,7 +29,9 @@ with no sink is a **dry run** — you get the inferred plan, nothing is read.
 ## The forms (available in a spec with no imports)
 
 `source(uri, positions=None)` · `fields(node, keep)` · `region(node, x=(a,b), …)`
-(or by centre: `region(node, center=…, size=s)`, box = centre ± size/2, where
+— in the data's own coordinates, the ones ParaView shows (world on points and on
+a grid that states its origin/spacing or points; cells on a grid that does not);
+`coords="world"|"cells"` pins them — (or by centre: `region(node, center=…, size=s)`, box = centre ± size/2, where
 `center` is `(x,y[,z])` — stays put, on a file or every timestep — or rows
 `[(step, x,y[,z][, size]), …]` — a box per timestep, a row's size overriding
 `size=` — or `"f.csv"` with those columns; several **named boxes** with

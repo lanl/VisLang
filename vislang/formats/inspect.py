@@ -184,6 +184,11 @@ def _build_remote_info(uri, meta, positions):
         info.positions = positions
     elif not getattr(info, "positions", None):
         info.positions = _auto_positions(info)
+    # Where the grid sits; a remote checkout older than this report says
+    # nothing, which is not the same as "index space".
+    from vislang.formats.dataset_info import geometry_from_descriptor
+    info.geometry = geometry_from_descriptor(schema.get("geometry"))
+    info.geometry_known = "geometry" in schema
     return info
 
 

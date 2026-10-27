@@ -4,6 +4,7 @@
 |---|---|
 | `planner.py` | `plan_pipeline` — site dispatch, static check, lowering, fusion, execution |
 | `narrowing.py` | the selection primitives: `Narrowing`, `AxisRange`, `Predicate`, `BBox`, row masks |
+| `coords.py` | which coordinates a `region` is in (the data's own, or `coords=`), and a grid's world box rewritten as the cells it selects — so everything after it sees cells on grids |
 | `track.py` | per-timestep regions and named boxes: reads a track file at planning time, checks centre coverage (or, for named boxes, which tag runs where) before any read, and turns one timestep's centre into a concrete box |
 | `load.py` | the universal load/materialize path, driven by a `Narrowing`; `materialize_boxes` cuts several boxes of one file from a single read where the format would read the whole file per box anyway |
 | `subset.py` | metadata-only narrowing — trims the schema, reads nothing |

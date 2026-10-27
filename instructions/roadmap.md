@@ -40,10 +40,6 @@ never **resamples** (grid↔points is a computation, not a format change).
 ## Remaining work (staged)
 Forms that parse and static-check but aren't materialized yet (they raise a clear
 message), and known optimizations:
-- **World-space `region`** on grids (physical coords via origin/spacing/extent) —
-  index-space works today. `DatasetInfo.geometry` now carries the origin/spacing
-  this needs, so it is a converter in front of `AxisRange`, not a change to the
-  physical layer. Keep `AxisRange` interpretation-agnostic.
 - **VTK extent pushdown**: the XML readers support `UpdateExtent`, so a region
   could push into the read instead of read-full-then-slice. Until then
   `VTKAdapter.supports_strided_read` stays False and `VTK` stays out of
@@ -70,7 +66,7 @@ message), and known optimizations:
 
 ## Per-timestep regions — v1 realized
 `region(series, center=[(N, x, y, z[, size]), …] | "f.csv", size=S)` cuts each timestep with
-its own box (centre ± size/2, index space on grids, world space on points),
+its own box (centre ± size/2, in the data's own coordinates — see `region`),
 checked for coverage before any read and recorded per timestep in provenance.
 Follow-ups:
 - **Non-`#N` timeseries naming**: the wildfire run (`output.N.vts`) and HACC

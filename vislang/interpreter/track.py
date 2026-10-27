@@ -206,7 +206,7 @@ def tag_view(node, tag):
     for t, size, rows, step_sizes in node.tags:
         if t == tag:
             return RegionNode(upstream=node.upstream, centers=rows, size=size,
-                              step_sizes=step_sizes)
+                              step_sizes=step_sizes, coords=node.coords)
     raise KeyError(tag)
 
 
@@ -325,7 +325,8 @@ def box_for_step(node, label, grid=None):
         if (clo, chi) != (lo, hi):
             clipped.append(axis)
         ranges.append((axis, clo, chi))
-    return RegionNode(upstream=node.upstream, ranges=tuple(ranges)), clipped
+    return (RegionNode(upstream=node.upstream, ranges=tuple(ranges),
+                       coords=node.coords), clipped)
 
 
 def _size_text(size):

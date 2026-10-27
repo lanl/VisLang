@@ -211,7 +211,10 @@ def test_record_grid():
     check("input_fields", set(inp["fields"]) == {"rho", "T"}, inp["fields"])
     check("input_fingerprint", inp["fingerprint"] == provenance.file_fingerprint(src))
     check("no_parent_link_for_plain_source", "derived_from" not in inp)
-    check("no_resolved_when_nothing_open", "resolved" not in lg)
+    # region() left coords= open: the record says how its numbers were read
+    # (this HDF5 grid states no geometry, so cells) — and nothing else.
+    check("resolved_says_only_the_open_coords",
+          lg.get("resolved") == {"region_coords": "cells"}, lg.get("resolved"))
 
     out_ = lg["output"]
     check("output_shape", out_["fingerprint"]["shape"] == [16, 32, 32], out_)

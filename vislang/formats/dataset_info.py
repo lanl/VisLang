@@ -156,6 +156,139 @@ def geometry_from_arrays(arrays):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Geometry in a schema: what inspect can say without reading bulk data
+# ---------------------------------------------------------------------------
+# A schema travels as JSON (the remote inspect report, the extent catalog), so
+# it carries the geometry's description, never the points themselves:
+#   None                                   index space — the file states none
+#   {"kind": "uniform", origin, spacing}   complete: origin + spacing ARE it
+#   {"kind": "structured"}                 the points exist; they are bulk data
+def geometry_descriptor(geometry):
+    """The JSON-safe description of `geometry` for a schema (see above)."""
+    if not geometry:
+        return None
+    if geometry.get("kind") == "uniform":
+        return {"kind": "uniform", "origin": [float(v) for v in geometry["origin"]],
+                "spacing": [float(v) for v in geometry["spacing"]]}
+    if geometry.get("kind") == "structured":
+        return {"kind": "structured"}
+    return None
+
+
+def geometry_from_descriptor(desc):
+    """Inverse of geometry_descriptor: a geometry dict (a structured one with
+    its points still to be read), or None for index space."""
+    if not isinstance(desc, dict):
+        return None
+    if desc.get("kind") == "uniform":
+        return uniform_geometry(desc.get("origin"), desc.get("spacing"))
+    if desc.get("kind") == "structured":
+        return structured_pending()
+    return None
+
+
+# ---------------------------------------------------------------------------
+# World coordinates -> cells: how a region in the data's own coordinates
+# becomes the index crop the read layer takes
+# ---------------------------------------------------------------------------
+# A grid sample sits where narrowed_geometry and every writer put it: uniform
+# sample i at origin + i * spacing, a structured sample at its listed point.
+# A world box keeps the samples whose position lies inside it, bounds
+# INCLUSIVE — the rule a particle region already applies to its rows, so one
+# box means the same thing on every kind of data.
+_WORLD_EPS = 1e-9
+
+
+def world_box_to_cells(geometry, grid, box):
+    """The index block a world-coordinate box selects on a grid.
+
+    `box` is {world axis 0|1|2: (lo, hi)}, either bound None for open. Returns
+    ({index axis: (start, stop)}, clipped) — `stop` exclusive, only the index
+    axes the box narrows — where `clipped` names the world axes whose bound
+    reached past the grid's own extent (clipped to it, as a particle box is).
+    Raises ValueError when no sample lies inside, and when the geometry cannot
+    answer (none, or a structured grid whose points are not read yet).
+
+    Uniform: exact, per axis. Structured (terrain-following, …): the smallest
+    block of cells holding every point inside the box — a block that may also
+    hold points outside it, since a curved grid's rows do not follow the box."""
+    if not geometry:
+        raise ValueError("this grid does not say where it sits in space")
+    grid = tuple(int(n) for n in grid)
+    if geometry.get("kind") == "uniform":
+        return _uniform_box_to_cells(geometry, grid, box)
+    if geometry.get("kind") == "structured":
+        if geometry.get("points") is None:
+            raise ValueError("this grid's point positions are not read yet")
+        return _structured_box_to_cells(np.asarray(geometry["points"]), grid, box)
+    raise ValueError(f"unknown geometry kind {geometry.get('kind')!r}")
+
+
+def _uniform_box_to_cells(geometry, grid, box):
+    origin, spacing = geometry["origin"], geometry["spacing"]
+    cells, clipped = {}, []
+    for axis, (lo, hi) in sorted(box.items()):
+        if axis >= len(grid):
+            raise ValueError(f"axis {'xyz'[axis]} is not one of this "
+                             f"{len(grid)}-D grid's axes")
+        o, s, n = float(origin[axis]), float(spacing[axis]), grid[axis]
+        if s == 0:
+            raise ValueError(f"axis {'xyz'[axis]}: grid spacing is 0")
+        first, last = o, o + (n - 1) * s                  # sample positions
+        dlo, dhi = min(first, last), max(first, last)     # the axis' extent
+        if (lo is not None and lo < dlo) or (hi is not None and hi > dhi):
+            clipped.append("xyz"[axis])
+        # Sample i is inside when lo <= o + i*s <= hi; a negative spacing
+        # walks the axis backwards, which swaps which bound gives the first i.
+        t_lo = -np.inf if lo is None else (lo - o) / s
+        t_hi = np.inf if hi is None else (hi - o) / s
+        if s < 0:
+            t_lo, t_hi = t_hi, t_lo
+        start = max(0, int(np.ceil(t_lo - _WORLD_EPS)) if np.isfinite(t_lo) else 0)
+        stop = min(n, int(np.floor(t_hi + _WORLD_EPS)) + 1 if np.isfinite(t_hi) else n)
+        if start >= stop:
+            raise ValueError(
+                f"the box on {'xyz'[axis]} ({_bound(lo)}, {_bound(hi)}) holds no "
+                f"grid sample; this grid spans {dlo:g} to {dhi:g} on {'xyz'[axis]}")
+        cells[axis] = (start, stop)
+    return cells, clipped
+
+
+def _structured_box_to_cells(points, grid, box):
+    if points.shape[:-1] != grid:
+        raise ValueError(f"the grid's points {points.shape[:-1]} do not match "
+                         f"its shape {grid}")
+    inside = np.ones(grid, dtype=bool)
+    clipped = []
+    for axis, (lo, hi) in sorted(box.items()):
+        if axis > 2:
+            raise ValueError(f"world axis {axis} is not one of x, y, z")
+        coord = points[..., axis]
+        if (lo is not None and lo < coord.min()) or (hi is not None and hi > coord.max()):
+            clipped.append("xyz"[axis])
+        if lo is not None:
+            inside &= coord >= lo
+        if hi is not None:
+            inside &= coord <= hi
+    if not inside.any():
+        spans = ", ".join(f"{'xyz'[a]} {points[..., a].min():g} to "
+                          f"{points[..., a].max():g}" for a in sorted(box))
+        raise ValueError(f"the box holds no grid point; this grid spans {spans}")
+    cells = {}
+    for axis in range(len(grid)):
+        other = tuple(a for a in range(len(grid)) if a != axis)
+        hits = np.flatnonzero(inside.any(axis=other))
+        start, stop = int(hits[0]), int(hits[-1]) + 1
+        if (start, stop) != (0, grid[axis]):
+            cells[axis] = (start, stop)
+    return cells, clipped
+
+
+def _bound(v):
+    return "open" if v is None else f"{v:g}"
+
+
 class DatasetInfo:
     """Container for dataset metadata and optionally loaded data."""
     
@@ -206,6 +339,12 @@ class DatasetInfo:
         # what makes save(..., '.vti') land in the right place.
         self.geometry = None
 
+        # False only for a stand-in built from a schema that predates geometry
+        # (an old catalog entry): there `geometry = None` means "not reported",
+        # not "index space", so a region's coordinates cannot be decided from
+        # it. Every inspect of a real file leaves this True.
+        self.geometry_known = True
+
         # Pending narrowing recorded by subset() (metadata only, applied by load).
         # Projection trims `variables` directly; only the slice policy needs a
         # field, since "stride to 64 cells" is a how-to-read directive, not a
@@ -217,6 +356,32 @@ class DatasetInfo:
         self.loaded = False
         self.selection_info = {}
     
+    def _region_coords_text(self):
+        """What a region()'s numbers mean on this data — the line an author
+        needs to write one in the coordinates ParaView will show."""
+        grid = (self.dimensions or {}).get("grid")
+        if self.positions or "particles" in (self.dimensions or {}):
+            return "world (the position variables)"
+        if not grid:
+            return None
+        geometry = self.geometry
+        if not geometry:
+            if not self.geometry_known:
+                return None
+            return ("cells — the file does not say where the grid sits, so "
+                    "its world coordinates are its indices")
+        if geometry.get("kind") == "uniform":
+            o, s = geometry["origin"], geometry["spacing"]
+            spans = ", ".join(
+                f"{'xyz'[a]} {min(o[a], o[a] + (n - 1) * s[a]):g} to "
+                f"{max(o[a], o[a] + (n - 1) * s[a]):g}"
+                for a, n in enumerate(grid[:len(o)]))
+            return (f"world — origin {tuple(o)}, spacing {tuple(s)}; spans "
+                    f"{spans} (coords='cells' for indices)")
+        return ("world — each grid point's position is listed (curvilinear); "
+                "a box selects the smallest block of cells holding it "
+                "(coords='cells' for indices)")
+
     def __str__(self):
         output = []
         output.append(f"File: {self.filepath}")
@@ -234,6 +399,10 @@ class DatasetInfo:
 
         if self.positions:
             output.append(f"\nCoordinates: {self.positions}")
+
+        region_line = self._region_coords_text()
+        if region_line:
+            output.append(f"\nregion() coordinates: {region_line}")
 
         if self.selected_dimensions:
             output.append(f"\nPending dimension selection (applied by load):")

@@ -398,7 +398,8 @@ def test_reader():
     from vislang.interpreter.planner import plan_pipeline
     reset_sinks()
     out = os.path.join(TMP, "spec_roi.vti")
-    res = plan_pipeline(save_form(region(source(vti), x=(1, 3)), out), dry_run=False)
+    res = plan_pipeline(save_form(region(source(vti), x=(1, 3), coords="cells"), out),
+                        dry_run=False)
     back = pv.read(res["output"])
     check("spec_roi_dimensions", tuple(back.dimensions) == (2, 4, 5), back.dimensions)
     check("spec_roi_origin_is_the_cut", tuple(back.origin) == (1.5, 2.0, 3.0),

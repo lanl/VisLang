@@ -56,7 +56,8 @@ import numpy as np
 import vislang.runtime.timing as timing        # per-phase seconds/bytes -> timings.jsonl
 import vislang.runtime.provenance as provenance  # the derivation record -> the artifact
 from vislang.formats.dataset_info import (DatasetInfo, GEOMETRY_KEY, decode_geometry,
-                                          encode_geometry, geometry_from_arrays)
+                                          encode_geometry, geometry_from_arrays,
+                                          geometry_from_descriptor)
 from vislang.remote.catalog import ExtentCatalog, make_source_id
 from vislang.remote.download import (establish_connection, transfer, transfer_dir,
                          _parse_remote, remote_stat, remote_header_hash, run_remote,
@@ -370,15 +371,26 @@ def _narrow_key(middle, label=None):
             at = box_at(n, label)
             if at is None:
                 raise ValueError(f"region: no centre for timestep #{label}")
-            forms.append(["region_at", list(at[0]), list(at[1])])
+            forms.append([_region_form(n, "region_at"), list(at[0]), list(at[1])])
         elif n.kind == "region":
-            forms.append(["region", [[a, lo, hi] for a, lo, hi in n.ranges]])
+            forms.append([_region_form(n, "region"),
+                          [[a, lo, hi] for a, lo, hi in n.ranges]])
         elif n.kind == "subsample":
             forms.append(["subsample", n.uniform,
                           [[a, f] for a, f in (n.per_axis or ())]])
         elif n.kind == "threshold":
             forms.append(["threshold", n.var, n.op, n.value])
     return {"forms": forms}
+
+
+def _region_form(n, name):
+    """The key's name for a region: the plain name only for a box in cells —
+    the one form the catalog may slice a cached superset for, and the form every
+    key held before world coordinates existed. A world box (or one whose
+    coordinates are not decided yet) is named apart, so it can never be served
+    a cached cell box that happens to share its numbers; it reuses an exact
+    match only."""
+    return {"cells": name, "world": f"{name}_world"}.get(n.coords, f"{name}_auto")
 
 
 def delta_key(label, tag, var):
@@ -404,6 +416,9 @@ def _stale_remote_hint(detail):
     """A remote checkout older than named boxes rejects their plan or manifest;
     say how to fix that rather than leaving a validator message to decode."""
     text = str(detail)
+    if "unknown ['coords']" in text:
+        return (f"{text} — the remote checkout predates region(coords=…); update "
+                f"it: git pull in VISLANG_REMOTE_REPO")
     if "unknown ['tags']" in text or "has no attribute 'items'" in text:
         return (f"{text} — the remote checkout predates named boxes "
                 f"(region(center={{tag: …}})); update it: git pull in "
@@ -554,7 +569,27 @@ def _info_from_schema(uri, schema):
                        itemsizes=dict((schema or {}).get("itemsizes") or {}))
     info.positions = (tuple(schema["positions"])
                       if (schema or {}).get("positions") else None)
+    # Where the grid sits, as the remote inspect described it. A schema stored
+    # before that was reported says nothing either way — not "index space".
+    info.geometry = geometry_from_descriptor((schema or {}).get("geometry"))
+    info.geometry_known = "geometry" in (schema or {})
     return info
+
+
+def _resolve_on_host(src, prefix, schema, steps, convert=True):
+    """`prefix` with each region's coordinates decided from the schema the
+    remote reported and, where that schema places it (a uniform grid), a world
+    box rewritten in cells — before the catalog key is built and the plan
+    ships, so a box in cells is keyed, reused and cut as one always was. What
+    the schema cannot place (a curvilinear grid's points are bulk data) ships
+    as written and is resolved next to the data. `convert=False` (a series)
+    decides without converting: each file places a world box on its own
+    geometry."""
+    if not schema:
+        return prefix
+    from vislang.interpreter.coords import resolve_regions
+    return resolve_regions(_info_from_schema(src.uri, schema), prefix, steps,
+                           read_points=False, convert=convert)
 
 
 def _check_before_shipping(src, prefix, schema, steps, label=None):
@@ -742,21 +777,23 @@ def remote_reduce_tags(src, middle, confirm=False):
     from vislang.runtime.paths import cache_root
     steps = []
     prefix, _compresses = _split_middle(middle)
-    tagged = tagged_region(prefix)
-    tags = tag_names(tagged)
-    prefixes = {t: for_tag(prefix, t) for t in tags}
-    narrow_prefix = [n for n in prefix if n.kind != "fields"]
+    tags = tag_names(tagged_region(prefix))
     conn, host, remote_path, size, sid = _probe(src, steps)
     timing.note(tags=len(tags), boxes=len(tags))
 
     catalog = ExtentCatalog(cache_root())
-    keys = {t: _narrow_key(prefixes[t]) for t in tags}
     project = _projection_of(prefix)
     schema = catalog.schema(sid)
     timing.note(schema_cached=schema is not None)
     if schema is None:
         with timing.phase("login_node_inspect"):
             schema = _prime_schema(conn, remote_path, catalog, sid, steps)
+    # The boxes in the file's own coordinates before they are keyed (see
+    # remote_reduce).
+    prefix = _resolve_on_host(src, prefix, schema, steps)
+    prefixes = {t: for_tag(prefix, t) for t in tags}
+    narrow_prefix = [n for n in prefix if n.kind != "fields"]
+    keys = {t: _narrow_key(prefixes[t]) for t in tags}
     want = project if project is not None else (
         list(schema["variables"]) if schema else None)
     have, missing = {}, {}
@@ -821,6 +858,10 @@ def remote_reduce_tags(src, middle, confirm=False):
             manifest, steps, what=f"{len(need)} named box(es)", n_timesteps=1)
         schema = _keep_attributes(meta.get("schema"), schema)
         catalog.store_schema(sid, _catalog_schema(schema))
+        # Settle any region the missing schema left undecided (see remote_reduce).
+        prefix = _resolve_on_host(src, prefix, schema, [])
+        prefixes = {t: for_tag(prefix, t) for t in tags}
+        keys = {t: _narrow_key(prefixes[t]) for t in tags}
         for k, arr in bundle.items():
             _, t, var = split_delta_key(k, True)
             fetched[t][var] = arr
@@ -881,7 +922,6 @@ def remote_reduce(src, middle, confirm=False):
     # --- catalog delta: fetch only what we don't already hold -----------------
     from vislang.runtime.paths import cache_root
     catalog = ExtentCatalog(cache_root())
-    key = _narrow_key(prefix)
     project = _projection_of(prefix)
     schema = catalog.schema(sid)
     timing.note(schema_cached=schema is not None)
@@ -891,6 +931,10 @@ def remote_reduce(src, middle, confirm=False):
         # it an unprojected spec can't be diffed against the catalog either.
         with timing.phase("login_node_inspect"):
             schema = _prime_schema(conn, remote_path, catalog, sid, steps)
+    # Regions in the file's own coordinates, decided BEFORE the key: the key
+    # (and the shipped plan) must say which cells a world box means.
+    prefix = _resolve_on_host(src, prefix, schema, steps)
+    key = _narrow_key(prefix)
     want = project if project is not None else (
         list(schema["variables"]) if schema else None)
 
@@ -949,6 +993,11 @@ def remote_reduce(src, middle, confirm=False):
         meta, pulled = _run_remote_prefix(conn, remote_path, src, prefix, fetch, steps)
         schema = _keep_attributes(meta["schema"], schema)
         catalog.store_schema(sid, _catalog_schema(schema))
+        # A region this side could not decide (no schema yet) was decided next
+        # to the data; the schema that came back decides it here the same way,
+        # so the extent is stored under the key the next run will look for.
+        prefix = _resolve_on_host(src, prefix, schema, [])
+        key = _narrow_key(prefix)
         # The reducer's .npz holds the cut's geometry under reserved keys.
         fetched = {k: a for k, a in pulled.items() if not k.startswith("sieve_")}
         for var, arr in fetched.items():
@@ -1160,8 +1209,6 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         tags, prefixes = [None], {None: prefix}
     # The unit of work: one per timestep, or one per (timestep, named box).
     units = [(label, t) for label in plan for t in plan[label]]
-    # Ordered, fields-independent; one per timestep (and box) when the region moves.
-    keys = {(label, t): _narrow_key(prefixes[t], label) for label, t in units}
     unit = "(timestep,variable)" if tagged is None else "(box,variable)"
     timing.note(source_bytes=int(sum(f[2] for f in files)),
                 selected_timesteps=len(files))
@@ -1194,6 +1241,16 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
         project = list(schema0["variables"])
         steps.append(f"no fields() — every variable of the series: {project}")
     request = _with_geometry(project, known)
+
+    # Regions in the series' own coordinates, decided from timestep 0's schema
+    # but NOT converted: each file places a world box on its own geometry, next
+    # to the data. Then the keys — ordered, fields-independent, one per
+    # timestep (and box) when the region moves.
+    prefix = _resolve_on_host(src, prefix, known, steps, convert=False)
+    narrow_prefix = [n for n in prefix if n.kind != "fields"]
+    prefixes = ({t: for_tag(prefix, t) for t in tags} if tagged is not None
+                else {None: prefix})
+    keys = {(label, t): _narrow_key(prefixes[t], label) for label, t in units}
 
     # --- catalog delta per timestep (local, no network) ----------------------
     have, missing = {}, {}                              # unit -> cached {var: arr} / [vars]
@@ -1270,6 +1327,11 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
             conn, _rebuild_delta_source(remote_dir, src.positions, narrow_prefix),
             manifest, steps, what=f"delta {union_missing}", n_timesteps=len(fetch_labels))
         schema = _keep_attributes(meta.get("schema"), schema0)
+        # Settle any region the missing schema left undecided (see remote_reduce).
+        prefix = _resolve_on_host(src, prefix, schema, [], convert=False)
+        prefixes = ({t: for_tag(prefix, t) for t in tags} if tagged is not None
+                    else {None: prefix})
+        keys = {(label, t): _narrow_key(prefixes[t], label) for label, t in units}
         total = 0
         for k, arr in bundle.items():                   # keys from delta_key
             label, t, var = split_delta_key(k, tagged is not None)

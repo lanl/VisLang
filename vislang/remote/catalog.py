@@ -51,7 +51,8 @@ _EXTENT_DIR = "extents"
 #   2  + attributes (GenericIO phys_scale/dtypes; needed to write the format back)
 #   3  same shape; v2 entries written after a remote reduce lost `attributes`
 #      (the reducer's report omitted them and overwrote the login-node schema)
-SCHEMA_VERSION = 3
+#   4  + geometry (where a grid sits; decides how a region's numbers are read)
+SCHEMA_VERSION = 4
 _SCHEMA_VERSION_KEY = "schema_version"
 
 

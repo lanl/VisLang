@@ -72,6 +72,12 @@ def _jsonable_attrs(attributes):
     return out
 
 
+def _geometry_desc(info):
+    """The schema's description of where `info`'s grid sits (no points)."""
+    from vislang.formats.dataset_info import geometry_descriptor
+    return geometry_descriptor(getattr(info, "geometry", None))
+
+
 def _inspect_report(path):
     """Metadata-only inspect on the remote (no bulk read, no data shipped): print
     the schema meta between the sentinels. For HDF5 the raw schema tree is
@@ -111,6 +117,9 @@ def _inspect_report(path):
             # remote_reduce._catalog_schema strips it before store_schema.
             "itemsizes": {k: int(v) for k, v in (info.itemsizes or {}).items()},
             "filetype": info.filetype,
+            # Where the grid sits (origin + spacing, or "points listed") — what
+            # the caller needs to read a region in the file's own coordinates.
+            "geometry": _geometry_desc(info),
         },
         "schema_tree": schema_tree,
     }
@@ -205,6 +214,9 @@ def _run_single(text, out):
             # attributes out erased GenericIO's phys_scale/dtypes from the catalog
             # and the loaded result — and a .gio save of it then refused.
             "attributes": _jsonable_attrs(info.attributes),
+            # Likewise the geometry: without it the next run could not tell a
+            # world region from a cell one.
+            "geometry": _geometry_desc(info),
         },
         "steps": result["steps"],
         "saved_variables": saved,
@@ -330,7 +342,8 @@ def _run_folder_delta(text, manifest_path, outdir):
                           "dimensions": dict(info.dimensions or {}),
                           "positions": list(info.positions) if info.positions else None,
                           "filetype": info.filetype,
-                          "attributes": _jsonable_attrs(info.attributes)}
+                          "attributes": _jsonable_attrs(info.attributes),
+                          "geometry": _geometry_desc(info)}
             grid = "grid" in (info.dimensions or {})
             units = []                       # (tag, keep, columns to read, send geometry)
             for tag, keep in pieces:

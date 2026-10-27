@@ -53,6 +53,10 @@ class RegionNode(Node):
     # `track_sha` its hash; the planner inlines the rows before any read, so
     # the plan carries data, never a path the remote cannot see. `tag_sizes`
     # holds a `size={tag: …}` until a track file's tags are known.
+    #
+    # `coords` says which coordinates every number above is in: "world" (where
+    # the samples sit in space), "cells" (grid indices), or None — the data's
+    # own, decided by the planner from the file (interpreter/coords.py).
     upstream: Node
     ranges: tuple = ()
     centers: tuple = ()
@@ -62,6 +66,7 @@ class RegionNode(Node):
     track_sha: str = None
     tags: tuple = ()
     tag_sizes: tuple = ()
+    coords: str = None
     kind = "region"
 
     @property

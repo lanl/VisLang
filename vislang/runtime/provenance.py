@@ -396,6 +396,47 @@ def note_resolved_regions(regions):
         pass
 
 
+def note_region_coords(modes):
+    """Fill in how each region's numbers were read — `coords` "world" or
+    "cells" — on the stashed plan's region steps, so a record of a spec that
+    left it open still says it, and re-running that record reads them the same
+    way whatever the defaults or readers become. `modes` holds the decision for
+    each of the chain's regions, in written order; None (an old schema could
+    not tell) leaves that step as written."""
+    if _pipe is None or not _pipe.get("plan"):
+        return
+    try:
+        steps = [s for s in _pipe["plan"].get("chain") or []
+                 if s.get("kind") == "region"]
+        if len(steps) != len(modes):
+            return
+        filled = []
+        for st, mode in zip(steps, modes):
+            if mode is not None and "coords" not in st:
+                st["coords"] = mode
+                filled.append(mode)
+        if filled:
+            _pipe["region_coords"] = filled
+    except Exception:
+        pass
+
+
+def note_region_cells(world, cells, clipped=()):
+    """A grid region given in world coordinates and the cells it selected
+    ({axis: [lo, hi]} as written -> {axis: [start, stop)}): realization, kept
+    beside the spec's own numbers."""
+    if _pipe is None:
+        return
+    try:
+        entry = {"world": world, "cells": cells,
+                 **({"clipped": list(clipped)} if clipped else {})}
+        found = _pipe.setdefault("region_cells", [])
+        if entry not in found:
+            found.append(entry)
+    except Exception:
+        pass
+
+
 def note_columns_from(groups):
     """How each output column arrived: {group: {columns, ...}} — `cache`,
     `remote`, `local`, `fetched_whole_file`. Realization, not logic."""
@@ -584,11 +625,20 @@ def _tagged_lines(step, tag, grid, labels):
     more = [("  one of " + (f"{len(names)} named boxes in the spec" if names
                             else "the named boxes in the spec")
              + (f" (the others: {_names(others)})" if others else "")),
-            f"  {src}; " + ("index space, clipped to the grid" if grid
-                            else "world coordinates")
+            f"  {src}; " + _centre_space(step, grid)
             + ("; the box per timestep is under resolved.region_boxes" if labels
                else "; the box is under resolved.region_box")]
     return head, more
+
+
+def _centre_space(step, grid):
+    """How a centre-placed region's numbers were read, for its explanation."""
+    if not grid:
+        return "world coordinates"
+    if step.get("coords") == "world":
+        return ("world coordinates, placed on the file's geometry and clipped "
+                "to the grid")
+    return "index space, clipped to the grid"
 
 
 def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
@@ -627,9 +677,14 @@ def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
                    if step.get("track") else
                    f"{len(step.get('centers') or [])} centres given in the spec")
             more = [f"  {src}; "
-                    + ("index space, clipped to the grid" if grid
-                       else "world coordinates")
+                    + _centre_space(step, grid)
                     + "; the box per timestep is under resolved.region_boxes"]
+        elif kind == "region" and grid and step.get("coords") == "world":
+            head = "keep the samples inside the box (world coordinates, bounds inclusive)"
+            more = [f"  {a} between {_num(lo)} and {_num(hi)}"
+                    for a, lo, hi in step.get("ranges") or []]
+            more.append("  placed on the file's geometry; the cells it selected "
+                        "are under resolved.region_cells")
         elif kind == "region":
             ranges = step.get("ranges") or []
             if grid:
@@ -922,6 +977,14 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
     tracks = _pipe.get("region_track") or []
     if tracks:
         resolved["region_track"] = tracks[0] if len(tracks) == 1 else tracks
+    filled = _pipe.get("region_coords") or []
+    if filled:
+        # The spec left coords= open; this is how its numbers were read, so a
+        # re-run of this record can pin it.
+        resolved["region_coords"] = filled[0] if len(filled) == 1 else filled
+    cells = _pipe.get("region_cells") or []
+    if cells:
+        resolved["region_cells"] = cells[0] if len(cells) == 1 else cells
 
     # --- output ------------------------------------------------------------
     # The same keys, in the same order, as `input`: format, fields, then the

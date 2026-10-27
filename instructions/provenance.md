@@ -56,7 +56,10 @@ template per form, so a checker can rebuild them and compare.
 
 - `fields` names what it dropped.
 - `region` gives each axis's bounds: inclusive, in world coordinates, for
-  points; index ranges for a grid.
+  points and for a grid read in world coordinates; index ranges for a grid read
+  in cells. When the spec left `coords=` open, `resolved.region_coords` says how
+  the numbers were read (`world` or `cells`), so a re-run can pin it; a world
+  box on a grid also lists the cells it selected under `resolved.region_cells`.
 - A named box (`region(center={tag: …})`) says which box the output is and
   names its siblings. Each tag's output is its own artifact with its own
   record: `resolved.region_tag` holds the tag, and `resolved.region_boxes`

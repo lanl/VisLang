@@ -29,19 +29,48 @@ supported — pick a single timestep or use `save`.
 Keep only `keep` (a name or list of names); the rest are dropped. Validated
 against the schema (unknown names raise).
 
-## region(node, x=(a,b), y=(c,d), …) -> node
-Crop to a per-axis range.
-- **Grids:** index-space `[a:b]` per named axis (`x`,`y`,`z` → axes 0,1,2). `None`
-  is an open end. Pushed into the read as a hyperslab where the format allows
-  (HDF5/FITS); else read-then-crop.
-- **Point data:** a **world-coordinate** bounding box on the coordinate variables
-  (`info.positions`) — keep points whose coords fall in the box.
+## region(node, x=(a,b), y=(c,d), …, coords=None) -> node
+Keep a per-axis box, given in the data's **own coordinates**: the ones ParaView
+shows on its axes. `None` is an open end.
+
+| Data | The numbers are | What is kept |
+|---|---|---|
+| Point data | world coordinates (the position variables) | points inside the box, bounds inclusive |
+| A grid that states where it sits (VTK origin/spacing or listed points, yt domain edges, a VisLang `.npz`) | world coordinates | grid samples inside the box, bounds inclusive |
+| A grid that does not (HDF5, raw, a plain `.npz`) | cell indices — which ARE its world coordinates (origin 0, spacing 1, as VTK reads it) | cells `[a:b)` |
+
+On a grid the box becomes an index crop pushed into the read (a hyperslab
+where the format allows, HDF5/FITS; else read-then-crop). A world box on a
+uniform grid selects exactly the samples inside it; on a curvilinear grid
+(`.vts`, terrain-following) it selects the smallest block of cells holding
+every point inside it — a block that may also hold points outside, since the
+grid's rows do not follow the box. A box reaching past the grid is clipped to
+it, and the clip is reported; a box holding no sample raises.
+
+**`coords=` pins the meaning** where it matters, so a spec does not change
+meaning when it runs on another file:
+- `coords="cells"` — cell indices `[a:b)`, even on a grid with geometry.
+  Refused on point data (it has no cells).
+- `coords="world"` — world coordinates. A grid that does not say where it sits
+  raises instead of reading the numbers as cells.
+
+Left out, the planner decides from the file. The dry run shows the decision and
+the cells a world box selected (`region x 10.5..22.0 (world) -> cells x [21:45]`),
+and every output's provenance records it: `resolved.region_coords` (how the
+numbers were read, when the spec left it open) and `resolved.region_cells` (the
+cells a world box selected).
+
+A world box costs nothing extra on a uniform grid (origin + spacing are
+metadata). On a curvilinear grid the point positions are bulk data: a local
+run reads them to place the box, and a remote run places it next to the data,
+so the host checks and prices that box as the whole grid (an upper bound).
 
 ### A box placed by its centre: region(node, center=..., size=...)
 Give the box's centre and edge length instead of axis ranges. The box is
-**centre ± size/2**, in the coordinates `region` already uses: **cell indices
-on grids**, **world coordinates on point data**. `center` takes one of three
-shapes:
+**centre ± size/2**, in the coordinates `region` already uses (the data's own,
+or `coords=`). On a uniform grid in world coordinates the centre maps to its
+cell and the size to a cell count, so every box of one size keeps one shape at
+every timestep. `center` takes one of three shapes:
 ```python
 region(data, center=(524.99, 174.51, 781.43), size=30)   # stays put (one file, or every timestep)
 
@@ -258,7 +287,3 @@ render(subsample(region(source("/abs/heptane_302x302x302_uint8.raw"),
 ```
 Re-running an edited spec replaces the view in place. Discuss at the spec level —
 change one line, re-run, look.
-
-## Staged — parse and static-check but not yet materialized
-These build valid nodes but raise a clear message at lowering until a later phase:
-- **world-space** `region` on grids (physical coords via origin/spacing) — index-space today.

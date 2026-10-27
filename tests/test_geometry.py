@@ -164,7 +164,7 @@ def test_npz_reader():
     img.point_data["rho"] = vals.ravel(order="F")
     img.save(src)
     first = os.path.join(d, "first.npz")
-    run(save(subsample(region(source(src), x=(4, 16), y=(2, 18)), 2), first))
+    run(save(subsample(region(source(src), x=(4, 16), y=(2, 18), coords="cells"), 2), first))
     with np.load(first) as z:
         check("npz: save keeps origin + spacing under reserved keys",
               np.allclose(z["sieve_origin"], [102.0, 201.0, 300.0])
@@ -174,7 +174,7 @@ def test_npz_reader():
     check("npz: geometry read back", info.geometry["kind"] == "uniform"
           and np.allclose(info.geometry["origin"], [102.0, 201.0, 300.0]), info.geometry)
     again = os.path.join(d, "again.vti")
-    run(save(region(source(first), x=(1, 4), z=(2, 6)), again))
+    run(save(region(source(first), x=(1, 4), z=(2, 6), coords="cells"), again))
     arrays, _, mesh = read_grid(again)
     check("npz: cut again lands in place",
           np.allclose(mesh.origin, [103.0, 201.0, 308.0])
@@ -202,14 +202,14 @@ def test_structured_local():
 
     cut = np.s_[2:10:2, 1:9, 0:6:3]
     out = os.path.join(d, "cut.vts")
-    run(save(subsample(region(fields(source(src), ["w"]), x=(2, 10), y=(1, 9), z=(0, 6)),
+    run(save(subsample(region(fields(source(src), ["w"]), x=(2, 10), y=(1, 9), z=(0, 6), coords="cells"),
                        x=2, y=1, z=3), out))
     arrays, pts, m = read_grid(out)
     check("vts: data cut", np.array_equal(arrays["w"], F["w"][cut]))
     check("vts: every point where it was in the source", np.array_equal(pts, P[cut]),
           np.abs(pts - P[cut]).max() if pts is not None else None)
 
-    res = run(save(region(source(src), x=(0, 4)), os.path.join(d, "noext")))
+    res = run(save(region(source(src), x=(0, 4), coords="cells"), os.path.join(d, "noext")))
     check("vts: no extension keeps the curvilinear format",
           res["output"].endswith("noext.vts")
           and os.path.exists(os.path.join(d, "noext.vts")), res.get("output"))
@@ -217,20 +217,20 @@ def test_structured_local():
     check("vts: default output keeps the points", np.array_equal(pts, P[0:4]))
 
     raises("vts: refused as .vti (it would sit in the wrong place)",
-           lambda: run(save(region(source(src), x=(0, 4)), os.path.join(d, "bad.vti"))),
+           lambda: run(save(region(source(src), x=(0, 4), coords="cells"), os.path.join(d, "bad.vti"))),
            "write .vts")
     check("vts: nothing written for the refusal", not os.path.exists(os.path.join(d, "bad.vti")))
 
     for ext in (".vtk", ".vtkhdf"):
         o = os.path.join(d, "legacy" + ext)
-        run(save(region(source(src), y=(2, 7)), o))
+        run(save(region(source(src), y=(2, 7), coords="cells"), o))
         arrays, pts, m = read_grid(o)
         check(f"vts: {ext} holds the points too",
               type(m).__name__ == "StructuredGrid" and np.array_equal(pts, P[:, 2:7])
               and np.array_equal(arrays["theta"], F["theta"][:, 2:7]))
 
     o = os.path.join(d, "masked.vts")
-    run(save(threshold(region(source(src), x=(0, 6)), "theta > 300.2"), o))
+    run(save(threshold(region(source(src), x=(0, 6), coords="cells"), "theta > 300.2"), o))
     arrays, pts, _ = read_grid(o)
     want = F["w"][0:6].copy()
     want[~(F["theta"][0:6] > 300.2)] = np.nan
@@ -239,19 +239,19 @@ def test_structured_local():
 
     # .npz keeps the points, and a re-read cuts them again.
     n = os.path.join(d, "cut.npz")
-    run(save(region(source(src), x=(3, 11), z=(1, 7)), n))
+    run(save(region(source(src), x=(3, 11), z=(1, 7), coords="cells"), n))
     with np.load(n) as z:
         check("vts -> npz: positions kept beside the data",
               np.array_equal(z["sieve_points"], P[3:11, :, 1:7]) and "w" in z.files)
     o = os.path.join(d, "from_npz.vts")
-    run(save(region(source(n), x=(2, 6), y=(0, 5)), o))
+    run(save(region(source(n), x=(2, 6), y=(0, 5), coords="cells"), o))
     arrays, pts, _ = read_grid(o)
     check("vts -> npz -> vts: still in place",
           np.array_equal(pts, P[3:11, :, 1:7][2:6, 0:5])
           and np.array_equal(arrays["w"], F["w"][3:11, :, 1:7][2:6, 0:5]))
 
     h = os.path.join(d, "cut.hdf5")
-    run(save(region(source(src), x=(0, 4)), h))
+    run(save(region(source(src), x=(0, 4), coords="cells"), h))
     text = provenance.record_text(h)
     check("vts -> hdf5: the record says the positions were not kept",
           "point positions are not stored" in text, text)
@@ -265,7 +265,7 @@ def test_structured_local():
 
     # Named boxes on one file: each .vts in place, the index lists them.
     o = os.path.join(d, "boxes.vts")
-    run(save(region(source(src), center={"a": (4, 4, 4), "b": (9, 6, 3)}, size=(4, 4, 4)), o))
+    run(save(region(source(src), center={"a": (4, 4, 4), "b": (9, 6, 3)}, size=(4, 4, 4), coords="cells"), o))
     _, pa, _ = read_grid(os.path.join(d, "boxes", "a.vts"))
     _, pb, _ = read_grid(os.path.join(d, "boxes", "b.vts"))
     pvd = open(os.path.join(d, "boxes", "boxes.pvd")).read()
@@ -283,7 +283,7 @@ def test_structured_series():
     P = terrain_points()
     out = os.path.join(TMP, "fire_roi")
     res = run(save(region(fields(timesteps(source(d), 1000, 2000), ["w"]),
-                          center=[(1000, 4, 4, 4), (2000, 6, 5, 4)], size=4), out))
+                          center=[(1000, 4, 4, 4), (2000, 6, 5, 4)], size=4, coords="cells"), out))
     files = sorted(f for f in os.listdir(out) if not f.startswith("."))
     check("series: .vts per timestep + index",
           files == ["fire_roi.pvd", "timestep#1000.vts", "timestep#2000.vts"], files)
@@ -357,14 +357,14 @@ def test_remote():
         # -- single file
         n0 = len(EXECS)
         o = os.path.join(TMP, "r_one")
-        res = run(save(region(fields(source(f"u@fakehost:{f}"), ["w"]), x=(2, 9), z=(1, 5)), o))
+        res = run(save(region(fields(source(f"u@fakehost:{f}"), ["w"]), x=(2, 9), z=(1, 5), coords="cells"), o))
         arrays, pts, _ = read_grid(o + ".vts")
         check("remote file: written as .vts, points in place",
               res["output"].endswith(".vts") and np.array_equal(pts, P[2:9, :, 1:5])
               and np.array_equal(arrays["w"], terrain_fields(2)["w"][2:9, :, 1:5]))
         check("remote file: provenance written", provenance.record_for(o + ".vts") is not None)
         n1 = len(EXECS)
-        res = run(save(region(fields(source(f"u@fakehost:{f}"), ["w"]), x=(4, 8), z=(2, 4)),
+        res = run(save(region(fields(source(f"u@fakehost:{f}"), ["w"]), x=(4, 8), z=(2, 4), coords="cells"),
                        os.path.join(TMP, "r_sub.vts")))
         _, pts, _ = read_grid(os.path.join(TMP, "r_sub.vts"))
         check("remote file: a smaller box comes from the cache, points cut too",
@@ -374,7 +374,7 @@ def test_remote():
         # -- named boxes on one file
         o = os.path.join(TMP, "r_tags.vts")
         run(save(region(fields(source(f"u@fakehost:{f}"), ["theta"]),
-                        center={"a": (4, 4, 4), "b": (9, 6, 3)}, size=4), o))
+                        center={"a": (4, 4, 4), "b": (9, 6, 3)}, size=4, coords="cells"), o))
         _, pb, _ = read_grid(os.path.join(TMP, "r_tags", "b.vts"))
         check("remote named boxes: in place", np.array_equal(pb, P[7:11, 4:8, 1:5]))
 
@@ -382,7 +382,7 @@ def test_remote():
         n0 = len(EXECS)
         o = os.path.join(TMP, "r_all")
         res = run(save(region(timesteps(source(f"u@fakehost:{d}"), 1, 2),
-                              x=(0, 5), y=(2, 6)), o))
+                              x=(0, 5), y=(2, 6), coords="cells"), o))
         check("remote folder, no fields: one job, every variable",
               len(EXECS) == n0 + 1
               and sorted(MANIFESTS[-1]["1"]) == sorted(["w", "theta", GEOMETRY_KEY]),
@@ -406,7 +406,7 @@ def test_remote():
             img.save(os.path.join(u, f"cube#{t}.vti"))
         o = os.path.join(TMP, "r_uniform")
         run(save(subsample(region(fields(source(f"u@fakehost:{u}"), ["rho"]),
-                                  x=(2, 8), y=(4, 10)), 2), o))
+                                  x=(2, 8), y=(4, 10), coords="cells"), 2), o))
         m = pv.read(os.path.join(o, "timestep#2.vti"))
         check("remote uniform series: origin + spacing follow the cut",
               np.allclose(m.origin, (51.0, -12.0, 7.0)) and np.allclose(m.spacing, (1, 4, 2)),
@@ -419,7 +419,7 @@ def test_remote():
         cache._save_manifest()
         n0 = len(EXECS)
         res = run(save(region(timesteps(source(f"u@fakehost:{d}"), 1, 2),
-                              x=(0, 5), y=(2, 6)), os.path.join(TMP, "r_all2")))
+                              x=(0, 5), y=(2, 6), coords="cells"), os.path.join(TMP, "r_all2")))
         _, pts, _ = read_grid(os.path.join(TMP, "r_all2", "timestep#1.vts"))
         check("old cache: one job asks only for the positions",
               len(EXECS) == n0 + 1 and MANIFESTS[-1] == {"1": [GEOMETRY_KEY],

@@ -300,11 +300,26 @@ def resolve_center(center, size, where="region(center=...)", ndim=None):
     return {"centers": rows, "size": default, "step_sizes": step_sizes}
 
 
-def region(node, center=None, size=None, track=None, **axes):
-    """Spatial selection — "which part of the box". Lowers two ways by modality:
-    grids take index-space crops [a:b] per axis (structural: pushed into the
-    read as a hyperslab); point data takes a world-coordinate bounding box on
-    the position variables (computed: applied as a row mask after the read).
+COORDS = ("world", "cells")
+
+
+def region(node, center=None, size=None, track=None, coords=None, **axes):
+    """Spatial selection — "which part of the box", in the data's OWN
+    coordinates: the ones ParaView shows on its axes.
+
+        point data              world coordinates (the position variables)
+        a grid that says where  world coordinates (its origin + spacing, or
+        it sits in space        each point's position): x=(10.5, 22.0)
+        a grid that does not    cells — and its world coordinates ARE its cell
+                                indices (origin 0, spacing 1, as VTK reads it)
+
+    A world box keeps the samples whose position lies inside it, bounds
+    inclusive; on a grid it becomes an index crop pushed into the read. A cell
+    range [a, b) is that crop given directly. `coords=` pins which is meant
+    where it matters: "cells" crops by index even on a grid with geometry;
+    "world" refuses a grid that does not say where it sits, instead of reading
+    the numbers as cells. Left out, the planner decides from the file and
+    records what it decided.
 
     Or place a box by its centre: centre ± size/2, `size` the edge length in
     the same units (one number, or one per axis). `center` is
@@ -323,6 +338,10 @@ def region(node, center=None, size=None, track=None, **axes):
     by the planner, not here — forms read no data. (`track=` is the older
     spelling of center="track.csv".)"""
     _require_node(node, "region")
+    if coords is not None and coords not in COORDS:
+        raise ValueError(f"region(coords={coords!r}): expected one of "
+                         f"{', '.join(repr(c) for c in COORDS)}, or leave it out "
+                         f"to use the data's own coordinates")
     if isinstance(center, str):
         if track is not None:
             raise ValueError("region(): give the track file once, as center=")
@@ -341,12 +360,13 @@ def region(node, center=None, size=None, track=None, **axes):
             for t, s in size.items():
                 _check_tag(t, "region(center=\"….csv\", size=...)")
                 _track_size(s)
-            return RegionNode(upstream=node, track=track,
+            return RegionNode(upstream=node, track=track, coords=coords,
                               tag_sizes=tuple((t, _track_size(s))
                                               for t, s in size.items()))
-        return RegionNode(upstream=node, size=_track_size(size), track=track)
+        return RegionNode(upstream=node, size=_track_size(size), track=track,
+                          coords=coords)
     if center is not None:
-        return RegionNode(upstream=node, **resolve_center(center, size))
+        return RegionNode(upstream=node, coords=coords, **resolve_center(center, size))
     if size is not None:
         raise ValueError("region(size=...) only applies with center=")
     if not axes:
@@ -359,11 +379,11 @@ def region(node, center=None, size=None, track=None, **axes):
         for b in (lo, hi):
             if b is not None and (isinstance(b, bool) or not isinstance(b, (int, float))):
                 raise TypeError(f"region({axis}=({lo},{hi})): bounds must be numbers or "
-                                f"None (grid: index-space ints; points: world coords), got {b!r}")
+                                f"None, got {b!r}")
         if lo is not None and hi is not None and not lo < hi:
             raise ValueError(f"region({axis}=({lo},{hi})): need lo < hi")
         ranges.append((axis, lo, hi))
-    return RegionNode(upstream=node, ranges=tuple(ranges))
+    return RegionNode(upstream=node, ranges=tuple(ranges), coords=coords)
 
 
 def subsample(node, factor=None, **axes):

@@ -29,6 +29,11 @@ For a first look at an unfamiliar dataset, skip the narrowing and just
   are visible and editable by the human.
 - Trust the static check: a bad axis, out-of-range region, or unknown
   variable/threshold raises *before any data is read* — fix the spec, don't guess.
+- Write a `region` in the numbers the human sees on ParaView's axes: world
+  coordinates on a grid that states where it sits (`inspect` reports its
+  geometry), cell indices on one that does not. Add `coords="cells"` or
+  `coords="world"` when the spec must keep its meaning on another file, and
+  check the dry run's `(world) -> cells` line.
 - For several boxes, name them in one `region(center={tag: …})` rather than
   writing a region and a `save` per box: the file is read once, a remote run is
   one job, and the output folder has one series per tag plus a ParaView index.

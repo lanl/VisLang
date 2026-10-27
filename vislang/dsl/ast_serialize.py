@@ -104,6 +104,9 @@ def _ser_region(n):
         if n.tag_sizes:
             # A track not read yet whose size names its boxes ({tag: size}).
             out["tag_sizes"] = [[t, _as_list(sz)] for t, sz in n.tag_sizes]
+    if n.coords is not None:
+        # Only when given or decided: an unpinned region keeps the old shape.
+        out["coords"] = n.coords
     return out
 
 
@@ -159,7 +162,7 @@ _PER_STEP_KEYS = frozenset(("centers", "size", "track", "track_sha"))
 _TAGGED_KEYS = frozenset(("tags", "track", "track_sha"))
 _PER_STEP_EXTRA = frozenset(("step_sizes", "tag_sizes"))
 _OPTIONAL_KEYS = {
-    "region": _PER_STEP_KEYS | _TAGGED_KEYS | _PER_STEP_EXTRA,
+    "region": _PER_STEP_KEYS | _TAGGED_KEYS | _PER_STEP_EXTRA | {"coords"},
 }
 
 
@@ -342,6 +345,13 @@ def _val_region_per_step(s, where):
 
 
 def _val_region(s, where):
+    if "coords" in s:
+        # Orthogonal to the box's shape: check it, then validate the rest as
+        # the shape it would have without it.
+        from vislang.dsl.forms import COORDS
+        if s["coords"] not in COORDS:
+            _fail(where, f"'coords' must be one of {list(COORDS)}, got {s['coords']!r}")
+        s = {k: v for k, v in s.items() if k != "coords"}
     if "tags" in s:
         return _val_region_tagged(s, where)
     if set(s) & _OPTIONAL_KEYS["region"]:
@@ -491,11 +501,12 @@ def _build_step_sizes(rows):
 
 
 def _build_region(s, up):
+    coords = s.get("coords")
     if "tags" in s:
         return RegionNode(upstream=up, tags=tuple(
             (e[0], tuple(e[1]), tuple(tuple(r) for r in e[2]),
              _build_step_sizes(e[3] if len(e) == 4 else ())) for e in s["tags"]),
-            track=s["track"], track_sha=s["track_sha"])
+            track=s["track"], track_sha=s["track_sha"], coords=coords)
     if "centers" in s:
         return RegionNode(upstream=up, centers=tuple(tuple(r) for r in s["centers"]),
                           size=tuple(s["size"]),
@@ -503,8 +514,10 @@ def _build_region(s, up):
                           track=s["track"],
                           track_sha=s["track_sha"],
                           tag_sizes=tuple((t, tuple(sz))
-                                          for t, sz in s.get("tag_sizes") or ()))
-    return RegionNode(upstream=up, ranges=tuple(tuple(r) for r in s["ranges"]))
+                                          for t, sz in s.get("tag_sizes") or ()),
+                          coords=coords)
+    return RegionNode(upstream=up, ranges=tuple(tuple(r) for r in s["ranges"]),
+                      coords=coords)
 
 
 def _build_subsample(s, up):
@@ -628,7 +641,8 @@ def describe_plan(plan):
                          f"size={step.get('size')}{src}}}")
         elif kind == "region":
             parts.append("region{" + ",".join(
-                f"{a}:({lo},{hi})" for a, lo, hi in step.get("ranges") or []) + "}")
+                f"{a}:({lo},{hi})" for a, lo, hi in step.get("ranges") or [])
+                + (f",{step['coords']}" if step.get("coords") else "") + "}")
         elif kind == "subsample":
             per = step.get("per_axis") or []
             parts.append(f"subsample({step.get('uniform')})" if not per else
