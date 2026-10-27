@@ -1,0 +1,3 @@
+#!/bin/sh
+# The plugin runs `sieve` as an executable; this one is sieve on a simulated remote.
+exec "${VISLANG_PYTHON:-python3}" "$(dirname "$0")/fake_sieve.py" "$@"
