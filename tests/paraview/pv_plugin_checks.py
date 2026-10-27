@@ -249,6 +249,29 @@ while time.time() - t0 < 60:
     time.sleep(0.1)
 check("the result arrives through GetNeedsUpdate, without blocking the update",
       a.GetDataInformation().GetNumberOfPoints() == 16 * 12 * 8, status(a))
+
+
+def tick(src, seconds):
+    algo = src.GetClientSideObject()
+    t0 = time.time()
+    while time.time() - t0 < seconds:
+        if algo.GetNeedsUpdate():
+            src.SMProxy.MarkModified(src.SMProxy)
+            src.UpdatePipeline()
+        time.sleep(0.1)
+
+
+a.Stride = 3                         # a new request …
+a.UpdatePipeline()
+a.SMProxy.InvokeCommand("Cancel")    # … stopped at once
+n = len(steps())
+tick(a, 3.0)
+check("Cancel stays cancelled: the request is not asked again",
+      len(steps()) == n and "Cancelled" in status(a), (len(steps()), n, status(a)))
+a.SMProxy.InvokeCommand("FetchOverview")
+tick(a, 10.0)
+check("Fetch Overview asks again after a cancel",
+      len(steps()) == n + 1 and "Fetched" in status(a), status(a))
 os.environ["SIEVE_PV_SYNC"] = "1"
 
 print("== prefetching a series ==")

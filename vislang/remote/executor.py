@@ -377,6 +377,65 @@ def _run_folder_delta(text, manifest_path, outdir):
     return 0
 
 
+def _exit_with_caller(out):
+    """Stop when the caller is gone. A plan shipped over ssh (--stdin) answers
+    on stdout; once that ssh ends (the user cancelled, quit, or lost the
+    network), nobody will read the answer, yet the reduce would go on reading
+    gigabytes on a shared host. Without a terminal ssh sends no hangup, so
+    watch for it: stdout's reader closing, or this process being re-parented."""
+    import select
+    import shutil
+    import threading
+    import time
+
+    parent = os.getppid()
+
+    import socket
+
+    fd = sys.stdout.fileno()
+    try:                       # sshd links a command's stdout by a socket pair
+        sock = socket.socket(fileno=os.dup(fd))
+        sock.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE)
+    except OSError:
+        sock = None            # a pipe (or a file)
+
+    def gone():
+        if os.getppid() != parent:
+            return True
+        try:
+            if sock is not None:
+                # The far end closing reads as end-of-file on our side.
+                if not select.select([sock], [], [], 0)[0]:
+                    return False
+                return sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT) == b""
+            p = select.poll()
+            p.register(fd, 0)                       # only HUP/ERR are reported
+            return any(ev & (select.POLLHUP | select.POLLERR) for _, ev in p.poll(0))
+        except BlockingIOError:
+            return False
+        except ConnectionError:
+            return True
+        except OSError:
+            return False                            # unsure: keep working
+
+    def watch():
+        while True:
+            time.sleep(2.0)
+            if gone():
+                try:
+                    if out and os.path.isdir(out):
+                        shutil.rmtree(out, ignore_errors=True)
+                    elif out:
+                        for f in (out, out + ".npz"):
+                            if os.path.exists(f):
+                                os.remove(f)
+                except OSError:
+                    pass
+                os._exit(130)
+
+    threading.Thread(target=watch, daemon=True, name="caller-watch").start()
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="VisLang remote reducer / inspector")
     src = ap.add_mutually_exclusive_group(required=False)
@@ -404,6 +463,8 @@ def main(argv=None):
         text = sys.stdin.read() if args.stdin else open(args.plan).read()
     except OSError as e:
         return _fail(f"cannot read plan: {e}")
+    if args.stdin:
+        _exit_with_caller(args.out or args.outdir)
 
     if args.outdir:
         # The remote only cuts and returns arrays; files are written on the

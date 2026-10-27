@@ -180,6 +180,7 @@ class _Sieve(VTKPythonAlgorithmBase):
         self._proxy = None           # this object's server-manager proxy (GUI side)
         self._declared = None        # the grid extent ParaView was last told
         self._kick = False           # a button asked for a pipeline pass
+        self._cancelled = None       # the request Cancel stopped: not asked again
         self._shown_text = None      # the (status, spec) the panel last read
 
     def _key(self, params):
@@ -323,6 +324,8 @@ class _Sieve(VTKPythonAlgorithmBase):
         out = outInfo.GetInformationObject(0)
         if key == self._shown_key and self._shown is not None:
             return self._emit(out)
+        if key == self._cancelled:
+            return self._emit(out)             # the user stopped this one
         hit = _memo().get(key)
         if hit is not None:
             self._show(key, hit, label)
@@ -383,6 +386,7 @@ class _Sieve(VTKPythonAlgorithmBase):
 
     def _settings_changed(self):
         """A setting the request is built from changed (pushed by Apply)."""
+        self._cancelled = None
         self.Modified()
 
     @smproperty.stringvector(name="ValueFilter", default_values="")
@@ -412,13 +416,19 @@ class _Sieve(VTKPythonAlgorithmBase):
         holds = ((self._job.result or {}).get("holds") or {}) if self._job else {}
         self._approve = {"budget": True, "fetch": "fetch" in holds}
         self._job_key = None                  # ask again, approved
+        self._cancelled = None
         self.Modified()
 
     @smproperty.xml('<Property name="Cancel" command="Cancel" '
                     'panel_widget="command_button"/>')
     def Cancel(self):
+        # Stopping the local process ends its ssh; the remote reducer notices
+        # and stops too (executor._exit_with_caller).
+        self._cancelled = self._job_key
         _runner().cancel(id(self))
-        self._status = "Cancelled."
+        self._status = ("Cancelled. Change a setting and Apply to ask for "
+                        "something else" + (", or press Fetch Overview to ask again."
+                                            if self.KIND == "source" else "."))
         self.Modified()
 
     @smproperty.xml('<Property name="PromoteToSpec" label="Promote To Spec" '
@@ -525,7 +535,7 @@ class SieveSource(_Sieve):
     def _settings_changed(self):
         if self._desc is not None and not self._filling:
             self._armed = True           # an Apply after the metadata: fetch
-        self.Modified()
+        _Sieve._settings_changed(self)
 
     @smproperty.xml('<Property name="FetchOverview" label="Fetch Overview" '
                     'command="FetchOverview" panel_widget="command_button">'
@@ -539,6 +549,7 @@ class SieveSource(_Sieve):
         else:
             self._armed = True
             self._kick = True
+            self._cancelled = None
         self.Modified()
 
     @smproperty.xml('<Property name="Connect" command="Connect" '

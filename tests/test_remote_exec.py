@@ -185,6 +185,27 @@ def main():
           json.loads(json.dumps(attrs)) == {"units": "Mpc", "names": ["a", "b"],
                                             "scale": 0.5, "mixed": [2, "q"]}, attrs)
 
+    # A reducer whose ssh is gone (cancelled, quit, lost network) stops instead
+    # of reading on for nobody: here the other end of its stdout closes.
+    import time
+    child = ("import sys, time; sys.path.insert(0, %r)\n"
+             "from vislang.remote.executor import _exit_with_caller\n"
+             "_exit_with_caller(None); time.sleep(60)\n" % REPO)
+    import socket
+    ours, theirs = socket.socketpair()          # sshd's link to a command (Linux)
+    p = subprocess.Popen([sys.executable, "-c", child], stdout=theirs.fileno())
+    theirs.close()
+    time.sleep(1.0)
+    alive = p.poll() is None
+    ours.close()                                # the ssh session ends
+    try:
+        code = p.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        code = None
+    check("a reducer stops once nobody reads its answer", alive and code == 130,
+          (alive, code))
+
     shutil.rmtree(TMP)
     print(f"\nALL {len(PASS)} CHECKS PASSED")
 
