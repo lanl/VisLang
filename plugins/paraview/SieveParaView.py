@@ -177,6 +177,8 @@ class _Sieve(VTKPythonAlgorithmBase):
         self._last_refresh = 0.0
         self._desc = None
         self._base = None            # this view's request, without its timestep
+        self._proxy = None           # this object's server-manager proxy (GUI side)
+        self._shown_text = None      # the (status, spec) the panel last read
 
     def _key(self, params):
         return core.request_key(self.KIND, (self._desc or {}).get("uri"), params)
@@ -194,7 +196,30 @@ class _Sieve(VTKPythonAlgorithmBase):
             changed = True                     # refresh the status text
         if changed:
             self.Modified()
+        self._refresh_panel()
         return bool(changed)
+
+    def _refresh_panel(self):
+        """The panel reads Status and Spec only when ParaView refreshes property
+        information — not after a live-source update. Ask for it when either
+        changed (in the builtin session the proxy lives in this process)."""
+        text = (self._status, self._spec)
+        if text == self._shown_text:
+            return
+        if self._proxy is None:
+            try:
+                from paraview import servermanager
+                pxm = servermanager.ProxyManager()
+                for (_, _), p in pxm.GetProxiesInGroup("sources").items():
+                    if p.GetClientSideObject() is self:
+                        self._proxy = p
+                        break
+            except Exception:
+                return
+            if self._proxy is None:
+                return
+        self._shown_text = text
+        self._proxy.UpdatePropertyInformation()
 
     def _poll(self):
         """Handle a finished job. Returns True when something changed."""

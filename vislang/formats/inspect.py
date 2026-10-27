@@ -129,6 +129,9 @@ def _inspect_remote(uri, positions=None, allow_fetch=True):
                 f"fetching the file — refused here (nothing may be moved).")
         return _inspect_via_fetch(uri, positions)
     meta = _run_remote_inspect(conn, remote_path)
+    if meta and str(meta.get("error", "")).startswith("FileNotFoundError"):
+        # Not a schema problem: no copy would help, so say so plainly.
+        raise FileNotFoundError(f"{remote_path}: no such file on {conn.host}")
     if not meta or not meta.get("ok") or meta.get("needs_adapter"):
         size = None
         if not allow_fetch:
