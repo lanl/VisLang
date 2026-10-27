@@ -698,7 +698,7 @@ def _boxes_at(info, middle, label, steps, tag=None):
     out, boxes = [], []
     for n in middle:
         if isinstance(n, RegionNode) and n.per_step and grid is not None \
-                and n.coords != "cells":
+                and n.coords != "index":
             pass                            # placed where the file is read
         elif isinstance(n, RegionNode) and n.per_step:
             lab = label if label is not None else n.centers[0][0]
@@ -765,7 +765,7 @@ def _check_boxes(info, middles, plan, own_info=None):
         # The box in the file's own coordinates, then cut: a world box this
         # side cannot place is checked where the file is read instead.
         n = resolve_regions(i, [n], read_points=False, label=lab)[0]
-        if grid_of(i) is not None and n.coords != "cells":
+        if grid_of(i) is not None and n.coords != "index":
             return
         box_for_step(n, lab, grid_of(i))
     for lab, tags in plan.items():
@@ -838,7 +838,7 @@ def _lower(info, middle, steps, label=None):
             keep = list(node.keep)
             steps.append(f"project fields={keep}")
         elif node.kind == "region":
-            if modality == "grid" and node.coords != "cells":
+            if modality == "grid" and node.coords != "index":
                 # A world box this side could not place (a curvilinear grid's
                 # points are bulk data; an old schema did not say). The side
                 # that reads the file resolves it; here it neither crops nor
@@ -1081,9 +1081,11 @@ def _output_root(path):
 
 def _box_space(info, grid):
     """How a dry run's box listing is to be read."""
+    from vislang.formats.dataset_info import in_cells
     if grid is None:
         return "world coordinates"
-    if getattr(info, "geometry", None):
+    geometry = getattr(info, "geometry", None)
+    if geometry and not in_cells(geometry):
         return "cells the world-coordinate boxes select, clipped to the grid"
     return "index space, clipped to the grid"
 
@@ -1101,7 +1103,7 @@ def _box_lines(info, middle, labels, limit=12):
     lines = []
     for n in per_step_regions(middle):
         n = resolve_regions(info, [n])[0]
-        if grid is not None and n.coords != "cells":
+        if grid is not None and n.coords != "index":
             lines.append("per-timestep region boxes: world coordinates, placed on "
                          "each file's points where it is read")
             continue
@@ -1123,7 +1125,7 @@ def _tag_box_lines(info, tagged, plan, limit=8):
     from vislang.interpreter.track import box_for_step, tag_names, tag_view
     grid = (info.dimensions or {}).get("grid") if _modality(info) == "grid" else None
     tagged = resolve_regions(info, [tagged])[0]
-    if grid is not None and tagged.coords != "cells":
+    if grid is not None and tagged.coords != "index":
         return ["named boxes: world coordinates, placed on each file's points "
                 "where it is read"]
     lines = ["named boxes (" + _box_space(info, grid) + "):"]

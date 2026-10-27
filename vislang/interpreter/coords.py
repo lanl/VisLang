@@ -10,22 +10,25 @@ states the intent; this module decides it against the file and records the
 decision on the node (`coords` filled in), so the provenance record says how
 the numbers were read even when the spec left it open.
 
-On a grid, a world region is rewritten here as the cell region it selects
-(dataset_info.world_box_to_cells). Everything downstream — lowering, the static
-bounds check, the extent catalog's keys, the plan shipped to a remote — then
-sees cells on grids, exactly as before world regions existed. A grid region
-leaves this module either in cells or, when this side cannot place it (a
+On a grid, a region is rewritten here in the file's own ARRAY indices and
+marked `coords="index"` — an internal value no spec writes. A world box
+becomes the samples it selects (dataset_info.world_box_to_cells); cells on a
+file Sieve placed among its source's cells (a cut of a grid with no geometry,
+whose cell 100 is its array index 0) are shifted and scaled to the file's own
+indices; plain cells are already array indices. Everything downstream —
+lowering, the static bounds check, the extent catalog's keys, the plan shipped
+to a remote — then sees array indices on grids, exactly as before. A grid
+region leaves this module in "index" or, when this side cannot place it (a
 structured grid whose points are bulk data it may not read, or a remote schema
-that predates geometry), still in world/undecided coordinates for the side that
-reads the file to resolve.
+that predates geometry), as written for the side that reads the file.
 
-Resolution is idempotent: a region already decided passes through unchanged.
+Resolution is idempotent: a region already in "index" passes through.
 """
 
 import dataclasses
 
 from vislang.dsl.nodes import RegionNode
-from vislang.formats.dataset_info import world_box_to_cells
+from vislang.formats.dataset_info import in_cells, world_box_to_cells
 
 _AXES = ("x", "y", "z")
 _AXIS_INDEX = {a: i for i, a in enumerate(_AXES)}
@@ -34,8 +37,11 @@ _AXIS_INDEX = {a: i for i, a in enumerate(_AXES)}
 def decide(info, node):
     """The coordinates `node`'s numbers are in on `info`'s data: "world",
     "cells", or None when this side cannot tell (a schema that predates
-    geometry). Raises when `coords=` asks for what the data cannot be."""
+    geometry), or "index" for a region this module already resolved. Raises
+    when `coords=` asks for what the data cannot be."""
     from vislang.interpreter.planner import _modality      # lazy: planner imports us
+    if node.coords == "index":
+        return "index"
     if _modality(info) == "particles":
         if node.coords == "cells":
             raise ValueError("region(coords='cells'): point data has no cells — its "
@@ -46,7 +52,8 @@ def decide(info, node):
         return "cells"
     if not getattr(info, "geometry_known", True):
         return node.coords                  # "world" kept, None stays undecided
-    has = bool(getattr(info, "geometry", None))
+    geometry = getattr(info, "geometry", None)
+    has = bool(geometry) and not in_cells(geometry)   # a physical position
     if node.coords == "world" and not has:
         raise ValueError("region(coords='world'): this grid does not say where it "
                          "sits in space (no origin/spacing or point positions in "
@@ -69,7 +76,8 @@ def resolve_regions(info, middle, steps=None, *, read_points=True, label=None,
     for n in middle:
         if isinstance(n, RegionNode):
             pending = n.track is not None and not n.centers and not n.tags
-            modes.append(None if pending else decide(info, n))
+            mode = None if pending else decide(info, n)
+            modes.append(None if mode == "index" else mode)
             n = _resolve(info, n, steps, read_points, label, convert)
         out.append(n)
     _record_modes(modes)
@@ -81,8 +89,12 @@ def _resolve(info, node, steps, read_points, label, convert):
         return node                         # a track file not read yet
     mode = decide(info, node)
     from vislang.interpreter.planner import _modality
-    if mode is None or mode == "cells" or _modality(info) == "particles":
-        return node if mode is None else dataclasses.replace(node, coords=mode)
+    if mode in (None, "index"):
+        return node
+    if _modality(info) == "particles":
+        return dataclasses.replace(node, coords="world")
+    if mode == "cells":
+        return _cells_to_index(info, node, steps, label)
     # A world region on a grid: place it on the file's geometry.
     geometry = _geometry(info, read_points) if convert else None
     if geometry is None:
@@ -94,7 +106,7 @@ def _resolve(info, node, steps, read_points, label, convert):
                      for t, size, rows, step_sizes in node.tags)
         _note(steps, f"region: named boxes placed in world coordinates on the "
                      f"file's {geometry['kind']} geometry")
-        return dataclasses.replace(node, tags=tags, coords="cells")
+        return dataclasses.replace(node, tags=tags, coords="index")
     if node.per_step:
         size, rows, step_sizes = _centres_to_cells(geometry, grid, node.size,
                                                    node.centers, node.step_sizes,
@@ -102,8 +114,54 @@ def _resolve(info, node, steps, read_points, label, convert):
         _note(steps, f"region: box centres placed in world coordinates on the "
                      f"file's {geometry['kind']} geometry")
         return dataclasses.replace(node, size=size, centers=rows,
-                                   step_sizes=step_sizes, coords="cells")
+                                   step_sizes=step_sizes, coords="index")
     return _ranges_to_cells(node, geometry, grid, steps)
+
+
+def _cells_to_index(info, node, steps, label):
+    """A region in cells as the file's own array indices. Plain cells already
+    are; a file Sieve placed among its source's cells counts them from its
+    origin, every `spacing` (its stride) — so the numbers keep meaning the
+    source's cells, which is also what a viewer's axes show for it."""
+    geometry = getattr(info, "geometry", None)
+    if not in_cells(geometry) or (all(v == 0 for v in geometry["origin"])
+                                  and all(v == 1 for v in geometry["spacing"])):
+        return dataclasses.replace(node, coords="index")
+    grid = tuple(int(v) for v in info.dimensions["grid"])
+    o, s = geometry["origin"], geometry["spacing"]
+    if node.tagged:
+        tags = tuple((t, *_centres_to_cells(geometry, grid, size, rows, step_sizes,
+                                            label, f"box {t!r}"))
+                     for t, size, rows, step_sizes in node.tags)
+        return dataclasses.replace(node, tags=tags, coords="index")
+    if node.per_step:
+        size, rows, step_sizes = _centres_to_cells(geometry, grid, node.size,
+                                                   node.centers, node.step_sizes,
+                                                   label, "region")
+        return dataclasses.replace(node, size=size, centers=rows,
+                                   step_sizes=step_sizes, coords="index")
+    ranges = []
+    for axis, lo, hi in node.ranges:
+        if axis not in _AXIS_INDEX or _AXIS_INDEX[axis] >= len(grid):
+            raise ValueError(f"region axis {axis!r} not one of this grid's axes")
+        a = _AXIS_INDEX[axis]
+        n, first, step = grid[a], o[a], s[a]
+        last = first + (n - 1) * step
+        # Source cell c is this file's index (c - first) / step; [lo, hi) keeps
+        # the indices whose source cell falls inside it.
+        start = 0 if lo is None else -(-(lo - first) // step)
+        stop = n if hi is None else -(-(hi - first) // step)
+        if start < 0 or stop > n or start >= stop:
+            raise ValueError(
+                f"region {axis}=({lo}, {hi}): this file holds cells {first:g} to "
+                f"{last:g} of its source (every {step:g}) on {axis}, in the "
+                f"source's cell numbering")
+        ranges.append((axis, int(start), int(stop)))
+    _note(steps, "region "
+          + ", ".join(f"{a} [{_num(lo)}:{_num(hi)})" for a, lo, hi in node.ranges)
+          + " (source cells) -> this file's indices "
+          + ", ".join(f"{a} [{b}:{e}]" for a, b, e in ranges))
+    return dataclasses.replace(node, ranges=tuple(ranges), coords="index")
 
 
 def _geometry(info, read_points):
@@ -146,7 +204,7 @@ def _ranges_to_cells(node, geometry, grid, steps):
           + ", ".join(f"{a} [{s}:{e}]" for a, s, e in ranges)
           + (f"; clipped to the grid on {', '.join(clipped)}" if clipped else ""))
     _record(node.ranges, ranges, clipped)
-    return dataclasses.replace(node, ranges=ranges, coords="cells")
+    return dataclasses.replace(node, ranges=ranges, coords="index")
 
 
 def _centres_to_cells(geometry, grid, size, rows, step_sizes, label, who):

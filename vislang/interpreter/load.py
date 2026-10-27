@@ -27,7 +27,7 @@ import numpy as np
 
 from vislang.formats.adapters import (get_adapter_for_info, _resolve_variables,
                                      build_selection_info, adapter_capabilities)
-from vislang.formats.dataset_info import narrowed_geometry
+from vislang.formats.dataset_info import cell_placement, narrowed_geometry
 from vislang.interpreter.narrowing import (Narrowing, narrowing_from_dimensions, build_row_mask,
                        row_mask_from, voxel_mask_from, post_op_read_vars, sampling_rng,
                        RowMask, RowSample, VoxelMask)
@@ -60,7 +60,18 @@ def _source_geometry(info):
     as the arrays, so data and positions stay aligned. An adapter that cannot
     read them leaves index space — the honest answer, never an invented one."""
     geom = getattr(info, 'geometry', None)
-    if not geom or geom.get('kind') != 'structured' or geom.get('points') is not None:
+    if not geom:
+        # A grid that states no geometry is placed in its own cell indices, so
+        # a cut is written where it sits among the source's cells (marked as
+        # cells: no physical position is claimed). Only for a grid this side
+        # read from the file — a stand-in for a remote source keeps the
+        # geometry the remote returned with the data.
+        grid = (getattr(info, 'dimensions', None) or {}).get('grid')
+        if grid is not None and not getattr(info, 'positions', None) \
+                and getattr(info, 'geometry_known', True):
+            return cell_placement(len(grid))
+        return geom
+    if geom.get('kind') != 'structured' or geom.get('points') is not None:
         return geom
     reader = getattr(get_adapter_for_info(info), 'read_geometry', None)
     return reader(info.filepath) if reader is not None else None

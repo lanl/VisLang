@@ -926,7 +926,14 @@ def test_layout_single_file():
     check("single_input_fingerprint_fields", list(lg["input"]["fingerprint"]) ==
           ["filesize", "modification_time", "head64k_sha256"])
     check("single_output_keys", list(lg["output"]) ==
-          ["format", "fields", "fingerprint"], list(lg["output"]))
+          ["format", "fields", "fingerprint", "geometry"], list(lg["output"]))
+    # This HDF5 source states no geometry: the record says where the cut sits
+    # among its cells, and that these are cells, not physical units.
+    check("single_output_placed_in_source_cells",
+          lg["output"]["geometry"] == {"origin": [2.0, 0.0, 0.0],
+                                       "spacing": [1.0, 1.0, 1.0],
+                                       "units": "source cells"},
+          lg["output"]["geometry"])
     check("single_output_fingerprint_fields",
           list(lg["output"]["fingerprint"]) == ["shape", "data_sha256"],
           lg["output"]["fingerprint"])

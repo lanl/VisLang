@@ -549,7 +549,8 @@ def _save_lines(fmt, ext, in_filetype, grid, positions, geometry, series,
                 more.append("each point at its own position from the source")
             elif geometry and geometry.get("origin") is not None:
                 more.append(f"origin {_flow_text(geometry.get('origin'))}, "
-                            f"spacing {_flow_text(geometry.get('spacing'))}")
+                            f"spacing {_flow_text(geometry.get('spacing'))}"
+                            + _in_cells_text(geometry))
             else:
                 more.append("in index space (origin 0, spacing 1)")
         elif positions:
@@ -563,7 +564,8 @@ def _save_lines(fmt, ext, in_filetype, grid, positions, geometry, series,
             more.append("each point's position kept beside the data (sieve_points)")
         elif geometry and geometry.get("origin") is not None:
             more.append(f"origin {_flow_text(geometry.get('origin'))}, "
-                        f"spacing {_flow_text(geometry.get('spacing'))} kept beside "
+                        f"spacing {_flow_text(geometry.get('spacing'))}"
+                        + _in_cells_text(geometry) + " kept beside "
                         f"the data (sieve_origin, sieve_spacing)")
     elif listed and fmt not in ("vtk", "npz"):
         # Said plainly: the values are right, but this container has no place
@@ -629,6 +631,14 @@ def _tagged_lines(step, tag, grid, labels):
             + ("; the box per timestep is under resolved.region_boxes" if labels
                else "; the box is under resolved.region_box")]
     return head, more
+
+
+def _in_cells_text(geometry):
+    """The qualifier for a placement in source cells, not physical units."""
+    if geometry.get("space") == "cells":
+        return (" in the source's cell indices (the source states no "
+                "geometry; no physical position is claimed)")
+    return ""
 
 
 def _centre_space(step, grid):
@@ -1013,6 +1023,10 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
             else:
                 g = {k: geom.get(k) for k in ("origin", "spacing")
                      if geom.get(k) is not None}
+                if g and geom.get("space") == "cells":
+                    # Not physical units: where the cut sits among its
+                    # source's cells (the source states no geometry).
+                    g["units"] = "source cells"
                 if g:
                     out["geometry"] = g
 

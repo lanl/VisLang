@@ -348,9 +348,12 @@ def _val_region(s, where):
     if "coords" in s:
         # Orthogonal to the box's shape: check it, then validate the rest as
         # the shape it would have without it.
+        # "index" is the planner's own: a region already resolved to the
+        # file's array indices (interpreter/coords.py), shipped to a remote.
         from vislang.dsl.forms import COORDS
-        if s["coords"] not in COORDS:
-            _fail(where, f"'coords' must be one of {list(COORDS)}, got {s['coords']!r}")
+        allowed = COORDS + ("index",)
+        if s["coords"] not in allowed:
+            _fail(where, f"'coords' must be one of {list(allowed)}, got {s['coords']!r}")
         s = {k: v for k, v in s.items() if k != "coords"}
     if "tags" in s:
         return _val_region_tagged(s, where)

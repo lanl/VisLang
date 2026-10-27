@@ -38,6 +38,7 @@ shows on its axes. `None` is an open end.
 | Point data | world coordinates (the position variables) | points inside the box, bounds inclusive |
 | A grid that states where it sits (VTK origin/spacing or listed points, yt domain edges, a VisLang `.npz`) | world coordinates | grid samples inside the box, bounds inclusive |
 | A grid that does not (HDF5, raw, a plain `.npz`) | cell indices — which ARE its world coordinates (origin 0, spacing 1, as VTK reads it) | cells `[a:b)` |
+| A cut Sieve saved from such a grid | its source's cell indices (the file is placed among them) | the source's cells `[a:b)` the file holds |
 
 On a grid the box becomes an index crop pushed into the read (a hyperslab
 where the format allows, HDF5/FITS; else read-then-crop). A world box on a
@@ -228,9 +229,18 @@ for `.vti` raises (it would put the data in the wrong place); `.npz` keeps the
 positions beside the data (`sieve_points`). HDF5 and netCDF have no slot for
 them — the values are written, and the record says the positions were not.
 
+**A grid that states no geometry** (HDF5, raw) is placed in its **source's
+cells**: a cut is written with origin = its first cell and spacing = its stride
+(`.vti`, `.npz`), marked as cells (`sieve_in_cells`) and recorded as
+`units: source cells`. No physical position is claimed — cell i of a grid sits
+at i — but an overview and a detail cut overlay in ParaView, named boxes land
+apart, and a saved cut is re-cut in its source's numbering (`region(x=(10,
+15))` on it means the source's cells 10–14). HDF5/netCDF outputs get no
+coordinate variables for it.
+
 **`.npz` output** keeps a grid's place in space too, under reserved keys
-(`sieve_origin` + `sieve_spacing`, or `sieve_points`), so a saved `.npz` can be
-`source()`d and cut again and still land in the right place. The npz reader
+(`sieve_origin` + `sieve_spacing` [+ `sieve_in_cells`], or `sieve_points`), so a
+saved `.npz` can be `source()`d and cut again and still land in the right place. The npz reader
 sees a grid when every array shares one shape, particles when every array is
 one column of the same length.
 

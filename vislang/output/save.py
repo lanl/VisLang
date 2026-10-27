@@ -54,7 +54,7 @@ import os
 
 import numpy as np
 
-from vislang.formats.dataset_info import geometry_to_arrays
+from vislang.formats.dataset_info import geometry_to_arrays, in_cells
 
 # Recognized output extensions -> writer format key.
 _EXT_FORMAT = {".npz": "npz", ".h5": "hdf5", ".hdf5": "hdf5", ".hdf": "hdf5",
@@ -445,6 +445,11 @@ def _write_vtk(out, loaded):
         # it in legacy .vtk, and .vtkhdf keeps time its own way.
         mesh.field_data["TimeValue"] = np.array([float(step)])
 
+    if model == "uniform" and in_cells(geom):
+        # Placed among the source's cells, not in physical units: say so, so
+        # Sieve reads the file back in those cells (a viewer just draws it).
+        mesh.field_data["sieve_in_cells"] = np.array([1], dtype=np.int8)
+
     blob, _ = (None, {}) if ext == ".vtk" else _prov_blob(loaded, ascii=True)
     if blob is not None:
         mesh.field_data[PROV_KEY] = np.array([blob])
@@ -545,10 +550,10 @@ def _write_netcdf4(out, loaded):
                 ds.createDimension(ax, int(n))
             ds.sieve_axis_order = ",".join(axes) + " (index space, matching the " \
                                                    "DSL's region/subsample axes)"
-            if geom.get("kind") == "uniform":
+            if geom.get("kind") == "uniform" and not in_cells(geom):
                 # Coordinate variables only where the source actually stated a
                 # geometry; index space is a real answer and an origin is never
-                # synthesized.
+                # synthesized (a placement in source cells is not one).
                 for i, ax in enumerate(axes):
                     cv = ds.createVariable(ax, "f8", (ax,))
                     cv[:] = geom["origin"][i] + np.arange(shape[i]) * geom["spacing"][i]

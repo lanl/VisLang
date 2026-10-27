@@ -283,8 +283,8 @@ def test_remote():
         rho, origin, _ = vti_rho(res["output"])
         shipped = EXECS[-1]["chain"]
         reg = next(s for s in shipped if s["kind"] == "region")
-        check("uniform remote: the host shipped cells",
-              len(EXECS) == n0 + 1 and reg.get("coords") == "cells"
+        check("uniform remote: the host shipped the file's own indices",
+              len(EXECS) == n0 + 1 and reg.get("coords") == "index"
               and reg["ranges"] == [["x", 0, 5], ["y", 2, 7]], reg)
         check("uniform remote: same cut as local",
               np.array_equal(rho, full[0:5, 2:7, :]) and np.allclose(origin, (100.0, 0.0, 2.0)))
@@ -337,9 +337,97 @@ def test_remote():
             os.environ.pop(k, None)
 
 
+def test_cell_placement():
+    print("== a grid with no geometry: cuts placed among its source's cells ==")
+    from vislang.formats.inspect import inspect_file
+    d = os.path.join(TMP, "placed")
+    os.makedirs(d)
+    src = os.path.join(d, "plain.npz")
+    full = np.arange(32 ** 3, dtype=np.float32).reshape(32, 32, 32)
+    np.savez(src, rho=full)
+
+    # Overview + detail: both in the source's cell numbering, so they overlay.
+    run(save(subsample(source(src), 8), os.path.join(d, "overview.vti")))
+    m = pv.read(os.path.join(d, "overview.vti"))
+    check("overview spans the whole grid (spacing = stride)",
+          np.allclose(m.origin, (0, 0, 0)) and np.allclose(m.spacing, (8, 8, 8))
+          and np.allclose(m.bounds[1::2], (24, 24, 24)), (m.origin, m.spacing))
+    check("placement is marked as source cells",
+          "sieve_in_cells" in m.field_data.keys())
+    res = run(save(region(source(src), x=(10, 20), y=(4, 12)),
+                   os.path.join(d, "detail.vti")))
+    rho, origin, dims = vti_rho(res["output"])
+    check("detail lands at its first cell, inside the overview",
+          np.allclose(origin, (10, 4, 0)) and dims == (10, 8, 32)
+          and np.array_equal(rho, full[10:20, 4:12, :]), (origin, dims))
+    rec = provenance.record_for(res["output"])
+    check("record: placement is in source cells, not physical units",
+          rec["logical"]["output"]["geometry"]["units"] == "source cells"
+          and "no physical position is claimed" in rec["logical"]["spec_explanation"])
+
+    # A cut of a cut keeps the source's numbering.
+    first = os.path.join(d, "first.vti")
+    run(save(subsample(region(source(src), x=(8, 24)), 2), first))
+    info = inspect_file(first)
+    check("inspect says the cut is numbered as its source",
+          "numbered as in its source" in info._region_coords_text())
+    res = run(save(region(source(first), x=(10, 15)), os.path.join(d, "again.vti")))
+    rho2, origin2, _ = vti_rho(res["output"])
+    check("re-cut in source cells: cells 10, 12, 14 of the source",
+          np.array_equal(rho2, full[10:15:2, ::2, ::2]) and np.allclose(origin2[0], 10),
+          (origin2, rho2.shape))
+    check("the plan shows the shift to the file's own indices",
+          any("(source cells) -> this file's indices x [1:4]" in s for s in res["steps"]),
+          res["steps"])
+    raises("re-cut outside what the file holds is refused in source numbers",
+           lambda: run(save(region(source(first), x=(0, 6)), os.path.join(d, "bad.vti"))),
+           "holds cells 8 to 22 of its source")
+    raises("a placed file has no physical coordinates",
+           lambda: run(save(region(source(first), x=(10, 15), coords="world"),
+                            os.path.join(d, "w.vti"))),
+           "does not say where it sits")
+
+    # .npz keeps the placement too, and reads back the same way.
+    res = run(save(region(source(src), x=(10, 20)), os.path.join(d, "cut.npz")))
+    with np.load(res["output"]) as z:
+        check("npz keeps origin, spacing and the cells marker",
+              np.allclose(z["sieve_origin"], (10, 0, 0)) and "sieve_in_cells" in z.files)
+    res = run(save(region(source(res["output"]), x=(12, 14)), os.path.join(d, "cut2.npz")))
+    with np.load(res["output"]) as z:
+        check("npz re-cut in source cells", np.array_equal(z["rho"], full[12:14]))
+
+    # Named boxes no longer pile up at origin 0.
+    run(save(region(source(src), center={"a": (8, 8, 8), "b": (24, 20, 16)}, size=4),
+             os.path.join(d, "boxes.vti")))
+    oa = pv.read(os.path.join(d, "boxes", "a.vti")).origin
+    ob = pv.read(os.path.join(d, "boxes", "b.vti")).origin
+    check("named boxes each at their own cells", np.allclose(oa, (6, 6, 6))
+          and np.allclose(ob, (22, 18, 14)), (oa, ob))
+
+    print("== remote: the placement comes back with the cut ==")
+    _install_fake_remote()
+    os.environ["VISLANG_CACHE"] = os.path.join(TMP, "pcache")
+    os.environ["VISLANG_REMOTE"] = "force"
+    os.environ["VISLANG_REMOTE_TMP"] = os.path.join(TMP, "premote_tmp")
+    os.makedirs(os.environ["VISLANG_REMOTE_TMP"])
+    try:
+        res = run(save(subsample(region(source(f"u@fakehost:{src}"), x=(8, 24)), 2),
+                       os.path.join(d, "r.vti")))
+        rho_r, origin_r, _ = vti_rho(res["output"])
+        m = pv.read(res["output"])
+        check("remote cut placed among the source's cells",
+              np.allclose(origin_r, (8, 0, 0)) and np.allclose(m.spacing, (2, 2, 2))
+              and "sieve_in_cells" in m.field_data.keys()
+              and np.array_equal(rho_r, full[8:24:2, ::2, ::2]), (origin_r, m.spacing))
+    finally:
+        for k in ("VISLANG_CACHE", "VISLANG_REMOTE", "VISLANG_REMOTE_TMP"):
+            os.environ.pop(k, None)
+
+
 if __name__ == "__main__":
     test_form_and_wire()
     test_conversion()
     test_local()
     test_remote()
+    test_cell_placement()
     print(f"\nall {len(PASS)} checks passed")

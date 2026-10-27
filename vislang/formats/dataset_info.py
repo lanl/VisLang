@@ -1,12 +1,19 @@
 import numpy as np
 
 
-def uniform_geometry(origin, spacing):
+def uniform_geometry(origin, spacing, space=None):
     """A uniform-grid geometry, or None if either part is unusable.
 
     Returning None rather than substituting a default is the point: a caller
     that cannot state the origin should leave `geometry` unset, not assert an
-    origin the file never gave."""
+    origin the file never gave.
+
+    `space="cells"` marks a placement in the SOURCE's cell indices rather than
+    in physical units: where a cut of a grid that states no geometry sits among
+    its source's cells (origin = the cut's first cell, spacing = its stride).
+    It claims no physical position — cell i of the source sits at i, which is
+    true of every grid — and it is what lines a cut up with its source and its
+    sibling cuts in a viewer. See cell_placement()."""
     def _three(v):
         try:
             a = np.asarray(v, dtype=float).reshape(-1)
@@ -19,7 +26,25 @@ def uniform_geometry(origin, spacing):
     o, s = _three(origin), _three(spacing)
     if o is None or s is None:
         return None
-    return {"kind": "uniform", "origin": o, "spacing": s}
+    geom = {"kind": "uniform", "origin": o, "spacing": s}
+    if space == "cells":
+        geom["space"] = "cells"
+    return geom
+
+
+def cell_placement(ndim=3):
+    """The placement of a whole grid that states no geometry: its own cell
+    indices (origin 0, spacing 1), marked as cells. materialize() starts a
+    geometry-less grid from this, so a cut of it is written where it sits
+    among the source's cells — never at a physical position."""
+    if ndim != 3:
+        return None
+    return uniform_geometry((0.0, 0.0, 0.0), (1.0, 1.0, 1.0), space="cells")
+
+
+def in_cells(geometry):
+    """True for a placement in source cell indices (see uniform_geometry)."""
+    return bool(geometry) and geometry.get("space") == "cells"
 
 
 def geometry_from_edges(left_edge, right_edge, dimensions):
@@ -93,7 +118,7 @@ def narrowed_geometry(geometry, grid_ranges):
         step = getattr(r, "step", None) or 1
         out_o.append(origin[axis] + start * spacing[axis])
         out_s.append(spacing[axis] * step)
-    return uniform_geometry(out_o, out_s)
+    return uniform_geometry(out_o, out_s, space=geometry.get("space"))
 
 
 # ---------------------------------------------------------------------------
@@ -102,13 +127,16 @@ def narrowed_geometry(geometry, grid_ranges):
 # In an .npz that save() writes, under readable reserved keys (the `sieve_`
 # prefix is never a variable):
 #   uniform     sieve_origin (3,), sieve_spacing (3,)
+#               + sieve_in_cells (a 0-d marker) for a placement in source cells
 #   structured  sieve_points (nx, ny, nz, 3)
-GEOMETRY_ARRAY_KEYS = ("sieve_origin", "sieve_spacing", "sieve_points")
+GEOMETRY_ARRAY_KEYS = ("sieve_origin", "sieve_spacing", "sieve_in_cells",
+                       "sieve_points")
 
 # Between the remote reducer and this side, and in the extent catalog, a cut's
 # geometry is ONE array under this reserved name, so it can be requested,
 # cached and reused like a variable: shape (0,) = index space (no geometry),
-# (2, 3) = uniform [origin, spacing], (..., 3) with ndim >= 3 = structured.
+# (2, 3) = uniform [origin, spacing], (3, 3) = uniform placed in source cells
+# [origin, spacing, zeros], (..., 3) with ndim >= 3 = structured.
 GEOMETRY_KEY = "sieve_geometry"
 
 
@@ -117,8 +145,11 @@ def geometry_to_arrays(geometry):
     if not geometry:
         return {}
     if geometry.get("kind") == "uniform":
-        return {"sieve_origin": np.asarray(geometry["origin"], dtype=float),
-                "sieve_spacing": np.asarray(geometry["spacing"], dtype=float)}
+        out = {"sieve_origin": np.asarray(geometry["origin"], dtype=float),
+               "sieve_spacing": np.asarray(geometry["spacing"], dtype=float)}
+        if in_cells(geometry):
+            out["sieve_in_cells"] = np.array(1)
+        return out
     if geometry.get("kind") == "structured" and geometry.get("points") is not None:
         return {"sieve_points": np.asarray(geometry["points"])}
     return {}
@@ -130,7 +161,10 @@ def encode_geometry(geometry):
     if "sieve_points" in arrays:
         return arrays["sieve_points"]
     if "sieve_origin" in arrays:
-        return np.stack([arrays["sieve_origin"], arrays["sieve_spacing"]])
+        rows = [arrays["sieve_origin"], arrays["sieve_spacing"]]
+        if "sieve_in_cells" in arrays:
+            rows.append(np.zeros(3))
+        return np.stack(rows)
     return np.zeros((0,))
 
 
@@ -139,6 +173,8 @@ def decode_geometry(arr):
     arr = np.asarray(arr)
     if arr.ndim == 2 and arr.shape == (2, 3):
         return uniform_geometry(arr[0], arr[1])
+    if arr.ndim == 2 and arr.shape == (3, 3):
+        return uniform_geometry(arr[0], arr[1], space="cells")
     if arr.ndim >= 3 and arr.shape[-1] == 3:
         return structured_geometry(arr)
     return None
@@ -152,7 +188,8 @@ def geometry_from_arrays(arrays):
     if "sieve_points" in arrays:
         return structured_geometry(arrays["sieve_points"])
     if "sieve_origin" in arrays and "sieve_spacing" in arrays:
-        return uniform_geometry(arrays["sieve_origin"], arrays["sieve_spacing"])
+        return uniform_geometry(arrays["sieve_origin"], arrays["sieve_spacing"],
+                                space="cells" if "sieve_in_cells" in arrays else None)
     return None
 
 
@@ -169,8 +206,11 @@ def geometry_descriptor(geometry):
     if not geometry:
         return None
     if geometry.get("kind") == "uniform":
-        return {"kind": "uniform", "origin": [float(v) for v in geometry["origin"]],
-                "spacing": [float(v) for v in geometry["spacing"]]}
+        out = {"kind": "uniform", "origin": [float(v) for v in geometry["origin"]],
+               "spacing": [float(v) for v in geometry["spacing"]]}
+        if in_cells(geometry):
+            out["space"] = "cells"
+        return out
     if geometry.get("kind") == "structured":
         return {"kind": "structured"}
     return None
@@ -182,7 +222,8 @@ def geometry_from_descriptor(desc):
     if not isinstance(desc, dict):
         return None
     if desc.get("kind") == "uniform":
-        return uniform_geometry(desc.get("origin"), desc.get("spacing"))
+        return uniform_geometry(desc.get("origin"), desc.get("spacing"),
+                                space=desc.get("space"))
     if desc.get("kind") == "structured":
         return structured_pending()
     return None
@@ -370,6 +411,11 @@ class DatasetInfo:
                 return None
             return ("cells — the file does not say where the grid sits, so "
                     "its world coordinates are its indices")
+        if in_cells(geometry):
+            o, s = geometry["origin"], geometry["spacing"]
+            return (f"cells, numbered as in its source — this is a cut placed "
+                    f"among its source's cells (origin {tuple(o)}, every "
+                    f"{tuple(s)}); the source states no geometry")
         if geometry.get("kind") == "uniform":
             o, s = geometry["origin"], geometry["spacing"]
             spans = ", ".join(

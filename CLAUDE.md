@@ -74,9 +74,13 @@ change). VTK covers grids (ImageData/Rectilinear/Structured) and point sets
 (PolyData); `.vtu` is refused in both directions. A cropped grid carries
 `DatasetInfo.geometry` — origin+spacing for a uniform grid, or every point's
 position for a curvilinear one (a `.vts`, e.g. terrain-following, whose z
-differs per column) — optional and never synthesized, cut by the narrowing in
-`materialize`, and fetched + cached with the data on remote routes (as the
-`sieve_geometry` piece). So output lands where the cut actually was and ROIs
+differs per column) — never synthesized in physical units, cut by the narrowing
+in `materialize`. A grid that states no geometry (HDF5, raw) is placed in its
+source's cell indices instead (origin = the cut's first cell, spacing = its
+stride, marked `sieve_in_cells` and recorded as `units: source cells`), so an
+overview and a detail cut overlay in ParaView and a saved cut is re-cut in its
+source's numbering — no physical position is claimed. Geometry is fetched +
+cached with the data on remote routes (as the `sieve_geometry` piece). So output lands where the cut actually was and ROIs
 across timesteps align: a curvilinear grid is written as `.vts` (and refused as
 `.vti`, which can only hold origin+spacing); `.npz` keeps either form under
 reserved `sieve_*` keys, which the Tier-0 npz reader reads back. A

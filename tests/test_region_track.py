@@ -343,19 +343,25 @@ def test_remote_pieces():
     from vislang.remote.executor import _unit_middle
     from vislang.formats.inspect import inspect_file
     reset_sinks()
-    r = region(source("/d"), center=[(1, 4, 4, 4), (2, 8, 8, 8)], size=4,
-               coords="cells")
+    import dataclasses
+    # Keys are built from resolved regions: "index" (the file's own array
+    # indices) is the planner's marker for one.
+    r = dataclasses.replace(region(source("/d"), center=[(1, 4, 4, 4), (2, 8, 8, 8)],
+                                   size=4), coords="index")
     k1, k2 = _narrow_key([r], 1), _narrow_key([r], 2)
     check("catalog key per timestep", k1 != k2 and k1["forms"][0][0] == "region_at",
           (k1, k2))
-    check("fixed region key unchanged (cells)",
-          _narrow_key([region(source("/d"), x=(0, 4), coords="cells")])
+    check("fixed region key unchanged (resolved)",
+          _narrow_key([dataclasses.replace(region(source("/d"), x=(0, 4)),
+                                           coords="index")])
           == {"forms": [["region", [["x", 0, 4]]]]})
-    # A box not in cells never shares a key with one that is: world and
-    # undecided boxes are named apart, so they reuse an exact match only.
-    check("world / undecided region keyed apart",
+    # A box not yet resolved never shares a key with one that is: world,
+    # unresolved cells and undecided boxes are named apart, so they reuse an
+    # exact match only.
+    check("unresolved regions keyed apart",
           [_narrow_key([region(source("/d"), x=(0, 4), coords=c)])["forms"][0][0]
-           for c in ("world", None)] == ["region_world", "region_auto"])
+           for c in ("world", "cells", None)]
+          == ["region_world", "region_cells", "region_auto"])
     from vislang.remote.catalog import _fuse_forms
     check("moving key is exact-match only", _fuse_forms(k1["forms"], (16, 16, 16)) is None)
 

@@ -384,13 +384,14 @@ def _narrow_key(middle, label=None):
 
 
 def _region_form(n, name):
-    """The key's name for a region: the plain name only for a box in cells —
-    the one form the catalog may slice a cached superset for, and the form every
-    key held before world coordinates existed. A world box (or one whose
-    coordinates are not decided yet) is named apart, so it can never be served
-    a cached cell box that happens to share its numbers; it reuses an exact
-    match only."""
-    return {"cells": name, "world": f"{name}_world"}.get(n.coords, f"{name}_auto")
+    """The key's name for a region: the plain name only for a box resolved to
+    the file's array indices — the one form the catalog may slice a cached
+    superset for, and the form every key held before region coordinates
+    existed. A box still in world coordinates, in cells not yet resolved, or
+    undecided is named apart, so it can never be served a cached box that
+    happens to share its numbers; it reuses an exact match only."""
+    return {"index": name, "world": f"{name}_world",
+            "cells": f"{name}_cells"}.get(n.coords, f"{name}_auto")
 
 
 def delta_key(label, tag, var):

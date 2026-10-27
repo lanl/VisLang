@@ -745,7 +745,11 @@ class VTKAdapter(FormatAdapter):
             dimensions['grid'] = shape
             attributes['vtk_dimensions'] = list(shape)
             if kind == 'ImageData':
-                geometry = uniform_geometry(mesh.origin, mesh.spacing)
+                # A cut Sieve placed among its source's cells says so in its
+                # field data; read it back in those cells, not as metres.
+                in_cells = 'sieve_in_cells' in mesh.field_data.keys()
+                geometry = uniform_geometry(mesh.origin, mesh.spacing,
+                                            space="cells" if in_cells else None)
                 attributes['vtk_origin'] = [float(v) for v in mesh.origin]
                 attributes['vtk_spacing'] = [float(v) for v in mesh.spacing]
             else:
@@ -909,7 +913,8 @@ class NpzAdapter(FormatAdapter):
             elif 'sieve_origin' in headers and 'sieve_spacing' in headers:
                 with np.load(filepath, allow_pickle=False) as z:
                     geometry = geometry_from_arrays(
-                        {k: z[k] for k in ('sieve_origin', 'sieve_spacing')})
+                        {k: z[k] for k in ('sieve_origin', 'sieve_spacing',
+                                           'sieve_in_cells') if k in z.files})
 
         info = DatasetInfo(filepath, self.name, list(data), dimensions=dimensions,
                            attributes=attributes,

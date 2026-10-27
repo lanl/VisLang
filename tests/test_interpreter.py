@@ -62,7 +62,8 @@ def run(node):
     reset_sinks()
     plan_pipeline(save(node, out), dry_run=False)
     with np.load(out) as z:
-        return {k: z[k] for k in z.files}
+        # Variables only; reserved sieve_* keys hold where the cut sits.
+        return {k: z[k] for k in z.files if not k.startswith("sieve_")}
 
 
 def steps_of(node):

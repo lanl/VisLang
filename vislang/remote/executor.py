@@ -199,7 +199,8 @@ def _run_single(text, out):
 
     import numpy as np
     with np.load(out) as z:
-        saved = list(z.files)
+        # Variables only: the cut's placement rides under reserved sieve_* keys.
+        saved = [k for k in z.files if not k.startswith("sieve_")]
 
     meta = {
         "vislang_exec": PLAN_VERSION,
