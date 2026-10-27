@@ -49,7 +49,7 @@ PLAN_VERSION = 1
 
 def _fail(msg):
     meta = {"vislang_exec": PLAN_VERSION, "ok": False, "error": msg}
-    print(f"{META_BEGIN}\n{json.dumps(meta)}\n{META_END}")
+    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
     return 1
 
 
@@ -59,17 +59,19 @@ def _jsonable_attrs(attributes):
     some attributes are DATA the caller reads back (GenericIO's phys_scale /
     phys_origin, which a format-preserving save needs), so lists must stay lists."""
     import numpy as np
-    out = {}
-    for key, value in (attributes or {}).items():
-        if isinstance(value, np.ndarray):
-            out[key] = value.tolist()
-        elif isinstance(value, (list, tuple)):
-            out[key] = [v.item() if isinstance(v, np.generic) else v for v in value]
-        elif isinstance(value, np.generic):
-            out[key] = value.item()
-        else:
-            out[key] = value
-    return out
+
+    def plain(v):
+        if isinstance(v, np.ndarray):
+            return plain(v.tolist())
+        if isinstance(v, (list, tuple)):
+            return [plain(x) for x in v]
+        if isinstance(v, np.generic):
+            v = v.item()
+        if isinstance(v, bytes):          # HDF5 string attributes (Nyx's, e.g.)
+            return v.decode("utf-8", "replace")
+        return v
+
+    return {key: plain(value) for key, value in (attributes or {}).items()}
 
 
 def _geometry_desc(info):
@@ -92,7 +94,7 @@ def _inspect_report(path):
     except adapters.NeedsAdapterError as e:
         meta = {"vislang_exec": PLAN_VERSION, "ok": True, "needs_adapter": True,
                 "evidence": e.evidence}
-        print(f"{META_BEGIN}\n{json.dumps(meta)}\n{META_END}")
+        print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
         return 0
     except Exception as e:
         return _fail(f"{type(e).__name__}: {e}")
@@ -222,7 +224,7 @@ def _run_single(text, out):
         "steps": result["steps"],
         "saved_variables": saved,
     }
-    print(f"{META_BEGIN}\n{json.dumps(meta)}\n{META_END}")
+    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
     return 0
 
 

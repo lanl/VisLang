@@ -176,6 +176,15 @@ def main():
         else:
             os.environ["VISLANG_REMOTE"] = old_env
 
+    # HDF5 string attributes arrive as bytes (Nyx's do); the schema the remote
+    # reports back is JSON, so they must travel as text.
+    from vislang.remote.executor import _jsonable_attrs
+    attrs = _jsonable_attrs({"units": b"Mpc", "names": np.array([b"a", b"b"]),
+                             "scale": np.float32(0.5), "mixed": [np.int64(2), b"q"]})
+    check("byte-string attributes report as text",
+          json.loads(json.dumps(attrs)) == {"units": "Mpc", "names": ["a", "b"],
+                                            "scale": 0.5, "mixed": [2, "q"]}, attrs)
+
     shutil.rmtree(TMP)
     print(f"\nALL {len(PASS)} CHECKS PASSED")
 
