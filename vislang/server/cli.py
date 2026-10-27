@@ -27,7 +27,7 @@ from vislang.server.cli_core import (do_inspect, do_estimate, do_execute,
 # holds, not success.
 _BAD_PREFIXES = ("ERROR", "NEEDS_ADAPTER", "NEEDS_SESSION", "ADAPTER REJECTED",
                  "BINDING REJECTED", "BINDING error", "UNREACHABLE",
-                 "NOT CONNECTED")
+                 "NOT CONNECTED", "SCHEMA UNAVAILABLE")
 _BAD_STATUSES = ("Status: FAILED", "Status: BUILD FAILED",
                  "Status: NEEDS CONFIRM", "Status: NEEDS ALLOCATION",
                  "Status: NEEDS SESSION")
@@ -65,6 +65,8 @@ def build_parser():
     pi = sub.add_parser("inspect", help="read a source's schema (metadata only)")
     pi.add_argument("uri", help="file, folder (=timeseries), or ssh://host/path")
     pi.add_argument("--positions", help='"x,y,z" names of the coordinate variables')
+    pi.add_argument("--allow-fetch", action="store_true",
+                    help="copy the whole file when only that can read its schema")
 
     pe = sub.add_parser("estimate", help="static-check a spec + estimate cost; "
                                          "materializes nothing")
@@ -72,6 +74,12 @@ def build_parser():
 
     px = sub.add_parser("execute", help="run a spec's reduction / render / transfer")
     px.add_argument("spec", nargs="?", default="spec.py", help="spec file (default spec.py)")
+    px.add_argument("--without-allocation", action="store_true",
+                    help="no Slurm allocation: fall back to fetching whole files "
+                         "(priced and gated on its own)")
+    px.add_argument("--allow-fetch", action="store_true",
+                    help="approve a fallback whole-file fetch that is over budget "
+                         "(--confirm does not cover it)")
     px.add_argument("--confirm", action="store_true",
                     help="commit an over-budget run the user has approved")
 
@@ -97,11 +105,13 @@ def main(argv=None):
         elif args.cmd == "disconnect":
             report = do_disconnect(args.host)
         elif args.cmd == "inspect":
-            report = do_inspect(args.uri, args.positions)
+            report = do_inspect(args.uri, args.positions, allow_fetch=args.allow_fetch)
         elif args.cmd == "estimate":
             report = do_estimate(args.spec)
         elif args.cmd == "execute":
-            report = do_execute(args.spec, confirm=args.confirm)
+            report = do_execute(args.spec, confirm=args.confirm,
+                                without_allocation=args.without_allocation,
+                                allow_fetch=args.allow_fetch)
         elif args.cmd == "render-cost":
             report = do_estimate_render_cost(args.filepath)
         elif args.cmd == "submit-adapter":

@@ -55,6 +55,7 @@ import numpy as np
 
 import vislang.runtime.timing as timing        # per-phase seconds/bytes -> timings.jsonl
 import vislang.runtime.provenance as provenance  # the derivation record -> the artifact
+from vislang.interpreter.approval import Approval
 from vislang.formats.dataset_info import (DatasetInfo, GEOMETRY_KEY, decode_geometry,
                                           encode_geometry, geometry_from_arrays,
                                           geometry_from_descriptor)
@@ -737,10 +738,12 @@ def _probe(src, steps):
     return conn, host, remote_path, size, sid
 
 
-def _allocation_gate(conn, host, steps, confirm):
+def _allocation_gate(conn, host, steps, without_allocation=False):
     """In srun auto mode, HOLD (and propose salloc) when no allocation is held —
-    never create one here. A FIXED VISLANG_SRUN_JOBID is trusted as-is."""
-    if _srun_requested() == "auto" and not confirm:
+    never create one here. A FIXED VISLANG_SRUN_JOBID is trusted as-is.
+    `without_allocation` (approval.py) goes on without one: the reduce then
+    cannot step into an allocation and the run falls back to a gated fetch."""
+    if _srun_requested() == "auto" and not without_allocation:
         with timing.phase("allocation_probe"):
             alloc = allocation_status(conn)
         if alloc.get("present") is False:      # definitively absent (not unknown)
@@ -764,7 +767,7 @@ def _remote_info(src, schema, variables, data, extra_attrs):
     return info
 
 
-def remote_reduce_tags(src, middle, confirm=False):
+def remote_reduce_tags(src, middle, approval=None):
     """Named boxes on ONE remote file (region(center={tag: (x, y[, z])})).
 
     remote_reduce, per box: each tag is its own catalog extent (keyed by its own
@@ -776,6 +779,7 @@ def remote_reduce_tags(src, middle, confirm=False):
                                               format_plan_estimate)
     from vislang.interpreter.track import tagged_region, tag_names, for_tag
     from vislang.runtime.paths import cache_root
+    approval = Approval.of(approval)
     steps = []
     prefix, _compresses = _split_middle(middle)
     tags = tag_names(tagged_region(prefix))
@@ -842,9 +846,9 @@ def remote_reduce_tags(src, middle, confirm=False):
                 estimate.notes.append("schema unavailable (login-node inspect failed) "
                                       "— reduced size not estimated; not gated.")
             steps.append(format_plan_estimate(estimate))
-        if estimate.over_budget and not confirm:
+        if estimate.over_budget and not approval.budget:
             raise BudgetHold(estimate, steps)
-        _allocation_gate(conn, host, steps, confirm)
+        _allocation_gate(conn, host, steps, approval.without_allocation)
     else:
         timing.note(route="catalog_full_hit")
 
@@ -908,12 +912,13 @@ def remote_reduce_tags(src, middle, confirm=False):
     return cut, steps, estimate
 
 
-def remote_reduce(src, middle, confirm=False):
+def remote_reduce(src, middle, approval=None):
     """Run the narrowing prefix of `middle` on the remote host of src.uri.
     Returns (loaded DatasetInfo, steps, CostEstimate|None). Raises
     RemoteUnavailable to make the planner fall back, BudgetHold when the
-    estimated wire transfer is over budget and `confirm` is False, or a real
-    error for a broken spec."""
+    estimated wire transfer is over budget and not approved (approval.py), or a
+    real error for a broken spec."""
+    approval = Approval.of(approval)
     steps = []
     prefix, compresses = _split_middle(middle)
     if not prefix:
@@ -970,7 +975,7 @@ def remote_reduce(src, middle, confirm=False):
         with timing.phase("cost_estimate"):
             estimate = _reduce_estimate(src, key, schema, _data_vars(missing), conn,
                                         steps, narrowing=checked)
-        if estimate is not None and estimate.over_budget and not confirm:
+        if estimate is not None and estimate.over_budget and not approval.budget:
             raise BudgetHold(estimate, steps)
     else:
         estimate = None
@@ -981,10 +986,11 @@ def remote_reduce(src, middle, confirm=False):
     # salloc (never run it here) rather than silently shipping / falling back to a
     # whole-file fetch. Only when there is compute to ship — a full cache hit needs
     # no allocation. A FIXED VISLANG_SRUN_JOBID is trusted as-is (the run path uses
-    # it directly, so we don't second-guess it here). confirm=True proceeds anyway
-    # (auto-mode then falls back to a whole-file fetch downstream).
+    # it directly, so we don't second-guess it here). Approval without_allocation
+    # proceeds anyway: auto-mode then falls back to a whole-file fetch, which the
+    # planner prices and gates on its own.
     if want is None or missing:
-        _allocation_gate(conn, host, steps, confirm)
+        _allocation_gate(conn, host, steps, approval.without_allocation)
 
     fetched = {}
     if want is None or missing:
@@ -1135,7 +1141,48 @@ def _parse_meta(stdout_text):
 # ---------------------------------------------------------------------------
 # Whole-folder (timeseries) reduce: ONE remote job, ONE bundle pulled back
 # ---------------------------------------------------------------------------
-def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
+def _folder_estimate(src, schema, checked, missing, conn, n_timesteps):
+    """The CostEstimate of a folder delta: every missing (timestep, variable)
+    pair priced at what its box selects on `schema` (timestep 0's — the series'
+    shared schema), summed. A box that could not be lowered here (no schema, or
+    a world box placed only next to the data) leaves the size unknown: the
+    estimate then says so and does not gate, as for a single file."""
+    from vislang.interpreter.estimate import estimate_plan_cost, _priced
+    try:
+        net_bw = measure_bandwidth(conn)
+    except Exception:
+        net_bw = None
+    info = _info_from_schema(src.uri, schema) if schema else None
+    per_var, total, notes, unknown = {}, 0.0, [], False
+    for (label, tag), names in missing.items():
+        for var in _data_vars(names) or []:
+            if (tag, var) not in per_var:
+                narrowing = checked.get(tag)
+                if info is None or narrowing is None:
+                    per_var[(tag, var)] = None
+                else:
+                    per_var[(tag, var)] = estimate_plan_cost(
+                        info=info, narrowing=narrowing, site="remote",
+                        wire_vars=[var]).read_mb
+            mb = per_var[(tag, var)]
+            if mb is None:
+                unknown = True
+            else:
+                total += mb
+    if unknown:
+        notes.append("a box could not be sized here (no schema, or placed only "
+                     "next to the data) — the folder delta is not priced; not "
+                     "gated.")
+    if any(_row_cutting(n) for n in checked.values() if n is not None):
+        notes.append("value-dependent row cut — the count survives only after the "
+                     "read, so this prices the pre-cut selection: an UPPER bound.")
+    read_mb = None if unknown else total
+    return _priced(site="remote", read_mb=read_mb, output_mb=read_mb,
+                   browser_payload_mb=None, n_timesteps=max(1, n_timesteps),
+                   net_bw_bps=net_bw, notes=notes)
+
+
+def remote_folder_reduce(src, middle, ts_nodes, out_local_dir, approval=None):
     """Reduce a remote folder timeseries as ONE remote job, CATALOG-AWARE: the
     local extent catalog is consulted per (timestep, variable), so only the delta
     crosses the wire. Re-running with one more field fetches just that field, for
@@ -1161,10 +1208,13 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
 
     Returns (local_out_dir, steps, report). Raises RemoteUnavailable (the
     planner falls back to a whole-folder fetch) or RuntimeError for a real
-    failure."""
+    failure. Before the job ships, the pairs it would fetch are priced and gated
+    (BudgetHold), and srun auto mode needs a held allocation (AllocationHold) —
+    the same gates as a single file (approval.py says what lifts each)."""
     from vislang.remote.catalog import make_source_id
     from vislang.runtime.paths import cache_root
     from vislang.interpreter.compress import compress as _compress
+    approval = Approval.of(approval)
     from vislang.interpreter.track import (check_coverage, tagged_region, tag_plan,
                                            tag_names, for_tag)
 
@@ -1313,10 +1363,26 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
             from vislang.interpreter.planner import _check_boxes, _first_boxes
             _check_boxes(_info_from_schema(src.uri, schema0), prefixes,
                          _first_boxes(firsts))
-        for i, t in enumerate(tags):                    # one box per tag stands for it
-            _check_before_shipping(src, prefixes[t], schema0, steps if i == 0 else [],
-                                   label=firsts[t])
+        checked = {t: _check_before_shipping(src, prefixes[t], schema0,
+                                             steps if i == 0 else [], label=firsts[t])
+                   for i, t in enumerate(tags)}      # one box per tag stands for it
     timing.note(pre_validated=schema0 is not None)
+
+    # --- cost + allocation gates BEFORE the job ships ---------------------------
+    # Priced on what would cross: the missing (timestep, variable) pairs, each
+    # at the size its box selects on timestep 0's schema. A full catalog hit
+    # ships nothing and needs neither gate.
+    estimate = None
+    if missing:
+        from vislang.interpreter.estimate import format_plan_estimate
+        with timing.phase("cost_estimate"):
+            estimate = _folder_estimate(src, schema0, checked, missing, conn,
+                                        len(fetch_labels))
+            steps.append(format_plan_estimate(estimate))
+        timing.note_estimate(estimate)
+        if estimate.over_budget and not approval.budget:
+            raise BudgetHold(estimate, steps)
+        _allocation_gate(conn, host, steps, approval.without_allocation)
 
     # --- fetch only the missing (timestep, variable) pairs, in ONE remote job -
     fetched = {}                                        # (label, tag, var) -> array
@@ -1423,7 +1489,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir):
               "total_pairs": total_pairs, "reused_pairs": reused_pairs,
               "fetched_pairs": fetched_pairs,
               "fetched_geometry": sum(1 for (_, _, v) in fetched if v == GEOMETRY_KEY),
-              "timesteps": [lab for lab, *_ in files]}
+              "timesteps": [lab for lab, *_ in files], "estimate": estimate}
     if tagged is None:
         per_step = per_tag[None]
         with timing.phase("sink_save_timeseries", n=len(per_step)):

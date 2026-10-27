@@ -129,7 +129,7 @@ def main():
     reduce_mod.remote_reduce = stub_reduce_unavailable
     reduce_mod.session_check = lambda uri: None
     planner._fetch_remote = stub_fetch
-    planner._remote_fetch_gate = lambda *a: None
+    planner._remote_fetch_gate = lambda *a, **k: None
     old_env = os.environ.get("VISLANG_REMOTE")
     try:
         # auto + narrowing -> tries remote, falls back to fetch, still executes

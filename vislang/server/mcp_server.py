@@ -90,7 +90,7 @@ def disconnect(host: str) -> str:
 
 
 @mcp.tool()
-def inspect(filepath: str, positions: str = None) -> str:
+def inspect(filepath: str, positions: str = None, allow_fetch: bool = False) -> str:
     """Read a file's schema — variables, dimensions, attributes — metadata only, no bulk data.
 
     Use this to write a spec: you need to know what fields and axes exist before
@@ -110,8 +110,14 @@ def inspect(filepath: str, positions: str = None) -> str:
 
     positions: optional "x,y,z" override naming the spatial-coordinate variables
     when auto-detection can't tell (e.g. particle data with unusual names).
+
+    Inspect never copies data on its own. A remote file whose schema only a
+    whole-file copy could read (no reducer on the host, or a format it does not
+    recognize — e.g. one that needs an adapter) returns SCHEMA UNAVAILABLE with
+    the file's size. Tell the user; pass allow_fetch=True only once they approve
+    that copy.
     """
-    return do_inspect(filepath, positions)
+    return do_inspect(filepath, positions, allow_fetch=allow_fetch)
 
 
 @mcp.tool()
@@ -173,7 +179,8 @@ def estimate_render_cost(filepath: str) -> str:
 
 
 @mcp.tool()
-def run_pipeline(spec_path: str, confirm: bool = False) -> str:
+def run_pipeline(spec_path: str, confirm: bool = False, without_allocation: bool = False,
+                 allow_fetch: bool = False) -> str:
     """Execute a declarative DSL spec at spec_path and return an execution report.
 
     Convention: keep the spec in a single file named `spec.py`, edited in place —
@@ -192,6 +199,11 @@ def run_pipeline(spec_path: str, confirm: bool = False) -> str:
     the estimate. Do NOT silently re-run with confirm=True: surface the estimate to
     the user and let them choose to (a) commit as-is, or (b) tell you how to narrow
     the spec further. Pass confirm=True only once the user has approved running as-is.
+    confirm approves the plan that was priced and nothing else: a run that cannot
+    reduce next to the data and would fall back to copying whole files reports
+    FALLBACK FETCH OVER BUDGET instead — pass allow_fetch=True only once the user
+    has approved that copy. without_allocation=True (only on the user's say-so)
+    goes on with no Slurm allocation, which also means a fallback fetch.
 
     A spec is built from FORMS (no imports needed). Each form is a declarative
     GOAL that builds a node; nothing reads data until a sink runs:
@@ -219,7 +231,8 @@ def run_pipeline(spec_path: str, confirm: bool = False) -> str:
 
     Returns the inferred plan per pipeline, any printed URLs/paths, and errors.
     """
-    return do_execute(spec_path, confirm=confirm)
+    return do_execute(spec_path, confirm=confirm, without_allocation=without_allocation,
+                      allow_fetch=allow_fetch)
 
 
 if __name__ == "__main__":

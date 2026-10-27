@@ -11,14 +11,17 @@ keep transport (tool decorators / argparse) in the front-ends.
 """
 import io
 import os
+import uuid
 import traceback
 from contextlib import redirect_stdout, redirect_stderr
 
-from vislang.formats.inspect import inspect_source, is_remote, remote_schema_tree
+from vislang.formats.inspect import (inspect_source, is_remote, remote_schema_tree,
+                                     SchemaUnavailable, schema_unavailable_text)
 from vislang.interpreter.estimate import estimate_render_cost as _estimate_render_cost, format_estimate
 from vislang.formats.adapters import NeedsAdapterError
 
 from vislang.dsl import form_namespace, reset_sinks, collected_sinks, leaf_nodes
+from vislang.interpreter.approval import Approval
 from vislang.interpreter.planner import plan_pipeline, format_result
 from vislang.runtime.sandbox import execute, SandboxError
 
@@ -119,10 +122,15 @@ def _session_handshake(uri):
     )
 
 
-def do_inspect(filepath, positions=None):
+def do_inspect(filepath, positions=None, allow_fetch=False):
     """Read a source's schema (metadata only). `positions` is an optional
     "x,y,z" string naming the spatial-coordinate variables. A FOLDER is a
-    timeseries — return its listing instead of reading it as one file."""
+    timeseries — return its listing instead of reading it as one file.
+
+    Inspect never moves bulk data on its own: a remote schema that only a
+    whole-file copy could read (no reducer on the host, or a format it does not
+    recognize) is reported as SCHEMA UNAVAILABLE with the file's size, and is
+    copied only with `allow_fetch=True`."""
     from vislang.remote.download import clear_remote_caches
     clear_remote_caches()                  # one inspect is its own run (see do_execute)
     # A remote source with no session cannot be inspected next to the data, and
@@ -138,13 +146,15 @@ def do_inspect(filepath, positions=None):
     if is_remote(filepath):
         from vislang.formats.inspect import remote_is_dir, remote_folder_listing
         if remote_is_dir(filepath):
-            return remote_folder_listing(filepath)
+            return remote_folder_listing(filepath, allow_fetch=allow_fetch)
     elif os.path.isdir(filepath):
         from vislang.formats.inspect import folder_listing
         return folder_listing(filepath)
     try:
         pos = tuple(p.strip() for p in positions.split(",")) if positions else None
-        info = inspect_source(filepath, positions=pos)
+        info = inspect_source(filepath, positions=pos, allow_fetch=allow_fetch)
+    except SchemaUnavailable as e:
+        return schema_unavailable_text(e)
     except NeedsAdapterError as e:
         return _adapter_handshake(e)
     except Exception as e:
@@ -242,18 +252,21 @@ def do_disconnect(host):
 def _run_one(node, dry_run, confirm=False):
     """Plan+execute one pipeline; return (ok, hold_kind, formatted_text) where
     hold_kind is None, 'session' (no live ssh session), 'confirm' (over budget),
-    or 'allocation' (no Slurm alloc)."""
+    'fetch' (a fallback whole-file fetch over budget), or 'allocation' (no Slurm
+    alloc). `confirm` is a bool (budget) or an Approval (approval.py)."""
     try:
         result = plan_pipeline(node, dry_run=dry_run, confirm=confirm)
         hold = ('session' if result.get("needs_session")
                 else 'allocation' if result.get("needs_allocation")
+                else 'fetch' if result.get("needs_fetch_approval")
                 else 'confirm' if result.get("needs_confirm") else None)
         return True, hold, format_result(result)
     except Exception as e:
         return False, None, f"[{getattr(node, 'kind', '?')}] FAILED: {type(e).__name__}: {e}"
 
 
-def do_execute(spec_path, confirm=False, force_dry=False):
+def do_execute(spec_path, confirm=False, force_dry=False, without_allocation=False,
+               allow_fetch=False):
     """Execute (or, with force_dry, only plan+cost) the DSL spec at spec_path and
     return the formatted execution report.
 
@@ -310,8 +323,12 @@ def do_execute(spec_path, confirm=False, force_dry=False):
     # The derivation record that travels with each output (provenance.py). Opened
     # here rather than derived from `meta` because timing short-circuits entirely
     # under VISLANG_TIMING=0 and would take provenance down with it.
-    with timing.run(spec_path, spec_code=spec_code, confirm=confirm) as meta, \
-            provenance.run(spec_path, spec_code=spec_code):
+    # One id for the run's timing record and every provenance record it writes,
+    # so an output can be joined to how its run went (realization.run).
+    run_id = uuid.uuid4().hex[:12]
+    with timing.run(spec_path, spec_code=spec_code, confirm=confirm,
+                    run_id=run_id) as meta, \
+            provenance.run(spec_path, spec_code=spec_code, run_id=run_id):
         reset_sinks()
         # One sampling seed per run, not per process: the MCP server is long-
         # lived, and a generator carried over from an earlier run would make
@@ -343,14 +360,19 @@ def do_execute(spec_path, confirm=False, force_dry=False):
         results = []
         any_failed = False
         any_budget_hold = False
+        any_fetch_hold = False
         any_alloc_hold = False
         any_session_hold = False
+        approval = Approval(budget=bool(confirm),
+                            without_allocation=bool(without_allocation),
+                            fetch=bool(allow_fetch))
 
         with redirect_stdout(buf), redirect_stderr(buf):
             for t in targets:
-                passed, hold, text = _run_one(t, dry_run=dry, confirm=confirm)
+                passed, hold, text = _run_one(t, dry_run=dry, confirm=approval)
                 any_failed = any_failed or not passed
                 any_budget_hold = any_budget_hold or (hold == 'confirm')
+                any_fetch_hold = any_fetch_hold or (hold == 'fetch')
                 any_alloc_hold = any_alloc_hold or (hold == 'allocation')
                 any_session_hold = any_session_hold or (hold == 'session')
                 results.append(text)
@@ -362,7 +384,7 @@ def do_execute(spec_path, confirm=False, force_dry=False):
         status = ("FAILED" if any_failed else
                   "NEEDS SESSION" if any_session_hold else
                   "NEEDS ALLOCATION" if any_alloc_hold else
-                  "NEEDS CONFIRM" if any_budget_hold else "OK")
+                  "NEEDS CONFIRM" if any_budget_hold or any_fetch_hold else "OK")
         meta["status"] = status
     parts = [f"Status: {status}", f"Spec: {spec_path}"]
     if any_session_hold:
@@ -380,12 +402,22 @@ def do_execute(spec_path, confirm=False, force_dry=False):
                      "the user there is no allocation and ASK PERMISSION to create the "
                      "proposed one (the salloc line above); on approval, run it — the "
                      "harness will still prompt for that specific command. Once it is "
-                     "RUNNING, re-run the spec. Never run salloc without approval.)")
+                     "RUNNING, re-run the spec. Never run salloc without approval. The "
+                     "other way out, only if the user prefers it: re-run with "
+                     "without_allocation=True, which falls back to fetching whole "
+                     "files — priced and gated on its own.)")
     if any_budget_hold:
         parts.append("\n(OVER BUDGET — one or more pipelines were HELD; nothing was "
                      "materialized for them. Show the estimate to the user and let "
                      "them choose: commit as-is (re-run with confirm=True) or narrow "
                      "the spec. Do not auto-confirm.)")
+    if any_fetch_hold:
+        parts.append("\n(FALLBACK FETCH OVER BUDGET — the reduce could not run next "
+                     "to the data, and copying the whole files instead is over "
+                     "budget; nothing was moved. Show the user why the reduce could "
+                     "not run and the fetch estimate. Re-run with allow_fetch=True "
+                     "only if they approve that copy; confirm=True does not cover "
+                     "it.)")
     if not has_sinks:
         parts.append("\n(no render()/save() sink — dry run: inferred plan only, "
                      "nothing materialized)")

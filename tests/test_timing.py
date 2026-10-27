@@ -188,6 +188,28 @@ def test_end_to_end_local(tmp):
     check("no wire bytes locally", "wire_bytes" not in r["counters"], r["counters"])
 
 
+def test_run_id_shared_with_provenance(tmp):
+    """One id joins a run's timing record to the provenance record of every
+    output it wrote (realization.run)."""
+    path = os.path.join(tmp, "t6.jsonl")
+    os.environ["VISLANG_TIMINGS_FILE"] = path
+    import numpy as np
+    from vislang.runtime import provenance
+    from vislang.server.cli_core import do_execute
+    src = os.path.join(tmp, "grid.npz")
+    np.savez(src, rho=np.zeros((8, 8, 8), dtype=np.float32))
+    out = os.path.join(tmp, "ids.npz")
+    spec = os.path.join(tmp, "ids_spec.py")
+    with open(spec, "w") as f:
+        f.write(f'save(region(source("{src}"), x=(0, 4)), "{out}")\n')
+    report = do_execute(spec)
+    check("run ok", report.startswith("Status: OK"), report[:300])
+    run_id = _records(path)[-1]["run_id"]
+    rec = provenance.record_for(out)
+    check("provenance names the timing record's run",
+          rec["realization"]["run"] == run_id, (rec["realization"].get("run"), run_id))
+
+
 if __name__ == "__main__":
     saved = {k: os.environ.get(k) for k in ("VISLANG_TIMINGS_FILE", "VISLANG_TIMING")}
     os.environ["VISLANG_TIMING"] = "1"     # this suite owns the switch it tests
@@ -195,7 +217,8 @@ if __name__ == "__main__":
         try:
             for fn in (test_run_record, test_estimate_flattened,
                        test_error_recorded_and_reraised, test_detached_and_disabled,
-                       test_flush_failure_is_survivable, test_end_to_end_local):
+                       test_flush_failure_is_survivable, test_end_to_end_local,
+                       test_run_id_shared_with_provenance):
                 print(f"\n{fn.__name__}:")
                 fn(tmp)
         finally:

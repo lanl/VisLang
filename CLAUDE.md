@@ -206,11 +206,9 @@ binding mode).
 **No auto-allocation — propose, don't grab.** In srun mode
 (`VISLANG_SRUN_JOBID=auto`) a remote reduce `srun`-steps into a *held* Slurm
 allocation and never creates one (never `sbatch`). When a run reports no
-allocation — "no RUNNING allocation matching name vislang … run salloc first"
-(a hard error under `VISLANG_REMOTE=force`, else a fall back to a
-whole-file(/folder) fetch under `.vislang/downloads/`) — **propose** the command to the user
-and let them approve it; an allocation spends real, shared HPC time, so never run
-it silently:
+allocation (`Status: NEEDS ALLOCATION`; nothing was shipped or copied) —
+**propose** the command to the user and let them approve it; an allocation
+spends real, shared HPC time, so never run it silently:
 
     ssh <host> 'salloc --no-shell -J vislang -N 1 -p skylake-gold -t <walltime>'
 
@@ -218,3 +216,12 @@ it silently:
 or auto-discovery won't find it. Recommend `-p skylake-gold`; never guess
 `general`; confirm the partition + walltime with the user. Once it is RUNNING,
 re-run the spec — every timestep then steps into the same held allocation.
+
+**Each gate has its own approval** (`vislang/interpreter/approval.py`):
+`confirm=True` approves the priced plan's cost and nothing else;
+`without_allocation=True` goes on with no allocation (the run then falls back to
+copying whole files — only the selected timesteps of a folder); `allow_fetch=True`
+approves such a fallback copy when it is over budget. Never pass any of them
+without the user's say-so for that specific hold. `inspect` never copies data:
+a schema only a copy could read is reported as `SCHEMA UNAVAILABLE` with its
+size (`allow_fetch=True` to copy it, on approval).

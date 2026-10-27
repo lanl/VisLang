@@ -60,8 +60,12 @@ def _auto_positions(info):
 
 class SchemaUnavailable(Exception):
     """A remote schema could not be read WITHOUT moving bulk data, and the caller
-    forbade the whole-file fallback (`allow_fetch=False`). Raised only on that
-    path; the default remote inspect still falls back to a fetch as before."""
+    forbade the whole-file fallback (`allow_fetch=False`). `size` is the file's
+    size in bytes when one stat could tell it (what the fetch would move)."""
+
+    def __init__(self, message, size=None):
+        super().__init__(message)
+        self.size = size
 
 
 def inspect_source(uri, positions=None, allow_fetch=True):
@@ -126,6 +130,14 @@ def _inspect_remote(uri, positions=None, allow_fetch=True):
         return _inspect_via_fetch(uri, positions)
     meta = _run_remote_inspect(conn, remote_path)
     if not meta or not meta.get("ok") or meta.get("needs_adapter"):
+        size = None
+        if not allow_fetch:
+            try:
+                from vislang.remote.download import remote_stat
+                st = remote_stat(conn, remote_path)
+                size = st[0] if st else None
+            except Exception:
+                size = None
         # No schema (or an unrecognized format: the remote can't conform an
         # adapter without a model). Fetch the whole file so the LOCAL inspect can
         # bind/enrich or raise NeedsAdapterError against a real local copy.
@@ -135,12 +147,21 @@ def _inspect_remote(uri, positions=None, allow_fetch=True):
                    if (meta or {}).get("needs_adapter")
                    else "the remote inspect returned no schema")
             raise SchemaUnavailable(f"{uri}: {why} — a whole-file fetch would be "
-                                    f"needed, and is refused here.")
+                                    f"needed, and is refused here.", size=size)
         return _inspect_via_fetch(uri, positions)
     # Inspect runs on the LOGIN NODE over plain ssh — cheap, and it needs no
     # Slurm allocation. The allocation check belongs at the reduce seam (where the
     # lowering ships to a compute node), not here.
     return _build_remote_info(uri, meta, positions)
+
+
+def schema_unavailable_text(e):
+    """The report for a schema that only a whole-file copy could read."""
+    size = getattr(e, "size", None)
+    return (f"SCHEMA UNAVAILABLE: {e}"
+            + (f" The file is {size / 1024 ** 2:,.1f} MiB." if size else "")
+            + " Inspecting it would copy the whole file here; inspect again with "
+              "allow_fetch=True only if the user approves that copy.")
 
 
 def _inspect_via_fetch(uri, positions):
@@ -376,7 +397,7 @@ def folder_listing(dirpath):
     return head + "\n" + body
 
 
-def remote_folder_listing(uri):
+def remote_folder_listing(uri, allow_fetch=False):
     """Remote analog of folder_listing: the timestep count/labels + the shared
     schema read from the first timestep, both over ssh (metadata only — no bulk
     data crosses the wire). Backs the MCP `inspect` tool for a remote folder."""
@@ -400,7 +421,11 @@ def remote_folder_listing(uri):
         f"  shared schema (from timestep {labels[0]}):"
     )
     try:
-        body = "\n".join("    " + ln for ln in str(inspect_source(first_uri)).splitlines())
+        body = "\n".join("    " + ln for ln in
+                         str(inspect_source(first_uri, allow_fetch=allow_fetch))
+                         .splitlines())
+    except SchemaUnavailable as e:
+        body = "    " + schema_unavailable_text(e)
     except NeedsAdapterError:
         body = "    (the first timestep needs an adapter — inspect it directly to write one)"
     except Exception as e:

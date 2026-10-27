@@ -44,7 +44,8 @@ from datetime import datetime
 _ENV_KEYS = ("VISLANG_REMOTE", "VISLANG_SRUN_JOBID", "VISLANG_SRUN_NAME",
              "VISLANG_SRUN_PARTITION", "VISLANG_BUDGET_BYTES",
              "VISLANG_BUDGET_SECONDS", "VISLANG_NO_BINDING", "VISLANG_SSH_MUX",
-             "VISLANG_CACHE", "VISLANG_HOME", "VISLANG_REMOTE_PYTHON")
+             "VISLANG_CACHE", "VISLANG_HOME", "VISLANG_REMOTE_PYTHON",
+             "VISLANG_NET_BPS")
 
 _run = None          # the open run record, or None (detached: record nothing)
 _pipe = None         # the open pipeline record within _run

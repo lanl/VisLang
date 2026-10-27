@@ -605,95 +605,9 @@ def test_equivalence_and_shared_read():
 
 
 # ---------------------------------------------------------------------------
-# The simulated remote (as in test_remote_reduce, with a recursive dir pull)
+# The simulated remote (tests/fakes_remote.py)
 # ---------------------------------------------------------------------------
-EXECS, MANIFESTS = [], []
-
-
-def _install_fake_remote():
-    from vislang.remote import reduce
-    from vislang.remote.download import Connection
-    from vislang.formats import inspect
-
-    def fake_establish(remote_source):
-        return Connection(user="u", host="fakehost", target="u@fakehost", batch_ok=True)
-
-    def fake_stat(conn, path):
-        st = os.stat(path)
-        return int(st.st_size), int(st.st_mtime)
-
-    def fake_header_hash(conn, path, nbytes=65536):
-        import hashlib
-        with open(path, "rb") as f:
-            return hashlib.md5(f.read(nbytes)).hexdigest()
-
-    def fake_run_remote(conn, command, stdin_bytes=None, timeout=None):
-        if command.startswith("rm -"):
-            for tok in command.split()[2:]:
-                shutil.rmtree(tok, ignore_errors=True)
-                try:
-                    os.remove(tok)
-                except OSError:
-                    pass
-            return 0, "", ""
-        if "cat >" in command:
-            rpath = command.split("cat >", 1)[1].strip().split()[0]
-            os.makedirs(os.path.dirname(rpath) or ".", exist_ok=True)
-            with open(rpath, "wb") as f:
-                f.write(stdin_bytes)
-            if "manifest" in rpath:
-                MANIFESTS.append(json.loads(stdin_bytes.decode()))
-            return 0, "", ""
-        if "vislang_exec.py" in command:
-            flag = "--outdir" if "--outdir" in command else "--out"
-            rout = command.split(flag, 1)[1].strip().split()[0]
-            extra = []
-            if "--manifest" in command:
-                extra = ["--manifest", command.split("--manifest", 1)[1].strip().split()[0]]
-            EXECS.append(json.loads(stdin_bytes.decode()))
-            r = subprocess.run([PY, EXEC, "--stdin", flag, rout, *extra],
-                               input=stdin_bytes, capture_output=True, cwd=REPO)
-            return r.returncode, r.stdout.decode(errors="replace"), r.stderr.decode(errors="replace")
-        return 1, "", f"unexpected remote command: {command}"
-
-    def fake_transfer(conn, remote_path, local_path, size_warn_mb=500):
-        os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
-        shutil.copyfile(remote_path, local_path)
-        return local_path
-
-    def fake_transfer_dir(conn, remote_dir, local_dir):
-        shutil.copytree(remote_dir, local_dir, dirs_exist_ok=True)   # rsync -a recurses
-        return local_dir
-
-    reduce.establish_connection = fake_establish
-    reduce.remote_stat = fake_stat
-    reduce.remote_header_hash = fake_header_hash
-    reduce.run_remote = fake_run_remote
-    reduce.transfer = fake_transfer
-    reduce.transfer_dir = fake_transfer_dir
-    reduce.measure_bandwidth = lambda conn: None
-    reduce.session_check = lambda uri: None
-
-    def local_path(uri):
-        return reduce._parse_remote(reduce._normalize_remote(uri))[2]
-
-    def fake_files_stat(uri):
-        path, base = local_path(uri), uri.rstrip("/")
-        out = []
-        for name in os.listdir(path):
-            m = re.search(r"#(\d+)", name)
-            p = os.path.join(path, name)
-            if m and os.path.isfile(p):
-                st = os.stat(p)
-                out.append((int(m.group(1)), f"{base}/{name}", int(st.st_size),
-                            int(st.st_mtime)))
-        return sorted(out)
-
-    inspect.remote_is_dir = lambda uri: os.path.isdir(local_path(uri))
-    inspect.remote_timestep_files_stat = fake_files_stat
-    # The login-node inspect behind `estimate`: metadata of the "remote" file.
-    inspect._inspect_remote = (lambda uri, positions=None, allow_fetch=True:
-                               inspect.inspect_file(local_path(uri), positions=positions))
+from fakes_remote import EXECS, MANIFESTS, install_fake_remote as _install_fake_remote
 
 
 def test_remote():

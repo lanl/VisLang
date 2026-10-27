@@ -182,6 +182,7 @@ def rows(recs):
                 # accounting for any of it. `transfer_s` is the inner rsync/scp
                 # alone; `fetch_s` adds the size + md5 + bandwidth probes around it.
                 "fetch_s": (_phase_s(r, "fetch_whole_file")
+                            or _phase_s(r, "fetch_timesteps")
                             or _phase_s(r, "fetch_whole_folder")) if first else None,
                 "transfer_s": (_phase_s(r, "transfer")
                                or _phase_s(r, "transfer_dir")) if first else None,
@@ -471,7 +472,9 @@ def _results_e1(w, picked, lo, hi):
 
     Two rows need their definitions stated, because the phase tree names them
     differently per route. `Pull time` is the phase that moves bulk bytes at the
-    top level: `pull` on the reduce route, `fetch_whole_folder` on the fetch route.
+    top level: `pull` on the reduce route, `fetch_timesteps` on the fetch route
+    (`fetch_whole_folder` in records from before only the selected timesteps
+    were fetched).
     `Network bandwidth` divides the wire by `transfer_dir` alone — the rsync
     without the probes around it — so it is a link rate on both routes rather than
     a rate on one and a rate-plus-fixed-cost on the other. The session-wide band

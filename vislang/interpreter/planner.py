@@ -36,6 +36,7 @@ import re
 import vislang.runtime.timing as timing        # per-phase seconds/bytes -> timings.jsonl
 import vislang.runtime.provenance as provenance  # the derivation record -> the artifact
 from vislang.dsl.nodes import SourceNode, RegionNode, upstream_of
+from vislang.interpreter.approval import Approval
 from vislang.formats.inspect import inspect_file
 from vislang.interpreter.load import materialize, materialize_boxes
 from vislang.interpreter.compress import compress as _compress
@@ -147,11 +148,13 @@ def _session_gate(uri, kind, steps):
     return None if hold is None else _held_session(hold, kind, uri, steps)
 
 
-def _remote_fetch_gate(uri, sink, terminal, steps, confirm):
+def _remote_fetch_gate(uri, sink, terminal, steps, approved, fallback=False):
     """Estimate + gate a whole-file remote FETCH before pulling. The whole file
     crosses the wire, so wire bytes == file size (known from one stat). Returns a
-    HELD result dict when over budget and unconfirmed, else None (proceed). Any
-    probe failure is non-fatal — the fetch proceeds and its own path reports."""
+    HELD result dict when over budget and not `approved`, else None (proceed).
+    `fallback` says the run reached this fetch because its reduce could not run
+    — that hold asks for its own approval (allow_fetch). Any probe failure is
+    non-fatal — the fetch proceeds and its own path reports."""
     try:
         from vislang.remote.download import (establish_connection, remote_stat,
                                   measure_bandwidth, _parse_remote)
@@ -171,11 +174,26 @@ def _remote_fetch_gate(uri, sink, terminal, steps, confirm):
                                  sink_kind=(sink.kind if sink is not None else None))
         result = {"kind": (sink.kind if sink is not None else terminal.kind),
                   "uri": uri, "steps": steps, "output": None, "materialized": False}
-        if _gate(result, est, confirm, steps):
+        if _gate(result, est, approved, steps, fallback=fallback):
             return result
     except Exception as e:
         steps.append(f"(fetch estimate skipped: {type(e).__name__}: {e})")
     return None
+
+
+def _held_allocation(hold, kind, uri, steps):
+    """The HELD result for srun auto mode with no Slurm allocation. Proposes the
+    salloc — never runs it — and names the other way out."""
+    steps += hold.steps
+    steps.append("HELD: no Slurm allocation — nothing shipped. Ask the user to "
+                 "approve creating one (it runs only on their approval):")
+    steps.append(f"  {hold.salloc_cmd}")
+    steps.append("Once it is RUNNING, re-run the spec; or re-run with "
+                 "without_allocation=True to fall back to fetching whole files "
+                 "(priced and gated on its own).")
+    return {"kind": kind, "uri": uri, "steps": steps, "output": None,
+            "materialized": False, "needs_allocation": True,
+            "salloc_cmd": hold.salloc_cmd}
 
 
 def _remote_parts(connection, remote_path):
@@ -388,9 +406,14 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
         if tagged is not None:
             _check_tag_shape(tagged, is_folder, src.uri)
 
+        approval = Approval.of(confirm)
         if is_folder:
-            plan_folder = _plan_remote_folder if remote_src else _plan_folder
-            result = plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm)
+            if remote_src:
+                result = _plan_remote_folder(src, middle, ts_nodes, sink, terminal,
+                                             dry_run, approval)
+            else:
+                result = _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run,
+                                      approval.budget)
         elif ts_nodes:
             raise ValueError("timesteps() applies only to a folder (timeseries) "
                              f"source; {src.uri!r} is a single file.")
@@ -400,10 +423,10 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
                              f"{src.uri!r} is a single file. Give one centre "
                              "here: center=(x, y, z).")
         elif remote_src:
-            result = _plan_remote(src, middle, sink, terminal, dry_run, confirm)
+            result = _plan_remote(src, middle, sink, terminal, dry_run, approval)
         else:
             result = _plan_local(src, middle, sink, terminal, dry_run, src.uri, [],
-                                 confirm)
+                                 approval.budget)
         timing.note(materialized=bool(result.get("materialized")),
                     held=("allocation" if result.get("needs_allocation")
                           else "budget" if result.get("needs_confirm") else None))
@@ -423,7 +446,7 @@ def _check_tag_shape(tagged, is_folder, uri):
             f"centre: center={{tag: (x, y, z)}}")
 
 
-def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
+def _plan_remote(src, middle, sink, terminal, dry_run, approval=None):
     """Site dispatch for a remote source. v1 cost gate: any narrowing present +
     a reachable remote -> reduce remotely (a threshold can't run locally
     without the whole file anyway; a geometric cut ships fewer bytes by
@@ -463,6 +486,8 @@ def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
         timing.note(route="held_session")
         return held
 
+    approval = Approval.of(approval)
+    fell_back = False
     if mode != "off" and has_narrowing:
         from vislang.remote.reduce import (remote_reduce, remote_reduce_tags,
                                    RemoteUnavailable, BudgetHold,
@@ -472,9 +497,9 @@ def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
         try:
             with timing.phase("remote_reduce"):
                 if tagged is None:
-                    loaded, rsteps, estimate = remote_reduce(src, middle, confirm)
+                    loaded, rsteps, estimate = remote_reduce(src, middle, approval)
                 else:
-                    cut, rsteps, estimate = remote_reduce_tags(src, middle, confirm)
+                    cut, rsteps, estimate = remote_reduce_tags(src, middle, approval)
             timing.note(route="remote_reduce")
             timing.note_estimate(estimate)
             steps += rsteps
@@ -497,15 +522,7 @@ def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
             return _held_session(h, sink.kind, src.uri, steps)
         except AllocationHold as h:
             timing.note(route="held_allocation")
-            steps += h.steps
-            steps.append("HELD: no Slurm allocation — nothing shipped. Ask the "
-                         "user to approve creating one (Claude runs it on approval):")
-            steps.append(f"  {h.salloc_cmd}")
-            steps.append("Once it is RUNNING, re-run the spec; or re-run with "
-                         "confirm=True to proceed without one (whole-file fetch).")
-            return {"kind": sink.kind, "uri": src.uri, "steps": steps,
-                    "output": None, "materialized": False, "needs_allocation": True,
-                    "salloc_cmd": h.salloc_cmd}
+            return _held_allocation(h, sink.kind, src.uri, steps)
         except BudgetHold as h:
             timing.note(route="held_budget")
             timing.note_estimate(h.estimate)
@@ -520,21 +537,28 @@ def _plan_remote(src, middle, sink, terminal, dry_run, confirm=False):
                                    f"unavailable: {e}")
             steps.append(f"remote reduce unavailable ({e}) — falling back to "
                          f"whole-file fetch")
+            fell_back = True
     elif not has_narrowing:
         steps.append("no narrowing forms — the whole file crosses the wire "
                      "either way (cost gate: fetch)")
 
     # Whole-file FETCH path: the entire file crosses the wire. Estimate + gate on
-    # the measured transfer cost before pulling.
+    # the measured transfer cost before pulling. When the run FELL BACK here, the
+    # approval given for the reduce does not carry over (approval.py).
     timing.note(route="whole_file_fetch")
-    held = _remote_fetch_gate(src.uri, sink, terminal, steps, confirm)
+    approved = approval.fetch if fell_back else approval.budget
+    held = _remote_fetch_gate(src.uri, sink, terminal, steps, approved,
+                              fallback=fell_back)
     if held is not None:
         timing.note(route="held_budget")
         return held
     with timing.phase("fetch_whole_file"):
         local = _fetch_remote(src.uri)           # establish_connection + transfer
     steps.append(f"fetch {src.uri} -> {local}")
-    return _plan_local(src, middle, sink, terminal, dry_run, local, steps, confirm)
+    # The fetch was approved (or under budget); the local read of it is gated
+    # on the same terms.
+    return _plan_local(src, middle, sink, terminal, dry_run, local, steps,
+                       approved or approval.budget)
 
 
 def _probe_bandwidth(uri, steps):
@@ -631,21 +655,31 @@ def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=
             "materialized": False, "estimate": estimate, "narrowing": narrowing}
 
 
-def _gate(result, estimate, confirm, steps):
+def _gate(result, estimate, approved, steps, fallback=False):
     """Attach a CostEstimate to the result and decide whether to HOLD.
 
     Always records the estimate (so a run report shows the cost). When the plan
-    is over budget and the caller has not passed confirm=True, flags
-    needs_confirm and returns True — the caller must return WITHOUT materializing.
+    is over budget and not `approved`, flags needs_confirm and returns True —
+    the caller must return WITHOUT materializing. A `fallback` hold (a
+    whole-file fetch the run fell back to) also flags needs_fetch_approval: it
+    is approved with allow_fetch=True, never by the confirm given for the plan
+    it replaced.
     """
     from vislang.interpreter.estimate import format_plan_estimate
     result["estimate"] = estimate
     timing.note_estimate(estimate)         # the predicted half of est-vs-actual
     steps.append(format_plan_estimate(estimate))
-    if estimate.over_budget and not confirm:
+    if estimate.over_budget and not approved:
         result["needs_confirm"] = True
-        steps.append("HELD: over budget — nothing materialized. Re-run with "
-                     "confirm=True to commit, or narrow the spec.")
+        if fallback:
+            result["needs_fetch_approval"] = True
+            steps.append("HELD: the reduce could not run, and the whole-file fetch "
+                         "it would fall back to is over budget — nothing moved. "
+                         "Re-run with allow_fetch=True to approve that fetch, or "
+                         "fix what stopped the reduce.")
+        else:
+            steps.append("HELD: over budget — nothing materialized. Re-run with "
+                         "confirm=True to commit, or narrow the spec.")
         return True
     return False
 
@@ -1345,31 +1379,72 @@ def _check_remote_coverage(middle, files, available, steps):
     return None
 
 
-def _fetch_remote_folder(uri):
-    """Whole-folder fallback: pull the entire remote directory to a local cache
-    dir (one rsync) and return the local path, so the local _plan_folder can map
-    the chain over it exactly as for a local folder. Sibling of _fetch_remote."""
-    from vislang.remote.download import establish_connection, transfer_dir, _parse_remote
+def _fetch_remote_series(src, middle, ts_nodes, sink, terminal, steps, approved,
+                         fallback=False):
+    """Fetch ONLY the selected timesteps of a remote folder — each `…#N` file the
+    request reads (and that file's own `#k` partitions) — into a local cache
+    folder, priced on their summed size and gated first. The local _plan_folder
+    then maps the chain over them exactly as for a local folder.
+
+    Returns (held result, None) when the fetch is over budget and not
+    `approved`, else (None, local folder). `fallback` marks a fetch the run fell
+    back to (its hold asks for allow_fetch, approval.py)."""
+    from vislang.formats.dataset_info import DatasetInfo
+    from vislang.formats.inspect import remote_timestep_files_stat
+    from vislang.interpreter.estimate import estimate_plan_cost
+    from vislang.remote.download import (establish_connection, transfer, _parse_remote,
+                                         measure_bandwidth)
     from vislang.runtime.paths import downloads_dir
-    norm = _normalize_remote(uri)
-    _, _, remote_path = _parse_remote(norm)
+    with timing.phase("list_timesteps"):
+        files = remote_timestep_files_stat(src.uri)
+    if files is None:
+        raise RuntimeError(f"cannot list remote folder {src.uri!r} (needs a live "
+                           f"session)")
+    available = [f[0] for f in files]
+    if ts_nodes:
+        lo, hi = max(n.start for n in ts_nodes), min(n.stop for n in ts_nodes)
+        files = [f for f in files if lo <= f[0] <= hi]
+    if not files:
+        raise ValueError(f"no timesteps match in {src.uri}")
+    plan = _check_remote_coverage(middle, files, available, steps)
+    if plan is not None:                                # named boxes: only their files
+        files = [f for f in files if f[0] in plan]
+    norm = _normalize_remote(src.uri)
+    conn = establish_connection(norm)
+    size_mb = sum(f[2] for f in files) / (1024 ** 2)
+    steps.append(f"fetch {len(files)} timestep file(s), {size_mb:.0f} MiB "
+                 f"(only the timesteps the request reads)")
+    est = estimate_plan_cost(info=DatasetInfo(src.uri, "remote", []), narrowing=None,
+                             site="remote", read_mb_override=size_mb,
+                             net_bw_bps=measure_bandwidth(conn),
+                             sink_kind=(sink.kind if sink is not None else None))
+    result = {"kind": (sink.kind if sink is not None else terminal.kind),
+              "uri": src.uri, "steps": steps, "output": None, "materialized": False}
+    if _gate(result, est, approved, steps, fallback=fallback):
+        return result, None
+    _, _, remote_dir = _parse_remote(norm)
     local = os.path.join(downloads_dir(),
-                         os.path.basename(remote_path.rstrip("/")) or "download")
-    out = transfer_dir(establish_connection(norm), remote_path, local)
-    if out is None:
-        raise RuntimeError(f"remote folder fetch of {uri} failed")
-    return out
+                         os.path.basename(remote_dir.rstrip("/")) or "download")
+    with timing.phase("fetch_timesteps", n=len(files)):
+        for _label, uri, _size, _mtime in files:
+            _, _, rpath = _parse_remote(_normalize_remote(uri))
+            for path in [rpath] + _remote_parts(conn, rpath):
+                if transfer(conn, path, os.path.join(local, os.path.basename(path))) \
+                        is None:
+                    raise RuntimeError(f"remote transfer of {path} was cancelled")
+    return None, local
 
 
-def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
+def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, approval=None):
     """A REMOTE folder is a TIMESERIES. The whole timeseries runs in ONE remote
     job next to the data (remote_folder_reduce): the remote's own plan_pipeline
     dispatches the folder to _plan_folder, writes one file per timestep, and we
     pull that directory back once — O(1) in the timestep count, versus the old
     per-file loop's ~7-9 handshakes + Python start + srun step + transfer PER
     file. VISLANG_REMOTE=off / no narrowing / a RemoteUnavailable under `auto`
-    fall back to a whole-folder fetch + the local _plan_folder. render over a
-    series isn't supported — pick one timestep, or save the range."""
+    fall back to fetching the selected timesteps + the local _plan_folder. Both
+    routes are priced and gated before anything moves (approval.py). render over
+    a series isn't supported — pick one timestep, or save the range."""
     if sink is not None and sink.kind == "render":
         raise NotImplementedError(
             "render over a timeseries folder isn't supported — select one timestep "
@@ -1426,22 +1501,21 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
                                 n_timesteps=len(files), schema_uri=files[0][1],
                                 plan=plan)
 
-    # Execute: one remote job for the whole folder (cost gate mirrors _plan_remote).
+    # Execute: one remote job for the whole folder (gates mirror _plan_remote).
     steps = []
     held = _session_gate(src.uri, sink.kind, steps)
     if held is not None:
         timing.note(route="held_session")
         return held
+    approval = Approval.of(approval)
+    fell_back = False
     if mode != "off" and has_narrowing:
         from vislang.remote.reduce import (remote_folder_reduce, RemoteUnavailable,
-                                   SessionHold)
-        steps.append("(note: the folder reduce runs as one batched remote job — "
-                     "the per-run budget gate is applied on the single-file and "
-                     "whole-folder-fetch paths, not to this batch)")
+                                   SessionHold, BudgetHold, AllocationHold)
         try:
             with timing.phase("remote_folder_reduce"):
                 out, rsteps, report = remote_folder_reduce(src, middle, ts_nodes,
-                                                           sink.path)
+                                                           sink.path, approval)
             # The catalog's reuse at (timestep, variable) granularity — the number
             # the iterative-workflow claim rests on.
             timing.note(route="remote_folder_reduce", n_timesteps=report.get("n"),
@@ -1473,34 +1547,53 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=
             res = {"kind": "save", "uri": src.uri, "steps": steps, "output": out,
                    "materialized": True, "timesteps": report.get("timesteps", []),
                    "sites": {"remote": fetched, "cached": cached, "fetch": 0}}
+            if report.get("estimate") is not None:
+                res["estimate"] = report["estimate"]
             if report.get("tags"):
                 res["tags"] = report["tags"]
             return res
         except SessionHold as h:
-            # As in _plan_remote: the whole-folder fetch needs the same session,
-            # so there is nothing to fall back TO.
+            # As in _plan_remote: the fetch needs the same session, so there is
+            # nothing to fall back TO.
             timing.note(route="held_session")
             return _held_session(h, sink.kind, src.uri, steps)
+        except AllocationHold as h:
+            timing.note(route="held_allocation")
+            return _held_allocation(h, sink.kind, src.uri, steps)
+        except BudgetHold as h:
+            timing.note(route="held_budget")
+            steps += h.steps
+            steps.append("HELD: over budget — nothing shipped. Re-run with "
+                         "confirm=True to commit, or narrow the spec.")
+            return {"kind": sink.kind, "uri": src.uri, "steps": steps,
+                    "output": None, "materialized": False, "needs_confirm": True,
+                    "estimate": h.estimate}
         except RemoteUnavailable as e:
             timing.note(remote_unavailable=str(e))
             if mode == "force":
                 raise RuntimeError(f"VISLANG_REMOTE=force but remote folder reduce "
                                    f"is unavailable: {e}")
             steps.append(f"remote folder reduce unavailable ({e}) — falling back "
-                         f"to whole-folder fetch")
+                         f"to fetching the selected timesteps")
+            fell_back = True
     elif not has_narrowing:
-        steps.append("no narrowing forms — the whole folder crosses the wire "
-                     "either way (cost gate: fetch)")
+        steps.append("no narrowing forms — the selected timesteps cross the wire "
+                     "whole either way (cost gate: fetch)")
 
-    # Fallback: fetch the whole folder, then plan it locally as a timeseries
-    # (the local _plan_folder applies the budget gate on the materialize/save).
-    timing.note(route="whole_folder_fetch")
-    with timing.phase("fetch_whole_folder"):
-        local = _fetch_remote_folder(src.uri)
-    steps.append(f"fetch folder {src.uri} -> {local}")
+    # Fallback: fetch the timesteps the request reads, priced and gated (the
+    # approval for the reduce does not carry over to a fallback), then plan them
+    # locally as a timeseries.
+    timing.note(route="timestep_fetch")
+    approved = approval.fetch if fell_back else approval.budget
+    held, local = _fetch_remote_series(src, middle, ts_nodes, sink, terminal, steps,
+                                       approved, fallback=fell_back)
+    if held is not None:
+        timing.note(route="held_budget")
+        return held
+    steps.append(f"fetched timesteps {src.uri} -> {local}")
     local_src = SourceNode(uri=local, positions=src.positions)
     res = _plan_folder(local_src, middle, ts_nodes, sink, terminal, dry_run=False,
-                       confirm=confirm)
+                       confirm=approved or approval.budget)
     res["uri"] = src.uri                                 # report the original remote uri
     res["steps"] = steps + res["steps"]
     res["sites"] = {"remote": 0, "fetch": len(res.get("timesteps", []))}
@@ -1525,6 +1618,8 @@ def format_result(result):
     tail = f"\n  output: {result['output']}" if result["output"] else ""
     if result.get("needs_allocation"):
         mode = "  (HELD — no Slurm allocation, nothing materialized)"
+    elif result.get("needs_fetch_approval"):
+        mode = "  (HELD — fallback fetch over budget, nothing materialized)"
     elif result.get("needs_confirm"):
         mode = "  (HELD — over budget, nothing materialized)"
     elif not result["materialized"]:

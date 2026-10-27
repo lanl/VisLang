@@ -10,7 +10,13 @@ fallback) — that logic lives in the planner.
 
 Layout under a cache root (default ``vislang_cache``):
     catalog.json          manifest: schemas + extent index (atomic rewrite)
+    catalog.lock          held while the manifest is read-modified-written
     extents/<hex>.npy     one numpy array per cached extent
+
+Several processes share one catalog (the MCP server, `sieve`, a ParaView
+session). Every write re-reads the manifest under the lock, applies its one
+change and writes it back, so two runs storing at the same time both keep
+their entries; reads re-load it, so a run sees what another stored.
 
 Keys are (source_id, variable, canonical narrow_key). A narrow_key is either the
 ``{'forms': [...]}`` description the remote reducer emits (``_narrow_key``) or a
@@ -24,9 +30,11 @@ deliberately conservative: a false miss only costs a slower fetch, a false hit i
 wrong data.
 """
 
+import fcntl
 import hashlib
 import json
 import os
+from contextlib import contextmanager
 
 import numpy as np
 
@@ -174,11 +182,29 @@ class ExtentCatalog:
         return {"version": 1, "schemas": {}, "extents": {}}
 
     def _save_manifest(self):
-        """Atomic rewrite: never leave a half-written catalog.json behind."""
-        tmp = self.manifest_path + ".tmp"
+        """Atomic rewrite: never leave a half-written catalog.json behind. Call
+        inside `_update()`, which holds the lock across read-modify-write."""
+        tmp = f"{self.manifest_path}.{os.getpid()}.tmp"
         with open(tmp, "w") as f:
             json.dump(self._manifest, f, indent=1)
         os.replace(tmp, self.manifest_path)
+
+    @contextmanager
+    def _update(self):
+        """Read-modify-write the manifest under an exclusive lock: re-load what
+        any other process stored, let the body change it, write it back."""
+        with open(os.path.join(self.root, "catalog.lock"), "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                self._manifest = self._load_manifest()
+                yield self._manifest
+                self._save_manifest()
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+    def _refresh(self):
+        """Re-load the manifest so a read sees what other processes stored."""
+        self._manifest = self._load_manifest()
 
     # -- schema ---------------------------------------------------------------
 
@@ -188,8 +214,8 @@ class ExtentCatalog:
         later build can tell what this entry was allowed to contain."""
         entry = dict(schema or {})
         entry[_SCHEMA_VERSION_KEY] = SCHEMA_VERSION
-        self._manifest["schemas"][source_id] = entry
-        self._save_manifest()
+        with self._update() as m:
+            m["schemas"][source_id] = entry
 
     def schema(self, source_id):
         """The cached schema, or None when there is none — or when the one on disk
@@ -220,12 +246,18 @@ class ExtentCatalog:
         """Cache arr as the extent produced by narrow_key; overwrite same key."""
         key = _canon(narrow_key)
         hexid = hashlib.sha256(f"{source_id}\0{var}\0{key}".encode()).hexdigest()[:16]
-        np.save(os.path.join(self.extent_dir, hexid + ".npy"), np.asarray(arr))
-        entries = self._manifest["extents"].setdefault(source_id, {}).setdefault(var, [])
-        entries[:] = [e for e in entries if e["key"] != key]
-        entries.append({"key": key, "narrow": narrow_key, "file": hexid + ".npy",
-                        "shape": list(np.asarray(arr).shape), "dtype": str(arr.dtype)})
-        self._save_manifest()
+        # The array first, written beside its final name and moved into place, so
+        # a reader never meets a half-written file the manifest already names.
+        final = os.path.join(self.extent_dir, hexid + ".npy")
+        tmp = f"{final}.{os.getpid()}.tmp.npy"
+        np.save(tmp, np.asarray(arr))
+        os.replace(tmp, final)
+        with self._update() as m:
+            entries = m["extents"].setdefault(source_id, {}).setdefault(var, [])
+            entries[:] = [e for e in entries if e["key"] != key]
+            entries.append({"key": key, "narrow": narrow_key, "file": hexid + ".npy",
+                            "shape": list(np.asarray(arr).shape),
+                            "dtype": str(arr.dtype)})
 
     def _read(self, entry):
         try:
@@ -271,6 +303,7 @@ class ExtentCatalog:
 
     def delta(self, source_id, variables, narrow_key):
         """Partition a request: ({var: cached array}, [vars we must fetch])."""
+        self._refresh()
         have, missing = {}, []
         for var in variables:
             arr = self.lookup(source_id, var, narrow_key)
@@ -282,11 +315,12 @@ class ExtentCatalog:
 
     def invalidate(self, source_id):
         """Drop schema and all extents for a stale source (changed size/mtime)."""
-        self._manifest["schemas"].pop(source_id, None)
-        for entries in self._manifest["extents"].pop(source_id, {}).values():
+        with self._update() as m:
+            m["schemas"].pop(source_id, None)
+            dropped = m["extents"].pop(source_id, {})
+        for entries in dropped.values():
             for e in entries:
                 try:
                     os.remove(os.path.join(self.extent_dir, e["file"]))
                 except OSError:
                     pass
-        self._save_manifest()

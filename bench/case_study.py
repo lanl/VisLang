@@ -653,7 +653,7 @@ plottable form.
 |---|---|
 | `started` | ISO timestamp of the run |
 | `site` | `local` or `remote` — where the data lived |
-| `route` | what the planner chose: `remote_reduce`, `remote_folder_reduce`, `catalog_full_hit`, `whole_file_fetch`, `held_budget`, `held_allocation` |
+| `route` | what the planner chose: `remote_reduce`, `remote_folder_reduce`, `catalog_full_hit`, `whole_file_fetch`, `timestep_fetch` (a folder's selected timesteps), `held_budget`, `held_allocation` |
 | `forms` | the narrowing forms as written, in order |
 | `n_timesteps` | timesteps selected |
 | `source_mb` | size of the source a naive copy would have moved (the baseline denominator) |

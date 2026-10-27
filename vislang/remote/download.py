@@ -631,8 +631,22 @@ def remote_file_md5(connection, remote_path):
 
 def measure_bandwidth(connection, mb=4):
     """Rough link speed in bytes/sec, measured once by streaming `mb` MB of
-    zeros from the remote. Input for the finer cost gate; None if unavailable."""
+    zeros from the remote. Input for the finer cost gate; None if unavailable.
+
+    `VISLANG_NET_BPS` gives the speed instead (a client that measured the link
+    already, or a benchmark pinning it): no probe is sent, so a small cut is
+    not charged 4 MB of probe traffic. A probe's bytes are counted on their own
+    (`probe_bytes`), apart from the data that crossed."""
     import time
+    hint = os.environ.get("VISLANG_NET_BPS", "").strip()
+    if hint:
+        try:
+            bps = float(hint)
+        except ValueError:
+            bps = 0.0
+        if bps > 0:
+            timing.note(probe_bw_bps=round(bps, 1), probe_bw_source="hint")
+            return bps
     if not connection.batch_ok:
         return None
     cmd = ['ssh', *_ssh_opts(connection.target), connection.target,
@@ -644,9 +658,10 @@ def measure_bandwidth(connection, mb=4):
     if result.returncode != 0 or not result.stdout or elapsed <= 0:
         return None
     bps = len(result.stdout) / elapsed
+    timing.count("probe_bytes", len(result.stdout))
     # The link speed the cost gate was fed — recorded so a predicted time band
     # can be read back against the bandwidth that produced it.
-    timing.note(probe_bw_bps=round(bps, 1))
+    timing.note(probe_bw_bps=round(bps, 1), probe_bw_source="probe")
     return bps
 
 
