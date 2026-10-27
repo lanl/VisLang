@@ -31,7 +31,8 @@ Each session's `session.json` records which were in force.
    a path, or `ssh://host/path` / `user@host:/path`. *Apply*: the panel shows
    what it is (grid, points, timesteps, which coordinates a region takes);
    the overview follows on its own, at a stride that keeps it cheap (*Stride* 0
-   = automatic). *Fields* and *Value Filter* (`rho > 1.5`) narrow it.
+   = automatic). Press *Reset Camera* once it arrives (ParaView framed the
+   empty first output). *Fields* and *Value Filter* (`rho > 1.5`) narrow it.
 2. **Sieve Detail** — select the overview, add the filter, drag the box over a
    feature, *Apply*: that box comes at full resolution, drawn in place. Put a
    detail under a detail to zoom again.

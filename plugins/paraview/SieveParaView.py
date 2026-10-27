@@ -420,6 +420,7 @@ class _Sieve(VTKPythonAlgorithmBase):
 @_inherit
 @smhint.xml('<ShowInMenu category="Sieve"/>')
 @smhint.xml('<LiveSource interval="500"/>')
+@smhint.xml('<RepresentationType view="RenderView" type="Surface"/>')
 class SieveSource(_Sieve):
     """A coarse overview of a source — a file or a folder of timesteps, local
     or remote (ssh://host/path or user@host:/path)."""
@@ -599,6 +600,7 @@ class SieveSource(_Sieve):
 @smdomain.datatype(dataTypes=["vtkDataObject"], composite_data_supported=False)
 @smhint.xml('<ShowInMenu category="Sieve"/>')
 @smhint.xml('<LiveSource interval="500"/>')
+@smhint.xml('<RepresentationType view="RenderView" type="Surface"/>')
 class SieveDetail(_Sieve):
     """The box, at full resolution: drag it over a feature of the overview (or
     of another detail) and Apply. Region coordinates follow the source — the
@@ -760,6 +762,7 @@ def _covers(box, bounds, tol=1e-6):
 @_inherit
 @smhint.xml('<ShowInMenu category="Sieve"/>')
 @smhint.xml('<LiveSource interval="500"/>')
+@smhint.xml('<RepresentationType view="RenderView" type="Surface"/>')
 class SieveSpec(_Sieve):
     """Runs a spec you write — any spec Sieve accepts (named boxes, a box that
     follows a track, several fields…). Its first saved file is shown."""
