@@ -188,12 +188,19 @@ The predicate variable does not need to be in `fields(...)` — it is read for
 the mask, then dropped. Multiple `threshold`s AND together; combine with
 `region` freely.
 
-## timesteps(node, start, stop) -> node
-Time-axis selection for a **folder (timeseries)** source: keep the timesteps
-whose `#N` label is within `[start, stop]`, **inclusive** (the integer in each
-filename). Read once before the interpreter maps the rest of the chain over the
-selected files — it is not a per-file narrowing. Using it on a single-file
-source raises a clear error.
+## timesteps(node, start, stop) / timesteps(node, [labels]) -> node
+Time-axis selection for a **folder (timeseries)** source, by `#N` label (the
+integer in each filename):
+
+```python
+timesteps(src, 1000, 5000)           # every label in [1000, 5000], inclusive
+timesteps(src, [1000, 3000, 9000])   # exactly these labels (any order)
+```
+
+Only the selected files are read, priced and fetched. Read once before the
+interpreter maps the rest of the chain over them — it is not a per-file
+narrowing. Using it on a single-file source raises a clear error, and so does a
+selection that matches no file (the error names the labels the folder has).
 
 ## compress(node, variables, error_bound, mode="auto") -> node
 Error-bounded compression of the named variables (SPERR/Zstd, in-memory).

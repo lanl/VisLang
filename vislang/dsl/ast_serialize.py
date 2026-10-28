@@ -134,7 +134,10 @@ def _ser_render(n):
 
 
 def _ser_timesteps(n):
-    return {"kind": "timesteps", "start": n.start, "stop": n.stop}
+    out = {"kind": "timesteps", "start": n.start, "stop": n.stop}
+    if n.labels is not None:                 # absent = the old wire shape (a range)
+        out["labels"] = list(n.labels)
+    return out
 
 
 _SERIALIZERS = {
@@ -163,6 +166,7 @@ _TAGGED_KEYS = frozenset(("tags", "track", "track_sha"))
 _PER_STEP_EXTRA = frozenset(("step_sizes", "tag_sizes"))
 _OPTIONAL_KEYS = {
     "region": _PER_STEP_KEYS | _TAGGED_KEYS | _PER_STEP_EXTRA | {"coords"},
+    "timesteps": frozenset(("labels",)),
 }
 
 
@@ -440,6 +444,16 @@ def _val_timesteps(s, where):
             _fail(where, f"'{k}' must be an integer timestep label, got {v!r}")
     if s["start"] > s["stop"]:
         _fail(where, f"need start <= stop, got ({s['start']}, {s['stop']})")
+    if "labels" in s:
+        labels = s["labels"]
+        if not isinstance(labels, list) or not labels or any(
+                isinstance(v, bool) or not isinstance(v, int) for v in labels):
+            _fail(where, f"'labels' must be a non-empty list of integer timestep "
+                         f"labels, got {labels!r}")
+        if labels != sorted(set(labels)) or (labels[0], labels[-1]) != (
+                s["start"], s["stop"]):
+            _fail(where, "'labels' must be sorted and unique, with start/stop its "
+                         "first and last")
 
 
 _VALIDATORS = {
@@ -549,7 +563,9 @@ def _build_render(s, up):
 
 
 def _build_timesteps(s, up):
-    return TimestepsNode(upstream=up, start=s["start"], stop=s["stop"])
+    labels = s.get("labels")
+    return TimestepsNode(upstream=up, start=s["start"], stop=s["stop"],
+                         labels=None if labels is None else tuple(labels))
 
 
 _BUILDERS = {
@@ -654,7 +670,8 @@ def describe_plan(plan):
             parts.append(f"threshold({step.get('var')}"
                          f"{step.get('op')}{step.get('value')})")
         elif kind == "timesteps":
-            parts.append(f"timesteps({step.get('start')},{step.get('stop')})")
+            parts.append(f"timesteps({step.get('labels')})" if step.get("labels")
+                         else f"timesteps({step.get('start')},{step.get('stop')})")
         elif kind == "compress":
             parts.append("compress[" + ",".join(step.get("variables") or [])
                          + f"]@{step.get('error_bound')}")

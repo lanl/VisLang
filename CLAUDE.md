@@ -38,7 +38,7 @@ a grid that states its origin/spacing or points; cells on a grid that does not);
 `center={tag: either}`, `size=` then a number or `{tag: s}` — `save` writes one
 output per tag, `<dir>/<tag>/…`)
 · `subsample(node, f)` / `subsample(node, x=…, y=…)` · `threshold(node, "var > v")`
-· `timesteps(node, start, stop)` · `compress(node, variables, error_bound)` ·
+· `timesteps(node, start, stop)` or `timesteps(node, [labels])` · `compress(node, variables, error_bound)` ·
 `save(node, path)` [sink] · `render(node, cmap=None, opacity=None)` [sink]. Full
 semantics: `instructions/dsl-reference.md`; how to author well:
 `instructions/authoring-specs.md`.
@@ -52,7 +52,7 @@ file per timestep, named `…#N` (N = timestep). This holds whether the folder i
 **local or remote** (a remote folder is detected with a metadata-only `stat` over
 ssh, then its `#N` files are mapped over next to the data). The interpreter maps
 the rest of the chain over the timesteps; `timesteps(node, start, stop)` picks an
-inclusive `#N` range. `render` over a series isn't supported (select one timestep,
+inclusive `#N` range, `timesteps(node, [labels])` exactly those `#N`. `render` over a series isn't supported (select one timestep,
 or save the range); `save` writes one file per timestep. Multi-file loading lives
 in `vislang/output/save.py` + `planner._plan_folder` (local) /
 `planner._plan_remote_folder` (remote, reducing each timestep next to the data;

@@ -1240,8 +1240,8 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir, approval=None):
         raise RemoteUnavailable(f"cannot list remote folder {src.uri!r}")
     available = [f[0] for f in files]
     if ts_nodes:
-        lo, hi = max(n.start for n in ts_nodes), min(n.stop for n in ts_nodes)
-        files = [f for f in files if lo <= f[0] <= hi]
+        from vislang.dsl.nodes import select_timesteps
+        files = select_timesteps(files, ts_nodes)
     if not files:
         raise ValueError(f"no timesteps match in {src.uri}")
     if tagged is not None:

@@ -118,12 +118,30 @@ class ThresholdNode(Node):
 @dataclass(frozen=True)
 class TimestepsNode(Node):
     # Time-axis selection for a FOLDER (timeseries) source: keep timesteps whose
-    # `#N` label is in [start, stop] (inclusive). Read by the planner before it
-    # maps the rest of the chain over the selected files; a no-op on a single file.
+    # `#N` label is in [start, stop] (inclusive) or, when `labels` is given,
+    # exactly those labels (start/stop are then its ends). Read by the planner
+    # before it maps the rest of the chain over the selected files.
     upstream: Node
     start: int
     stop: int
+    labels: tuple = None
     kind = "timesteps"
+
+    def keeps(self, label):
+        if self.labels is not None:
+            return label in self.labels
+        return self.start <= label <= self.stop
+
+    def text(self):
+        """The selection as written: `#a..b` or `#a, #b, #c`."""
+        if self.labels is not None:
+            return ", ".join(f"#{v}" for v in self.labels)
+        return f"#{self.start}..{self.stop}"
+
+
+def select_timesteps(items, ts_nodes, label=lambda item: item[0]):
+    """The items (timestep files) every timesteps() form keeps."""
+    return [it for it in items if all(n.keeps(label(it)) for n in ts_nodes)]
 
 
 # --- transform -------------------------------------------------------------

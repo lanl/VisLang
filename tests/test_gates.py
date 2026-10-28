@@ -190,6 +190,25 @@ def test_folder():
               res.get("needs_fetch_approval") and len(FETCHES) == f0,
               res["steps"][-3:])
 
+    # timesteps() by a list of labels: exactly those files, remote and local.
+    with Env(VISLANG_CACHE=os.path.join(TMP, "cache4"), VISLANG_SRUN_JOBID=None,
+             VISLANG_REMOTE="auto", VISLANG_BUDGET_BYTES=10 ** 9):
+        res = run(save(box(timesteps(source(uri), [3, 5])), os.path.join(TMP, "k1")))
+        check("a list of timesteps reduces exactly those, remotely",
+              res["materialized"] and sorted(os.listdir(os.path.join(TMP, "k1")))
+              == ["timestep#3.hdf5", "timestep#5.hdf5"],
+              os.listdir(os.path.join(TMP, "k1")) if res["materialized"] else res["steps"])
+        res = run(save(box(timesteps(source(d), [5, 3])), os.path.join(TMP, "k2")))
+        check("… and locally (order does not matter)",
+              res["materialized"] and sorted(os.listdir(os.path.join(TMP, "k2")))
+              == ["timestep#3.hdf5", "timestep#5.hdf5"])
+        try:
+            run(save(box(timesteps(source(d), [6, 7])), os.path.join(TMP, "k3")))
+            check("labels that are not in the folder are an error", False)
+        except ValueError as e:
+            check("labels that are not in the folder are an error, naming what is there",
+                  "#6, #7" in str(e) and "#3…#5" in str(e), str(e))
+
 
 def test_report():
     print("== the run report names the hold ==")

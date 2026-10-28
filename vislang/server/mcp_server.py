@@ -106,7 +106,8 @@ def inspect(filepath: str, positions: str = None, allow_fetch: bool = False) -> 
     follow it to write a reader module and call `submit_adapter`. If `filepath` is
     a FOLDER, it is a TIMESERIES (files named `…#N`, N = timestep): this returns a
     listing of the timesteps + the shared schema; narrow it with the usual forms
-    and pick a range with `timesteps(node, start, stop)`.
+    and pick a range with `timesteps(node, start, stop)` or exactly the listed
+    timesteps with `timesteps(node, [labels])`.
 
     positions: optional "x,y,z" override naming the spatial-coordinate variables
     when auto-detection can't tell (e.g. particle data with unusual names).

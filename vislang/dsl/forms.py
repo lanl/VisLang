@@ -62,7 +62,8 @@ def source(uri, positions=None):
     rejected), a remote source (ssh://host/path or user@host:/path), or a FOLDER
     of files — a folder is treated as a TIMESTEP SERIES: one file per timestep,
     named `…#N` where N is the timestep number. The interpreter maps the rest of
-    the chain over the timesteps; select a range with timesteps(node, start, stop)."""
+    the chain over the timesteps; select them with timesteps(node, start, stop)
+    or timesteps(node, [labels])."""
     if not isinstance(uri, str) or not uri:
         raise TypeError(f"source() needs a path/URI string, got {uri!r}")
     if any(c in uri for c in "*?["):
@@ -413,17 +414,35 @@ def threshold(node, expr):
     return ThresholdNode(upstream=node, var=var, op=op, value=value)
 
 
-def timesteps(node, start, stop):
-    """Time-axis selection for a FOLDER (timeseries) source: keep the timesteps
-    whose `#N` label is within [start, stop], INCLUSIVE (the integer in each
-    filename, e.g. run#8.hdf5 -> 8). The interpreter reads this before mapping
-    the rest of the chain over the selected files. On a single-file source it is
-    a no-op (there is one timestep); mismatches surface at plan time."""
+def timesteps(node, start, stop=None):
+    """Time-axis selection for a FOLDER (timeseries) source, by `#N` label (the
+    integer in each filename, e.g. run#8.hdf5 -> 8):
+
+        timesteps(src, 1000, 5000)          # every label in [1000, 5000], inclusive
+        timesteps(src, [1000, 3000, 9000])  # exactly these labels
+
+    Only the selected files are read. The interpreter reads this before mapping
+    the rest of the chain over them; it applies only to a folder source."""
     _require_node(node, "timesteps")
-    for v, name in ((start, "start"), (stop, "stop")):
+
+    def label(v, name):
         if isinstance(v, bool) or not isinstance(v, int):
             raise TypeError(f"timesteps(): {name} must be an integer timestep "
                             f"label, got {v!r}")
+        return v
+
+    if isinstance(start, (list, tuple)):
+        if stop is not None:
+            raise TypeError("timesteps(): give a list of labels, or start and "
+                            "stop — not both")
+        labels = tuple(sorted({label(v, "each label") for v in start}))
+        if not labels:
+            raise ValueError("timesteps(): the list of labels is empty")
+        return TimestepsNode(upstream=node, start=labels[0], stop=labels[-1],
+                             labels=labels)
+    if stop is None:
+        raise TypeError("timesteps(): give start and stop, or a list of labels")
+    label(start, "start"), label(stop, "stop")
     if start > stop:
         raise ValueError(f"timesteps(): need start <= stop, got ({start}, {stop})")
     return TimestepsNode(upstream=node, start=start, stop=stop)

@@ -93,6 +93,19 @@ def main():
           chains_equal(ts, from_plan_json(to_plan_json(ts))))
     tsr = from_plan(to_plan(timesteps(source("/data/series"), 3, 7)))
     check("timesteps start/stop preserved", tsr.start == 3 and tsr.stop == 7)
+    check("a range keeps the old wire shape (no labels key)",
+          "labels" not in to_plan(timesteps(source("/data/series"), 3, 7))["chain"][1])
+    tl = from_plan(to_plan(timesteps(source("/data/series"), [9, 3, 5])))
+    check("timesteps labels round-trip, sorted, ends as start/stop",
+          tl.labels == (3, 5, 9) and (tl.start, tl.stop) == (3, 9)
+          and [t for t in range(12) if tl.keeps(t)] == [3, 5, 9])
+    for bad, args in (("an empty list", ([],)), ("a list and a stop", ([3], 4)),
+                      ("a float label", ([3.0],)), ("a range missing stop", (3,))):
+        try:
+            timesteps(source("/data/series"), *args)
+            check(f"timesteps rejects {bad}", False)
+        except (TypeError, ValueError):
+            check(f"timesteps rejects {bad}", True)
 
     sv = from_plan(to_plan(save(subsample(source("/d/f.h5"), 2), "/tmp/o.npz")))
     reset_sinks()
@@ -171,6 +184,14 @@ def main():
     rejects("timesteps start > stop",
             {"vislang_plan": PLAN_VERSION,
              "chain": [src_step, {"kind": "timesteps", "start": 5, "stop": 2}]})
+    rejects("timesteps labels unsorted",
+            {"vislang_plan": PLAN_VERSION,
+             "chain": [src_step, {"kind": "timesteps", "start": 3, "stop": 5,
+                                  "labels": [5, 3]}]})
+    rejects("timesteps labels not matching start/stop",
+            {"vislang_plan": PLAN_VERSION,
+             "chain": [src_step, {"kind": "timesteps", "start": 1, "stop": 5,
+                                  "labels": [3, 5]}]})
 
     check("rejected plans register no sinks", len(collected_sinks()) == 0)
 

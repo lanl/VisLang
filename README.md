@@ -46,7 +46,7 @@ Available in a spec with no imports:
 | `region(node, x=(a,b), …)` | crop to a box |
 | `subsample(node, f)` | stride, uniformly or per axis |
 | `threshold(node, "var > v")` | keep cells or particles matching a predicate |
-| `timesteps(node, start, stop)` | an inclusive range over a series |
+| `timesteps(node, start, stop)` / `timesteps(node, [labels])` | an inclusive range, or exactly the listed timesteps, of a series |
 | `compress(node, variables, error_bound)` | error-bounded compression |
 | `save(node, path)` | **sink** — write out; an extension converts, else preserve |
 | `render(node, cmap=, opacity=)` | **sink** — serve a viewer to the browser |

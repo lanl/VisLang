@@ -733,7 +733,9 @@ def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
             else:
                 head = "keep every row"
         elif kind == "timesteps":
-            head = f"keep timesteps #{step.get('start')} to #{step.get('stop')}"
+            head = ("keep timesteps " + ", ".join(f"#{v}" for v in step["labels"])
+                    if step.get("labels") else
+                    f"keep timesteps #{step.get('start')} to #{step.get('stop')}")
         elif kind == "compress":
             names = list(step.get("variables") or [])
             groups = {}

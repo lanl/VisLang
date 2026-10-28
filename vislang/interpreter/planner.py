@@ -35,7 +35,7 @@ import re
 
 import vislang.runtime.timing as timing        # per-phase seconds/bytes -> timings.jsonl
 import vislang.runtime.provenance as provenance  # the derivation record -> the artifact
-from vislang.dsl.nodes import SourceNode, RegionNode, upstream_of
+from vislang.dsl.nodes import SourceNode, RegionNode, upstream_of, select_timesteps
 from vislang.interpreter.approval import Approval
 from vislang.formats.inspect import inspect_file
 from vislang.interpreter.load import materialize, materialize_boxes
@@ -94,7 +94,8 @@ def _describe_ast(chain):
         elif k == "threshold":
             parts.append(f"threshold({n.var}{n.op}{n.value})")
         elif k == "timesteps":
-            parts.append(f"timesteps({n.start},{n.stop})")
+            parts.append(f"timesteps({list(n.labels)})" if n.labels is not None
+                         else f"timesteps({n.start},{n.stop})")
         elif k == "compress":
             parts.append(f"compress({list(n.variables)},eb={n.error_bound})")
         else:
@@ -244,6 +245,15 @@ def _fetch_remote(uri):
 
 
 # ---------------------------------------------------------------------------
+def _label_span(labels):
+    """A folder's timestep labels in a few words, for an error that none matched."""
+    labels = sorted(labels)
+    if not labels:
+        return "no timesteps"
+    return (f"{len(labels)} timesteps, #{labels[0]}…#{labels[-1]}" if len(labels) > 1
+            else f"one timestep, #{labels[0]}")
+
+
 def _chain(terminal):
     """Ordered [source, ..., terminal] by following `upstream`. Validates head."""
     nodes = []
@@ -1209,17 +1219,15 @@ def _plan_folder(src, middle, ts_nodes, sink, terminal, dry_run, confirm=False):
                                            tagged_region, tag_plan, tag_names, for_tag)
     files = timestep_files(src.uri)                     # [(label, path)]; raises if none
     available = [lab for lab, _ in files]
-    rng = None
+    chosen = " and ".join(n.text() for n in ts_nodes) if ts_nodes else None
     if ts_nodes:
-        lo = max(n.start for n in ts_nodes)
-        hi = min(n.stop for n in ts_nodes)
-        rng = (lo, hi)
-        files = [(lab, p) for lab, p in files if lo <= lab <= hi]
+        files = select_timesteps(files, ts_nodes)
 
     steps = [f"folder timeseries {src.uri}: {len(files)} timestep(s)"
-             + (f" in #{rng[0]}..{rng[1]}" if rng else "")]
+             + (f" in {chosen}" if chosen else "")]
     if not files:
-        raise ValueError(f"no timesteps match {rng} in {src.uri}")
+        raise ValueError(f"no timesteps match {chosen} in {src.uri} (it has "
+                         f"{_label_span(available)})")
     moving = per_step_regions(middle)
     tagged = tagged_region(middle)
     if tagged is not None:
@@ -1405,10 +1413,10 @@ def _fetch_remote_series(src, middle, ts_nodes, sink, terminal, steps, approved,
                            f"session)")
     available = [f[0] for f in files]
     if ts_nodes:
-        lo, hi = max(n.start for n in ts_nodes), min(n.stop for n in ts_nodes)
-        files = [f for f in files if lo <= f[0] <= hi]
+        files = select_timesteps(files, ts_nodes)
     if not files:
-        raise ValueError(f"no timesteps match in {src.uri}")
+        raise ValueError(f"no timesteps match in {src.uri} (it has "
+                         f"{_label_span(available)})")
     plan = _check_remote_coverage(middle, files, available, steps)
     if plan is not None:                                # named boxes: only their files
         files = [f for f in files if f[0] in plan]
@@ -1461,8 +1469,7 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, approval
     if sink is None:
         steps = [f"remote folder timeseries {src.uri}"]
         if ts_nodes:
-            lo, hi = max(n.start for n in ts_nodes), min(n.stop for n in ts_nodes)
-            steps.append(f"select timesteps #{lo}..{hi}")
+            steps.append("select timesteps " + " and ".join(n.text() for n in ts_nodes))
         steps.append("plan: run the whole folder in one remote job next to the "
                      "data (the remote lists + narrows every timestep), then pull "
                      "the saved directory once")
@@ -1488,11 +1495,11 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, approval
                     "output": None, "materialized": False}
         available = [f[0] for f in files]
         if ts_nodes:
-            lo, hi = max(n.start for n in ts_nodes), min(n.stop for n in ts_nodes)
-            files = [f for f in files if lo <= f[0] <= hi]
-            steps.append(f"select timesteps #{lo}..{hi}")
+            files = select_timesteps(files, ts_nodes)
+            steps.append("select timesteps " + " and ".join(n.text() for n in ts_nodes))
         if not files:
-            raise ValueError(f"no timesteps match in {src.uri}")
+            raise ValueError(f"no timesteps match in {src.uri} (it has "
+                             f"{_label_span(available)})")
         plan = _check_remote_coverage(middle, files, available, steps)
         if plan is not None:                            # named boxes: only their files
             files = [f for f in files if f[0] in plan]
