@@ -130,7 +130,25 @@ def _inherit(obj):
             if name not in cls.__dict__ and callable(val) \
                     and hasattr(val, "_pv_original_func"):
                 setattr(cls, name, val)
+    # ParaView lays the panel out by the line numbers of the property methods;
+    # PANEL (method names, top to bottom) overrides that for this class alone.
+    for i, name in enumerate(getattr(cls, "PANEL", ())):
+        setattr(cls, name, _at_line(cls.__dict__[name], i + 1))
     return obj
+
+
+def _at_line(method, line):
+    """A copy of a property method that ParaView places as if at `line`."""
+    import types
+    fn = method
+    while hasattr(fn, "_pv_original_func"):
+        fn = fn._pv_original_func
+    copy = types.FunctionType(fn.__code__.replace(co_firstlineno=line),
+                              fn.__globals__, fn.__name__, fn.__defaults__,
+                              fn.__closure__)
+    copy.__dict__.update(fn.__dict__)          # the property's XML rides here
+    copy.__qualname__, copy.__doc__ = fn.__qualname__, fn.__doc__
+    return copy
 
 
 def _snap(timesteps, t):
@@ -472,7 +490,12 @@ class _Sieve(VTKPythonAlgorithmBase):
                             "here first.")
             self.Modified()
             return
-        params = {**self._base, "timesteps": [ts[0], ts[-1]]}
+        full = desc.get("series_timesteps") or ts
+        at = full.index(ts[0]) if ts[0] in full else -1
+        if full[at:at + len(ts)] == ts:
+            params = {**self._base, "timesteps": [ts[0], ts[-1]]}
+        else:
+            params = {**self._base, "timestep_labels": list(ts)}
         self._submit({"descriptor": desc, "params": params},
                      self._key(params), "prefetch")
         self.Modified()
@@ -503,6 +526,10 @@ class SieveSource(_Sieve):
 
     NAME = "source"
     KIND = "source"
+    PANEL = ("SetSource", "SetPositions", "GetFieldSelection", "SetStride",
+             "SetValueFilter", "SetBudgetGB", "SetBudgetMinutes", "SetTimesteps",
+             "GetStatus", "GetSpec", "FetchOverview", "Prefetch", "FetchAnyway",
+             "Cancel", "Connect", "PromoteToSpec")
 
     def __init__(self):
         _Sieve.__init__(self, 0)
@@ -514,8 +541,8 @@ class SieveSource(_Sieve):
         # user has seen it — an Apply that changes a setting, or Fetch Overview.
         self._armed = False
         self._filling = False        # the plugin itself is filling the Fields list
-        self._t_first = -1           # the timesteps to show: -1 = the series' ends
-        self._t_last = -1
+        self._ts_text = ""           # the Timesteps field: "" = every timestep
+        self._ts_problem = None      # why that text selects nothing usable
 
     def _out_ext(self):
         return (self._desc or {}).get("out_ext", ".vti")
@@ -532,7 +559,13 @@ class SieveSource(_Sieve):
             self._filling = False
             self.Modified()
 
-    @smproperty.stringvector(name="Positions", default_values="")
+    @smproperty.xml('<StringVectorProperty name="Positions" command="SetPositions" '
+                    'number_of_elements="1" default_values="" '
+                    'panel_visibility="advanced"><Documentation>Points only: the '
+                    'names of the variables holding x, y, z, as "px,py,pz". Sieve '
+                    'finds them itself when they are called x, y, z (or similar); '
+                    'set this only when it does not.</Documentation>'
+                    '</StringVectorProperty>')
     def SetPositions(self, v):
         v = (v or "").strip()
         if v != self._positions:
@@ -583,35 +616,26 @@ class SieveSource(_Sieve):
         self._desc = self._desc_failed = None    # ask again on the next Apply
         self.Modified()
 
-    @smproperty.xml('<IntVectorProperty name="FirstTimestep" label="First Timestep" '
-                    'command="SetFirstTimestep" number_of_elements="1" '
-                    'default_values="-1"><Documentation>The first #N of a series '
-                    'to show, fetch and prefetch (-1: the series\' first).'
-                    '</Documentation></IntVectorProperty>')
-    def SetFirstTimestep(self, v):
-        if int(v) != self._t_first:
-            self._t_first = int(v)
-            self._settings_changed()
-
-    @smproperty.xml('<IntVectorProperty name="LastTimestep" label="Last Timestep" '
-                    'command="SetLastTimestep" number_of_elements="1" '
-                    'default_values="-1"><Documentation>The last #N of a series '
-                    'to show, fetch and prefetch (-1: the series\' last).'
-                    '</Documentation></IntVectorProperty>')
-    def SetLastTimestep(self, v):
-        if int(v) != self._t_last:
-            self._t_last = int(v)
+    @smproperty.xml('<StringVectorProperty name="Timesteps" command="SetTimesteps" '
+                    'number_of_elements="1" default_values=""><Documentation>Which '
+                    '#N of a series to show, fetch and prefetch: "1-9" (a range), '
+                    '"1,4,9" (exactly these), or both, "1-9,20". Empty: all.'
+                    '</Documentation></StringVectorProperty>')
+    def SetTimesteps(self, v):
+        v = (v or "").strip()
+        if v != self._ts_text:
+            self._ts_text = v
             self._settings_changed()
 
     def _series_desc(self):
+        """The descriptor with its timesteps narrowed to the Timesteps field;
+        the series' full list rides along for Prefetch to choose its form."""
         desc = self._desc or {}
         ts = desc.get("timesteps")
         if not ts:
             return desc
-        lo = self._t_first if self._t_first >= 0 else ts[0]
-        hi = self._t_last if self._t_last >= 0 else ts[-1]
-        keep = [t for t in ts if lo <= t <= hi]
-        return {**desc, "timesteps": keep or ts}
+        keep, self._ts_problem = _pick_timesteps(self._ts_text, ts)
+        return {**desc, "timesteps": keep or ts, "series_timesteps": ts}
 
     @smproperty.doublevector(name="TimestepValues", information_only="1",
                              si_class="vtkSITimeStepsProperty")
@@ -713,6 +737,9 @@ class SieveSource(_Sieve):
         if not self._armed:
             return 1                     # metadata only, until the user asks
         desc = self._series_desc()
+        if self._ts_problem:
+            self._status = f"Timesteps: {self._ts_problem}. Nothing fetched."
+            return 1
         info = outInfo.GetInformationObject(0)
         label = None
         if desc.get("timesteps"):
@@ -763,6 +790,10 @@ class SieveDetail(_Sieve):
 
     NAME = "detail"
     KIND = "detail"
+    PANEL = ("SetBoxPosition", "SetBoxLength", "_region_group", "GetFieldSelection",
+             "SetStride", "SetValueFilter", "SetBudgetGB", "SetBudgetMinutes",
+             "GetStatus", "GetSpec", "Prefetch", "FetchAnyway", "Cancel",
+             "PromoteToSpec")
 
     def __init__(self):
         _Sieve.__init__(self, 1)
@@ -814,8 +845,7 @@ class SieveDetail(_Sieve):
         self._len = [x, y, z]
         self.Modified()
 
-    # The widget group must come after the properties it names (ParaView emits
-    # properties in the order their methods are defined).
+    # The widget group must come after the properties it names (see PANEL).
     @smproperty.xml('''<PropertyGroup label="Region" panel_widget="InteractiveBox">
         <Property function="Position" name="BoxPosition"/>
         <Property function="Scale" name="BoxLength"/>
@@ -910,6 +940,38 @@ class SieveDetail(_Sieve):
             self._status += "\n" + self._box_warning
 
 
+def _pick_timesteps(text, available):
+    """The labels of `available` that a Timesteps field selects, and what is
+    wrong with it (None when nothing). "1-9" keeps the labels in [1, 9]; "4"
+    must be one of them; parts are separated by commas."""
+    text = (text or "").strip()
+    if not text:
+        return list(available), None
+    keep, missing = set(), []
+    for part in (p.strip() for p in text.split(",")):
+        if not part:
+            continue
+        lo, dash, hi = part.partition("-")
+        try:
+            lo = int(lo)
+            hi = int(hi) if dash else lo
+        except ValueError:
+            return [], f"cannot read {part!r} (write 1-9 or 1,4,9)"
+        if lo > hi:
+            return [], f"{part!r} runs backwards"
+        got = [t for t in available if lo <= t <= hi]
+        if not dash and not got:
+            missing.append(lo)
+        keep.update(got)
+    if missing:
+        return [], ("not in this series: " + ", ".join(f"#{m}" for m in missing)
+                    + f" (it has #{available[0]} … #{available[-1]})")
+    if not keep:
+        return [], (f"{text!r} matches no timestep (this series has "
+                    f"#{available[0]} … #{available[-1]})")
+    return sorted(keep), None
+
+
 def _ready_text(desc):
     """What an overview at the automatic stride would bring, before any of it
     is fetched."""
@@ -956,6 +1018,8 @@ class SieveSpec(_Sieve):
 
     NAME = "spec"
     KIND = "spec"
+    PANEL = ("SetSpecText", "SetBudgetGB", "SetBudgetMinutes", "GetStatus", "GetSpec",
+             "FetchAnyway", "Cancel")
 
     def __init__(self):
         _Sieve.__init__(self, 0)

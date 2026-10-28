@@ -305,14 +305,24 @@ check("a detail prefetches its box over the series (the region across time)",
       len(steps()) == n and vals == [4000.0, 5000.0], (len(steps()), n, vals))
 
 print("== choosing the timesteps ==")
-pr = overview(Source=path("series"), Stride=2, FirstTimestep=4)
+import SieveParaView as _pv
+pick = _pv._pick_timesteps
+check("Timesteps text: ranges, lists, both, and mistakes",
+      pick("", [3, 4, 5]) == ([3, 4, 5], None)
+      and pick("4-5", [3, 4, 5]) == ([4, 5], None)
+      and pick("3,5", [3, 4, 5]) == ([3, 5], None)
+      and pick("3, 4-9", [3, 4, 5]) == ([3, 4, 5], None)
+      and pick("7", [3, 4, 5])[1].startswith("not in this series: #7")
+      and "cannot read" in pick("a-b", [3, 4, 5])[1]
+      and "matches no timestep" in pick("10-20", [3, 4, 5])[1])
+pr = overview(Source=path("series"), Stride=2, Timesteps="4-5")
 pr.UpdatePipelineInformation()
 check("the slider offers only the chosen timesteps",
       list(pr.TimestepValues) == [4.0, 5.0], list(pr.TimestepValues))
 bounds(pr, 4.0)
 pr.SMProxy.InvokeCommand("Prefetch")
 pr.UpdatePipeline(4.0)
-check("Prefetch fetches only the chosen range",
+check("Prefetch of a range asks for the range",
       "timesteps(src, 4, 5)" in spec(pr), spec(pr))
 prd = SieveDetail(Input=pr)
 prd.BoxCorner, prd.BoxSize = [0.0, 0.0, 0.0], [5.0, 5.0, 5.0]
@@ -321,6 +331,28 @@ prd.SMProxy.InvokeCommand("Prefetch")
 prd.UpdatePipeline(4.0)
 check("a detail under it prefetches the same range", "timesteps(src, 4, 5)" in spec(prd),
       spec(prd))
+pl = overview(Source=path("series"), Stride=2, Timesteps="3,5")
+pl.UpdatePipelineInformation()
+bounds(pl, 3.0)
+pl.SMProxy.InvokeCommand("Prefetch")
+pl.UpdatePipeline(3.0)
+check("a list: the slider offers those, and Prefetch asks for exactly those",
+      list(pl.TimestepValues) == [3.0, 5.0] and "timesteps(src, [3, 5])" in spec(pl),
+      (list(pl.TimestepValues), spec(pl)))
+pl.Timesteps = "9"
+pl.UpdatePipeline(3.0)
+check("a timestep the series lacks is named, and nothing is fetched",
+      "not in this series: #9" in status(pl), status(pl))
+
+print("== the panel ==")
+import re
+from paraview.detail.pythonalgorithm import _undecorate
+xml = _undecorate(_pv.SieveSource)._pvsm_proxy_xml
+order = re.findall(r'<\w*Property\b[^>]*\bname="(\w+)"', xml)
+want = ["Source", "Fields", "Stride", "ValueFilter", "BudgetGB", "BudgetMinutes",
+        "Timesteps", "Status", "Spec"]
+check("Source first, then fields, stride, filter, budget, timesteps, status, spec",
+      [p for p in order if p in want] == want, order)
 
 FAKE = os.environ.get("SIEVE_FAKE")
 if FAKE:

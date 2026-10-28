@@ -34,6 +34,7 @@ def compose_spec(descriptor, params):
         fields      variable names to keep, or None for all
         timestep    a timestep label (series only) — one timestep per request
         timesteps   (start, stop), inclusive — a range, for prefetching
+        timestep_labels  exactly these labels, for prefetching
         box         {"lo": [x, y, z], "hi": [x, y, z]} in view coordinates
         stride      keep every n-th cell / point (int >= 1)
         threshold   "var op value", or None
@@ -58,6 +59,8 @@ def compose_spec(descriptor, params):
         elif params.get("timesteps") is not None:
             a, b = (int(v) for v in params["timesteps"])
             step(f"timesteps({cur}, {a}, {b})")
+        elif params.get("timestep_labels"):
+            step(f"timesteps({cur}, {sorted(int(v) for v in params['timestep_labels'])})")
     if params.get("fields"):
         # Points are placed by their positions: a narrowed field list still
         # keeps them (a points file cannot be written, nor a box applied,

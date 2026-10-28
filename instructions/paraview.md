@@ -18,7 +18,7 @@ helping someone who uses the plugin, and for evaluating it.
 Buttons: **Fetch Anyway** (approve a held request: over budget, or a fallback
 whole-file copy), **Cancel**, **Connect** (opens the password dialog),
 **Prefetch** (every timestep of a series in one request — within the Source's
-*First/Last Timestep*; on a Detail, the box across time), **Promote To Spec** (copy the spec into a Sieve Spec to edit).
+*Timesteps* field, `1-9` or `1,4,9`; on a Detail, the box across time), **Promote To Spec** (copy the spec into a Sieve Spec to edit).
 *Status* says what happened; *Spec* shows the spec that ran.
 
 The box becomes a region in the data's own coordinates — the numbers on
