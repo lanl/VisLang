@@ -38,9 +38,11 @@ Each session's `session.json` records which were in force.
 2. **Sieve Detail** — select the overview, add the filter, drag the box over a
    feature, *Apply*: that box comes at full resolution, drawn in place. Put a
    detail under a detail to zoom again.
-3. **Time** — the slider walks the timesteps; each is fetched once, then shown
-   at once. *Prefetch* fetches a whole series in one request (on a Detail: the
-   box across every timestep).
+3. **Time** — the slider walks the timesteps; each is fetched once (as
+   `timesteps(src, N, N)`), then shown at once. *First Timestep* / *Last
+   Timestep* narrow the series to a range: the slider offers only those, and
+   *Prefetch* fetches them in one request, `timesteps(src, first, last)` (on a
+   Detail: the box across that range).
 4. **Sieve Spec** — type any spec ending in `save(...)` (named boxes, a box
    that follows a track…).
 

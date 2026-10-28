@@ -296,6 +296,11 @@ class _Sieve(VTKPythonAlgorithmBase):
     def _decorate(self, data):
         """Subclasses tag the data with what downstream filters need."""
 
+    def _series_desc(self):
+        """The descriptor as this object shows it (a Source narrows its
+        timesteps to the chosen range)."""
+        return self._desc or {}
+
     def _shown_extent(self):
         get = getattr(self._shown, "GetExtent", None)
         return tuple(get()) if get else None
@@ -460,14 +465,15 @@ class _Sieve(VTKPythonAlgorithmBase):
                     'timestep of a series in one request, so the time slider shows '
                     'each at once.</Documentation></Property>')
     def Prefetch(self):
-        ts = (self._desc or {}).get("timesteps")
+        desc = self._series_desc()
+        ts = desc.get("timesteps")
         if not ts or self._base is None:
             self._status = ("Prefetch needs a series (a folder of timesteps) shown "
                             "here first.")
             self.Modified()
             return
         params = {**self._base, "timesteps": [ts[0], ts[-1]]}
-        self._submit({"descriptor": self._desc, "params": params},
+        self._submit({"descriptor": desc, "params": params},
                      self._key(params), "prefetch")
         self.Modified()
 
@@ -508,6 +514,8 @@ class SieveSource(_Sieve):
         # user has seen it — an Apply that changes a setting, or Fetch Overview.
         self._armed = False
         self._filling = False        # the plugin itself is filling the Fields list
+        self._t_first = -1           # the timesteps to show: -1 = the series' ends
+        self._t_last = -1
 
     def _out_ext(self):
         return (self._desc or {}).get("out_ext", ".vti")
@@ -575,10 +583,40 @@ class SieveSource(_Sieve):
         self._desc = self._desc_failed = None    # ask again on the next Apply
         self.Modified()
 
+    @smproperty.xml('<IntVectorProperty name="FirstTimestep" label="First Timestep" '
+                    'command="SetFirstTimestep" number_of_elements="1" '
+                    'default_values="-1"><Documentation>The first #N of a series '
+                    'to show, fetch and prefetch (-1: the series\' first).'
+                    '</Documentation></IntVectorProperty>')
+    def SetFirstTimestep(self, v):
+        if int(v) != self._t_first:
+            self._t_first = int(v)
+            self._settings_changed()
+
+    @smproperty.xml('<IntVectorProperty name="LastTimestep" label="Last Timestep" '
+                    'command="SetLastTimestep" number_of_elements="1" '
+                    'default_values="-1"><Documentation>The last #N of a series '
+                    'to show, fetch and prefetch (-1: the series\' last).'
+                    '</Documentation></IntVectorProperty>')
+    def SetLastTimestep(self, v):
+        if int(v) != self._t_last:
+            self._t_last = int(v)
+            self._settings_changed()
+
+    def _series_desc(self):
+        desc = self._desc or {}
+        ts = desc.get("timesteps")
+        if not ts:
+            return desc
+        lo = self._t_first if self._t_first >= 0 else ts[0]
+        hi = self._t_last if self._t_last >= 0 else ts[-1]
+        keep = [t for t in ts if lo <= t <= hi]
+        return {**desc, "timesteps": keep or ts}
+
     @smproperty.doublevector(name="TimestepValues", information_only="1",
                              si_class="vtkSITimeStepsProperty")
     def GetTimestepValues(self):
-        ts = (self._desc or {}).get("timesteps")
+        ts = self._series_desc().get("timesteps")
         return [float(t) for t in ts] if ts else None
 
     # -- metadata -----------------------------------------------------------------
@@ -625,7 +663,7 @@ class SieveSource(_Sieve):
             ts = r.get("timesteps")
             self._status = (f"{r['filetype']} {r['modality']}"
                             + (f" {tuple(r['grid'])}" if r.get("grid") else "")
-                            + (f", {len(ts)} timesteps" if ts else "")
+                            + (f", {len(ts)} timesteps (#{ts[0]} … #{ts[-1]})" if ts else "")
                             + f". Region coordinates: {r.get('region_text') or r['coords']}."
                             + "\n" + _ready_text(r))
         elif r.get("status") == "needs_session" and r.get("reachable") is False:
@@ -661,7 +699,7 @@ class SieveSource(_Sieve):
         info = outInfo.GetInformationObject(0)
         info.Remove(SDDP.TIME_STEPS())
         info.Remove(SDDP.TIME_RANGE())
-        ts = (self._desc or {}).get("timesteps")
+        ts = self._series_desc().get("timesteps")
         if ts:
             for t in ts:
                 info.Append(SDDP.TIME_STEPS(), float(t))
@@ -674,7 +712,7 @@ class SieveSource(_Sieve):
             return 1
         if not self._armed:
             return 1                     # metadata only, until the user asks
-        desc = self._desc
+        desc = self._series_desc()
         info = outInfo.GetInformationObject(0)
         label = None
         if desc.get("timesteps"):
@@ -707,7 +745,7 @@ class SieveSource(_Sieve):
         return p
 
     def _decorate(self, data):
-        _tag(data, {**(self._desc or {}), "positions_given": self._positions or None})
+        _tag(data, {**self._series_desc(), "positions_given": self._positions or None})
 
 
 # ---------------------------------------------------------------------------

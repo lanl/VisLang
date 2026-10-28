@@ -304,6 +304,24 @@ vals = [float((bounds(pd2, t), fetch(pd2).PointData["rho"][0])[1]) for t in (4.0
 check("a detail prefetches its box over the series (the region across time)",
       len(steps()) == n and vals == [4000.0, 5000.0], (len(steps()), n, vals))
 
+print("== choosing the timesteps ==")
+pr = overview(Source=path("series"), Stride=2, FirstTimestep=4)
+pr.UpdatePipelineInformation()
+check("the slider offers only the chosen timesteps",
+      list(pr.TimestepValues) == [4.0, 5.0], list(pr.TimestepValues))
+bounds(pr, 4.0)
+pr.SMProxy.InvokeCommand("Prefetch")
+pr.UpdatePipeline(4.0)
+check("Prefetch fetches only the chosen range",
+      "timesteps(src, 4, 5)" in spec(pr), spec(pr))
+prd = SieveDetail(Input=pr)
+prd.BoxCorner, prd.BoxSize = [0.0, 0.0, 0.0], [5.0, 5.0, 5.0]
+bounds(prd, 4.0)
+prd.SMProxy.InvokeCommand("Prefetch")
+prd.UpdatePipeline(4.0)
+check("a detail under it prefetches the same range", "timesteps(src, 4, 5)" in spec(prd),
+      spec(prd))
+
 FAKE = os.environ.get("SIEVE_FAKE")
 if FAKE:
     print("== a remote source (simulated host) ==")
