@@ -25,8 +25,8 @@ memory (on a Detail, the box across those timesteps).
 has three table outputs — **Summary**, **Fields**, **Timesteps** — what the
 first Apply's `inspect` returned, kept current (selected / fetched / in view);
 ParaView opens a SpreadSheet on the Summary once (the `View` hints), and
-**Show Metadata** reopens it. The *Series* line under *Timesteps* describes the
-series as `inspect` does (`vislang/formats/series.py`).
+**Show Metadata** reopens it. The Summary's *Timesteps* row describes the
+series as `inspect` does (`vislang/formats/series.py`), and what is selected.
 
 The box becomes a region in the data's own coordinates — the numbers on
 ParaView's axes: world coordinates on points and on grids that state where

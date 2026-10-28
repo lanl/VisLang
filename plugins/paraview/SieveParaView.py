@@ -545,7 +545,7 @@ class SieveSource(_Sieve):
     KIND = "source"
     PANEL = ("SetSource", "SetPositions", "GetFieldSelection", "SetStride",
              "SetValueFilter", "SetBudgetGB", "SetBudgetMinutes", "SetTimesteps",
-             "GetSeries", "GetStatus", "GetSpec", "FetchOverview", "ShowMetadata",
+             "GetStatus", "GetSpec", "FetchOverview", "ShowMetadata",
              "FetchAnyway", "Cancel", "Connect", "PromoteToSpec")
     # Outputs: the data, then what the source is, as three tables. ParaView
     # opens a SpreadSheet on the Summary once (on the first Apply); its
@@ -648,14 +648,6 @@ class SieveSource(_Sieve):
             self._ts_text = v
             self._settings_changed()
 
-    @smproperty.xml('<StringVectorProperty name="Series" command="GetSeries" '
-                    'information_only="1" panel_visibility="default">'
-                    '<Hints><Widget type="multi_line"/></Hints></StringVectorProperty>')
-    def GetSeries(self):
-        return core.series_text(self._desc, self._ts_text)
-
-    def _panel_extra(self):
-        return self.GetSeries()
 
     @smproperty.xml('<Property name="ShowMetadata" label="Show Metadata" '
                     'command="ShowMetadata" panel_widget="command_button">'
@@ -854,7 +846,7 @@ class SieveSource(_Sieve):
                     fetched.add(lab)
         whole = bool(desc) and not desc.get("timesteps") and self._shown is not None
         _table(vtkTable.GetData(outInfo, 1), ("Item", "Value"),
-               core.summary_table(desc, self._ts_text, stride))
+               core.summary_table(self._desc, self._ts_text, stride))
         _table(vtkTable.GetData(outInfo, 2),
                ("Field", "Bytes per value", "Full MB", "At stride MB", "In view",
                 "Min", "Max"),

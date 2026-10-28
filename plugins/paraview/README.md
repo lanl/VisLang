@@ -35,7 +35,7 @@ Each session's `session.json` records which were in force.
    (`rho > 1.5`) and *Apply*, or press *Fetch Overview* to take it as it is.
    Press *Reset Camera* once it arrives (ParaView framed the empty first
    output). The panel reads top to bottom: Source, Fields, Stride, Value
-   Filter, Budget, Timesteps, Series, Status, Spec, then the buttons.
+   Filter, Budget, Timesteps, Status, Spec, then the buttons.
    *Positions* (behind the gear) names a point file's x, y, z variables, only
    when Sieve cannot find them itself.
    **What the source is** comes as three tables, opened once in a SpreadSheet
@@ -52,8 +52,8 @@ Each session's `session.json` records which were in force.
 3. **Time** — *Timesteps* chooses which timesteps of a series to fetch:
    `1-9` (a range), `1,4,9` (exactly these), `1-9/4` (every 4th of that
    range), `/4` (every 4th of all), or several, `1-9,20`; empty is all.
-   *Series* under it says what the series has (`88 timesteps: #1000 to
-   #88000, every 1000`) and what the text selects. *Apply* fetches the whole
+   The Summary table's *Timesteps* row says what the series has (`88
+   timesteps: #1000 to #88000, every 1000`) and what the text selects. *Apply* fetches the whole
    selection in one request — `timesteps(src, 1, 9)` or
    `timesteps(src, [1, 4, 9])` (all: no `timesteps()`) — and the time slider
    then offers exactly those and shows each at once. On a Detail, *Apply*

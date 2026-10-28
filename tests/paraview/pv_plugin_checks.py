@@ -329,7 +329,7 @@ pl.UpdatePipeline(3.0)
 check("a timestep the series lacks is named, and nothing is fetched",
       "not in this series: #9" in status(pl), status(pl))
 
-print("== what the source is: the Series line and the metadata tables ==")
+print("== what the source is: the metadata tables ==")
 
 
 def table(src, port):
@@ -340,14 +340,20 @@ def table(src, port):
             for c in range(data.GetNumberOfColumns())}
 
 
+def series(src):
+    """The Summary table's Timesteps row: the series, then what is selected."""
+    rows = table(src, 1)
+    return dict(zip(rows["Item"], rows["Value"])).get("Timesteps", "")
+
+
 mt = SieveSource(Source=path("series"))
 mt.UpdatePipeline()
 mt.UpdatePropertyInformation()
-check("after the first Apply the Series line describes the series, and nothing is fetched",
-      mt.GetPropertyValue("Series").startswith("3 timesteps: #3 to #5")
-      and "selected: all" in mt.GetPropertyValue("Series")
+check("after the first Apply the Summary describes the series, and nothing is fetched",
+      series(mt).startswith("3 timesteps: #3 to #5")
+      and "selected: all" in series(mt)
       and mt.GetDataInformation().GetNumberOfPoints() == 0,
-      mt.GetPropertyValue("Series"))
+      series(mt))
 summ = table(mt, 1)
 check("the Summary table: what it is, before any fetch",
       summ["Item"][:3] == ["Source", "Format", "Kind"] and "Grid" in summ["Item"]
@@ -368,16 +374,16 @@ mt.UpdatePropertyInformation()
 tst, fl = table(mt, 3), table(mt, 2)
 check("after a fetch: Selected follows the Timesteps text, Fetched marks what is held",
       tst["Selected"] == ["✓", "", "✓"] and tst["Fetched"] == ["✓", "", "✓"]
-      and "selected: 2 timesteps: #3, #5" in mt.GetPropertyValue("Series"),
-      (tst, mt.GetPropertyValue("Series")))
+      and "selected: 2 timesteps: #3, #5" in series(mt),
+      (tst, series(mt)))
 check("… and the Fields table shows what is in view, with its range",
       fl["In view"] == ["✓"] and fl["Min"] == ["3000"] and fl["Max"] == ["3000"], fl)
 mt.Timesteps = "3-5/2"
 mt.UpdatePipeline(3.0)
 mt.UpdatePropertyInformation()
 check("every n-th: 3-5/2 selects #3 and #5",
-      "selected: 2 timesteps: #3, #5" in mt.GetPropertyValue("Series"),
-      mt.GetPropertyValue("Series"))
+      "selected: 2 timesteps: #3, #5" in series(mt),
+      series(mt))
 mt.Stride = 0
 mt.UpdatePipeline(5.0)
 check("after a fetch the panel says how many timesteps came",
@@ -409,7 +415,7 @@ from paraview.detail.pythonalgorithm import _undecorate
 xml = _undecorate(_pv.SieveSource)._pvsm_proxy_xml
 order = re.findall(r'<\w*Property\b[^>]*\bname="(\w+)"', xml)
 want = ["Source", "Fields", "Stride", "ValueFilter", "BudgetGB", "BudgetMinutes",
-        "Timesteps", "Series", "Status", "Spec"]
+        "Timesteps", "Status", "Spec"]
 check("Source first, then fields, stride, filter, budget, timesteps, status, spec",
       [p for p in order if p in want] == want, order)
 
