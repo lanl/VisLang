@@ -33,8 +33,8 @@ def compose_spec(descriptor, params):
         positions   (x, y, z) variable names, when the user named them
         fields      variable names to keep, or None for all
         timestep    a timestep label (series only) — one timestep per request
-        timesteps   (start, stop), inclusive — a range, for prefetching
-        timestep_labels  exactly these labels, for prefetching
+        timesteps   (start, stop), inclusive — a range of a series
+        timestep_labels  exactly these labels of a series
         box         {"lo": [x, y, z], "hi": [x, y, z]} in view coordinates
         stride      keep every n-th cell / point (int >= 1)
         threshold   "var op value", or None

@@ -49,14 +49,15 @@ Each session's `session.json` records which were in force.
 2. **Sieve Detail** — select the overview, add the filter, drag the box over a
    feature, *Apply*: that box comes at full resolution, drawn in place. Put a
    detail under a detail to zoom again.
-3. **Time** — the slider walks the timesteps; each is fetched once (as
-   `timesteps(src, N, N)`), then shown at once. *Timesteps* narrows
-   the series: `1-9` (a range), `1,4,9` (exactly these), `1-9/4` (every 4th
-   of that range), `/4` (every 4th of all), or several, `1-9,20`; empty is
-   all. *Series* under it says what the series has (`88 timesteps: #1000 to
-   #88000, every 1000`) and what the text selects. The slider offers only those, and *Prefetch* fetches them in
-   one request, `timesteps(src, 1, 9)` or `timesteps(src, [1, 4, 9])` (on a
-   Detail: the box across them).
+3. **Time** — *Timesteps* chooses which timesteps of a series to fetch:
+   `1-9` (a range), `1,4,9` (exactly these), `1-9/4` (every 4th of that
+   range), `/4` (every 4th of all), or several, `1-9,20`; empty is all.
+   *Series* under it says what the series has (`88 timesteps: #1000 to
+   #88000, every 1000`) and what the text selects. *Apply* fetches the whole
+   selection in one request — `timesteps(src, 1, 9)` or
+   `timesteps(src, [1, 4, 9])` (all: no `timesteps()`) — and the time slider
+   then offers exactly those and shows each at once. On a Detail, *Apply*
+   fetches the box across the same timesteps.
 4. **Sieve Spec** — type any spec ending in `save(...)` (named boxes, a box
    that follows a track…).
 
@@ -78,7 +79,7 @@ files.
 
 `tests/test_pv_core.py` (the engine, plain Python) and
 `tests/test_paraview_plugin.py`, which runs `tests/paraview/pv_plugin_checks.py`
-in pvpython: every kind of data, time, prefetch, the box, holds and
+in pvpython: every kind of data, time and the timestep selection, the box, holds and
 *Fetch Anyway*, *Sieve Spec*, the background path driven as ParaView's timer
 drives it, and a simulated remote (`tests/paraview/fake_sieve`).
 

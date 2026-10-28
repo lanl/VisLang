@@ -289,21 +289,22 @@ class _Sieve(VTKPythonAlgorithmBase):
     def _finished(self, job):
         r = job.result or {}
         self._spec = r.get("spec_text") or self._spec
-        if job.action == "prefetch":
-            if r.get("status") == "ok":
-                # One request fetched every timestep: remember each one as if
-                # it had been asked for alone, so the slider shows it at once.
-                for f in r.get("files") or []:
-                    if f.get("label") is not None:
-                        _memo().put(self._key({**job.base, "timestep": f["label"]}),
-                                    {**r, "files": [f]})
-                n = sum(1 for f in r.get("files") or [] if f.get("label") is not None)
-                self._status = (core.status_text(job)
-                                + f"\nPrefetched {n} timesteps: the slider shows each "
-                                  f"at once.")
-            else:
-                self._status = core.status_text(job)
-            self._shown_key = None             # show the current time from the memo
+        labelled = [f for f in r.get("files") or [] if f.get("label") is not None]
+        if r.get("status") == "ok" and labelled:
+            # One request fetched the selected timesteps: remember each as if
+            # it had been asked for alone, so the slider shows it at once.
+            _memo().put(job.key, r)
+            for f in labelled:
+                _memo().put(self._key({**job.base, "timestep": f["label"]}),
+                            {**r, "files": [f]})
+            want = getattr(self, "_want", None)
+            pick = next((f for f in labelled if f["label"] == want), labelled[0])
+            self._show(self._key({**job.base, "timestep": pick["label"]}),
+                       {**r, "files": [pick]}, pick["label"])
+            self._status = (core.status_text(job)
+                            + f"\nFetched {len(labelled)} timestep"
+                            + ("s" if len(labelled) != 1 else "")
+                            + ": the time slider shows each at once.")
             _session().trace(core.trace_record(self.NAME, job.action, job, key=job.key))
             return
         if r.get("status") == "ok" and r.get("files"):
@@ -369,9 +370,6 @@ class _Sieve(VTKPythonAlgorithmBase):
             _session().trace(core.trace_record(self.NAME, action, None, key=key,
                                                memo_hit=True))
             return self._emit(out)
-        if self._job is not None and self._job.action == "prefetch" \
-                and self._job.state in ("queued", "running"):
-            return self._emit(out)             # the prefetch brings this one too
         in_flight = (self._job is not None and self._job_key == key
                      and self._job.state in ("queued", "running"))
         held = (self._job is not None and self._job_key == key
@@ -382,6 +380,28 @@ class _Sieve(VTKPythonAlgorithmBase):
             if key == self._shown_key and self._shown is not None:
                 return self._emit(out)
         return self._emit(out)
+
+    def _serve_series(self, label, base, desc, action, outInfo):
+        """Show timestep `label` of a series. The data comes by the selection:
+        one request fetches every selected timestep (the Timesteps field, or
+        all), each is remembered on its own, and moving the time slider then
+        shows them without asking again."""
+        out = outInfo.GetInformationObject(0)
+        key_t = self._key({**base, "timestep": label})
+        self._want = label
+        if key_t == self._shown_key and self._shown is not None:
+            return self._emit(out)
+        hit = _memo().get(key_t)
+        if hit is not None:
+            self._show(key_t, hit, label)
+            self._spec = hit.get("spec_text") or self._spec
+            self._status = (core.status_text(None, result=hit)
+                            + f"\nTimestep #{label}, from this session.")
+            return self._emit(out)
+        params = {**base, **_selection(desc)}
+        self._serve(self._key(params), {"descriptor": desc, "params": params}, action,
+                    outInfo, label=label)
+        return 1
 
     def _emit(self, out):
         data = vtkDataObject.GetData(out)
@@ -490,28 +510,6 @@ class _Sieve(VTKPythonAlgorithmBase):
             self._status += f"\nCould not create a Sieve Spec: {type(e).__name__}: {e}"
         self.Modified()
 
-    @smproperty.xml('<Property name="Prefetch" command="Prefetch" '
-                    'panel_widget="command_button"><Documentation>Fetch every '
-                    'timestep of a series in one request, so the time slider shows '
-                    'each at once.</Documentation></Property>')
-    def Prefetch(self):
-        desc = self._series_desc()
-        ts = desc.get("timesteps")
-        if not ts or self._base is None:
-            self._status = ("Prefetch needs a series (a folder of timesteps) shown "
-                            "here first.")
-            self.Modified()
-            return
-        full = desc.get("series_timesteps") or ts
-        at = full.index(ts[0]) if ts[0] in full else -1
-        if full[at:at + len(ts)] == ts:
-            params = {**self._base, "timesteps": [ts[0], ts[-1]]}
-        else:
-            params = {**self._base, "timestep_labels": list(ts)}
-        self._submit({"descriptor": desc, "params": params},
-                     self._key(params), "prefetch")
-        self.Modified()
-
     @smproperty.xml('<StringVectorProperty name="Status" command="GetStatus" '
                     'information_only="1" panel_visibility="default">'
                     '<Hints><Widget type="multi_line"/></Hints></StringVectorProperty>')
@@ -548,7 +546,7 @@ class SieveSource(_Sieve):
     PANEL = ("SetSource", "SetPositions", "GetFieldSelection", "SetStride",
              "SetValueFilter", "SetBudgetGB", "SetBudgetMinutes", "SetTimesteps",
              "GetSeries", "GetStatus", "GetSpec", "FetchOverview", "ShowMetadata",
-             "Prefetch", "FetchAnyway", "Cancel", "Connect", "PromoteToSpec")
+             "FetchAnyway", "Cancel", "Connect", "PromoteToSpec")
     # Outputs: the data, then what the source is, as three tables. ParaView
     # opens a SpreadSheet on the Summary once (on the first Apply); its
     # "Showing" list switches to Fields or Timesteps.
@@ -641,7 +639,7 @@ class SieveSource(_Sieve):
 
     @smproperty.xml('<StringVectorProperty name="Timesteps" command="SetTimesteps" '
                     'number_of_elements="1" default_values=""><Documentation>Which '
-                    '#N of a series to show, fetch and prefetch: "1-9" (a range), '
+                    '#N of a series to fetch and show: "1-9" (a range), '
                     '"1,4,9" (exactly these), or both, "1-9,20". Empty: all.'
                     '</Documentation></StringVectorProperty>')
     def SetTimesteps(self, v):
@@ -677,7 +675,7 @@ class SieveSource(_Sieve):
 
     def _series_desc(self):
         """The descriptor with its timesteps narrowed to the Timesteps field;
-        the series' full list rides along for Prefetch to choose its form."""
+        the series' full list rides along for the request to choose its form."""
         desc = self._desc or {}
         ts = desc.get("timesteps")
         if not ts:
@@ -816,11 +814,13 @@ class SieveSource(_Sieve):
             t = info.Get(SDDP.UPDATE_TIME_STEP()) \
                 if info.Has(SDDP.UPDATE_TIME_STEP()) else None
             label = _snap(desc["timesteps"], t)
-        params = self._params(desc, label)
-        self._base = {k: v for k, v in params.items() if k != "timestep"}
-        key = self._key(params)
-        self._serve(key, {"descriptor": desc, "params": params}, "overview", outInfo,
-                    label=label)
+        self._base = self._params(desc, None)
+        if label is not None:
+            self._serve_series(label, self._base, desc, "overview", outInfo)
+        else:
+            self._serve(self._key(self._base), {"descriptor": desc,
+                                                "params": self._base},
+                        "overview", outInfo)
         if label is not None:
             vtkDataObject.GetData(outInfo).GetInformation().Set(
                 vtkDataObject.DATA_TIME_STEP(), float(label))
@@ -833,16 +833,6 @@ class SieveSource(_Sieve):
             return
         params = (job.request or {}).get("params") or {}
         notes = []
-        ts = self._series_desc().get("timesteps")
-        if ts and params.get("timestep") is not None:
-            held = sum(1 for lab in ts if _memo().get(
-                self._key({**(job.base or {}), "timestep": lab})) is not None)
-            notes.append(
-                f"Showing timestep #{params['timestep']}: {held} of the {len(ts)} "
-                f"selected are fetched." + ("" if held == len(ts) else
-                                            f" The time slider fetches each as you "
-                                            f"reach it; Prefetch fetches all {len(ts)} "
-                                            f"in one request."))
         if self._stride <= 0 and int(params.get("stride") or 1) > 1:
             notes.append(f"Stride {params['stride']} was chosen automatically (Stride "
                          f"0); set Stride to 1 for full resolution.")
@@ -909,8 +899,7 @@ class SieveDetail(_Sieve):
     KIND = "detail"
     PANEL = ("SetBoxPosition", "SetBoxLength", "_region_group", "GetFieldSelection",
              "SetStride", "SetValueFilter", "SetBudgetGB", "SetBudgetMinutes",
-             "GetStatus", "GetSpec", "Prefetch", "FetchAnyway", "Cancel",
-             "PromoteToSpec")
+             "GetStatus", "GetSpec", "FetchAnyway", "Cancel", "PromoteToSpec")
 
     def __init__(self):
         _Sieve.__init__(self, 1)
@@ -1020,10 +1009,10 @@ class SieveDetail(_Sieve):
             params["positions"] = [s.strip() for s in desc["positions_given"].split(",")]
         self._base = dict(params)
         if label is not None:
-            params["timestep"] = label
-        key = self._key(params)
-        self._serve(key, {"descriptor": desc, "params": params}, "detail", outInfo,
-                    label=label)
+            self._serve_series(label, self._base, desc, "detail", outInfo)
+        else:
+            self._serve(self._key(params), {"descriptor": desc, "params": params},
+                        "detail", outInfo)
         if label is not None:
             vtkDataObject.GetData(outInfo).GetInformation().Set(
                 vtkDataObject.DATA_TIME_STEP(), float(label))
@@ -1058,6 +1047,19 @@ class SieveDetail(_Sieve):
 
 
 _pick_timesteps = core.pick_timesteps          # kept for the checks
+
+
+def _selection(desc):
+    """The timesteps() part of a request for the selected timesteps: nothing
+    for the whole series, a range for a run of it, else the labels."""
+    ts = desc.get("timesteps") or []
+    full = desc.get("series_timesteps") or ts
+    if not ts or ts == full:
+        return {}
+    at = full.index(ts[0]) if ts[0] in full else -1
+    if full[at:at + len(ts)] == ts:
+        return {"timesteps": [ts[0], ts[-1]]}
+    return {"timestep_labels": list(ts)}
 
 
 def _ranges(data):

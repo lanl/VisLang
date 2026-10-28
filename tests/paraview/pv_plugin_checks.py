@@ -175,24 +175,38 @@ check("a curvilinear detail is a structured grid around the box",
       or bounds(cd)[0] >= -6.0 - 2.0, (bounds(cd), spec(cd)))
 
 print("== time ==")
+n0 = len(steps())
 t = overview(Source=path("series"), Stride=2)
 t.UpdatePipelineInformation()
 check("the folder's timesteps reach the time slider",
       list(t.TimestepValues) == [3.0, 4.0, 5.0], list(t.TimestepValues))
 bounds(t, 4.0)
 v4 = float(fetch(t).PointData["rho"][0])
+runs = [d for d in steps()[n0:] if d.endswith("-source-overview")]
+got = json.load(open(os.path.join(runs[-1], "result.json"))) if runs else {}
+check("Apply fetches the whole series in one request (no Timesteps text: all)",
+      len(runs) == 1 and "timesteps(" not in spec(t)
+      and sorted(f["label"] for f in got.get("files", [])) == [3, 4, 5],
+      (runs, spec(t), got.get("files")))
+n = len(steps())
 bounds(t, 5.0)
 v5 = float(fetch(t).PointData["rho"][0])
-check("each time shows its own timestep", (v4, v5) == (4000.0, 5000.0), (v4, v5))
-n = len(steps())
-bounds(t, 4.0)
-check("a revisited timestep comes back without a new request",
-      len(steps()) == n and float(fetch(t).PointData["rho"][0]) == 4000.0
-      and "from this session" in status(t), (len(steps()), n, status(t)))
+bounds(t, 3.0)
+v3 = float(fetch(t).PointData["rho"][0])
+check("then the slider shows each timestep without asking again",
+      (v3, v4, v5) == (3000.0, 4000.0, 5000.0) and len(steps()) == n
+      and "Timestep #3, from this session" in status(t) and "subsample" in spec(t),
+      ((v3, v4, v5), len(steps()), n, status(t)))
 td = SieveDetail(Input=t)
 td.BoxCorner, td.BoxSize = [0.0, 0.0, 0.0], [7.0, 7.0, 7.0]
+n = len(steps())
 bounds(td, 5.0)
-check("a detail follows the time", float(fetch(td).PointData["rho"][0]) == 5000.0)
+check("a detail fetches its box across the timesteps in one request, and follows "
+      "the time", float(fetch(td).PointData["rho"][0]) == 5000.0
+      and len(steps()) == n + 1, (len(steps()), n))
+bounds(td, 3.0)
+check("… each timestep's box shown without asking again",
+      float(fetch(td).PointData["rho"][0]) == 3000.0 and len(steps()) == n + 1)
 
 print("== held over budget, then approved ==")
 g = overview(Source=path("plain.h5"), Stride=1, BudgetGB=1e-9)
@@ -282,28 +296,6 @@ check("Fetch Overview asks again after a cancel",
       len(steps()) == n + 1 and "Fetched" in status(a), status(a))
 os.environ["SIEVE_PV_SYNC"] = "1"
 
-print("== prefetching a series ==")
-pf = overview(Source=path("series"), Stride=4)
-bounds(pf, 3.0)
-pf.SMProxy.InvokeCommand("Prefetch")
-pf.UpdatePipeline(3.0)
-n = len(steps())
-vals = []
-for t in (3.0, 4.0, 5.0):
-    bounds(pf, t)
-    vals.append(float(fetch(pf).PointData["rho"][0]))
-check("after a prefetch every timestep shows without a new request",
-      len(steps()) == n and vals == [3000.0, 4000.0, 5000.0], (len(steps()), n, vals))
-pd2 = SieveDetail(Input=pf)
-pd2.BoxCorner, pd2.BoxSize = [4.0, 4.0, 4.0], [4.0, 4.0, 4.0]
-bounds(pd2, 3.0)
-pd2.SMProxy.InvokeCommand("Prefetch")
-pd2.UpdatePipeline(3.0)
-n = len(steps())
-vals = [float((bounds(pd2, t), fetch(pd2).PointData["rho"][0])[1]) for t in (4.0, 5.0)]
-check("a detail prefetches its box over the series (the region across time)",
-      len(steps()) == n and vals == [4000.0, 5000.0], (len(steps()), n, vals))
-
 print("== choosing the timesteps ==")
 import SieveParaView as _pv
 pick = _pv._pick_timesteps
@@ -315,28 +307,21 @@ check("Timesteps text: ranges, lists, both, and mistakes",
       and pick("7", [3, 4, 5])[1].startswith("not in this series: #7")
       and "cannot read" in pick("a-b", [3, 4, 5])[1]
       and "matches no timestep" in pick("10-20", [3, 4, 5])[1])
-pr = overview(Source=path("series"), Stride=2, Timesteps="4-5")
+pr = overview(Source=path("series"), Stride=4, Timesteps="4-5")
 pr.UpdatePipelineInformation()
 check("the slider offers only the chosen timesteps",
       list(pr.TimestepValues) == [4.0, 5.0], list(pr.TimestepValues))
 bounds(pr, 4.0)
-pr.SMProxy.InvokeCommand("Prefetch")
-pr.UpdatePipeline(4.0)
-check("Prefetch of a range asks for the range",
-      "timesteps(src, 4, 5)" in spec(pr), spec(pr))
+check("Apply asks for the chosen range", "timesteps(src, 4, 5)" in spec(pr), spec(pr))
 prd = SieveDetail(Input=pr)
 prd.BoxCorner, prd.BoxSize = [0.0, 0.0, 0.0], [5.0, 5.0, 5.0]
 bounds(prd, 4.0)
-prd.SMProxy.InvokeCommand("Prefetch")
-prd.UpdatePipeline(4.0)
-check("a detail under it prefetches the same range", "timesteps(src, 4, 5)" in spec(prd),
+check("a detail under it asks for the same range", "timesteps(src, 4, 5)" in spec(prd),
       spec(prd))
-pl = overview(Source=path("series"), Stride=2, Timesteps="3,5")
+pl = overview(Source=path("series"), Stride=5, Timesteps="3,5")
 pl.UpdatePipelineInformation()
 bounds(pl, 3.0)
-pl.SMProxy.InvokeCommand("Prefetch")
-pl.UpdatePipeline(3.0)
-check("a list: the slider offers those, and Prefetch asks for exactly those",
+check("a list: the slider offers those, and Apply asks for exactly those",
       list(pl.TimestepValues) == [3.0, 5.0] and "timesteps(src, [3, 5])" in spec(pl),
       (list(pl.TimestepValues), spec(pl)))
 pl.Timesteps = "9"
@@ -382,7 +367,7 @@ mt.UpdatePipeline(3.0)
 mt.UpdatePropertyInformation()
 tst, fl = table(mt, 3), table(mt, 2)
 check("after a fetch: Selected follows the Timesteps text, Fetched marks what is held",
-      tst["Selected"] == ["✓", "", "✓"] and tst["Fetched"] == ["✓", "", ""]
+      tst["Selected"] == ["✓", "", "✓"] and tst["Fetched"] == ["✓", "", "✓"]
       and "selected: 2 timesteps: #3, #5" in mt.GetPropertyValue("Series"),
       (tst, mt.GetPropertyValue("Series")))
 check("… and the Fields table shows what is in view, with its range",
@@ -395,10 +380,8 @@ check("every n-th: 3-5/2 selects #3 and #5",
       mt.GetPropertyValue("Series"))
 mt.Stride = 0
 mt.UpdatePipeline(5.0)
-check("after a fetch the panel says which timestep shows, how many of the selection are "
-      "held, and that the stride was automatic",
-      "Showing timestep #5: " in status(mt) and "of the 2 selected are fetched" in status(mt),
-      status(mt))
+check("after a fetch the panel says how many timesteps came",
+      "Fetched 2 timesteps: the time slider shows each at once" in status(mt), status(mt))
 check("… and that the stride was automatic when it was",
       ("chosen automatically" in status(mt)) == ("subsample" in spec(mt)), status(mt))
 
