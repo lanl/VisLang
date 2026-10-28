@@ -372,6 +372,15 @@ def remote_timestep_files_stat(uri):
             for label, name in parsed]
 
 
+def _series_lines(labels, where):
+    """The series' labels in a few words, and how to select from them."""
+    from vislang.formats.series import describe_series
+    text = describe_series(labels).replace("\n", "\n  ")
+    return (f"  {text}\n"
+            f"  select with: timesteps(source({where!r}), start, stop)  # inclusive\n"
+            f"           or: timesteps(source({where!r}), [labels])     # exactly these")
+
+
 def folder_listing(dirpath):
     """Plain, deterministic summary of a timestep folder for authoring: the
     timestep count/labels and the shared schema read from the first file. No
@@ -382,13 +391,9 @@ def folder_listing(dirpath):
         return f"FOLDER {dirpath}\n  {e}"
     labels = [lab for lab, _ in ts]
     first = ts[0][1]
-    contiguous = labels == list(range(labels[0], labels[-1] + 1))
     head = (
         f"FOLDER {dirpath} — timeseries of {len(ts)} timestep(s)\n"
-        f"  timesteps: {labels[0]}..{labels[-1]}"
-        + ("" if contiguous else f" (non-contiguous: {labels})") + "\n"
-        f"  select a range with: timesteps(source({dirpath!r}), start, stop)  "
-        f"# inclusive #N labels\n\n"
+        + _series_lines(labels, dirpath) + "\n\n"
         f"  shared schema (from timestep {labels[0]}, {os.path.basename(first)}):"
     )
     try:
@@ -414,13 +419,9 @@ def remote_folder_listing(uri, allow_fetch=False):
                 f"inspect a local copy)")
     labels = [lab for lab, _ in ts]
     first_uri = ts[0][1]
-    contiguous = labels == list(range(labels[0], labels[-1] + 1))
     head = (
         f"FOLDER {uri} — remote timeseries of {len(ts)} timestep(s)\n"
-        f"  timesteps: {labels[0]}..{labels[-1]}"
-        + ("" if contiguous else f" (non-contiguous: {labels})") + "\n"
-        f"  select a range with: timesteps(source({uri!r}), start, stop)  "
-        f"# inclusive #N labels\n\n"
+        + _series_lines(labels, uri) + "\n\n"
         f"  shared schema (from timestep {labels[0]}):"
     )
     try:

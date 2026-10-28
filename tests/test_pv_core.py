@@ -163,10 +163,37 @@ def test_status():
           core.status_text(None, {"status": "error", "error": "no such field"}))
 
 
+def test_series():
+    print("== the Timesteps field and the Series line ==")
+    labels = list(range(1000, 88001, 1000))
+    pick = core.pick_timesteps
+    check("a range, every n-th of it, every n-th of all, a list, and a mix",
+          pick("1000-5000", labels)[0] == [1000, 2000, 3000, 4000, 5000]
+          and pick("1000-9000/4", labels)[0] == [1000, 5000, 9000]
+          and pick("/40", labels)[0] == [1000, 41000, 81000]
+          and pick("2000, 7000", labels)[0] == [2000, 7000]
+          and pick("1000-3000, 88000", labels)[0] == [1000, 2000, 3000, 88000])
+    check("mistakes are named, and select nothing",
+          pick("1500", labels) == ([], "not in this series: #1500 (it has #1000 … #88000)")
+          and "cannot read" in pick("1000-x", labels)[1]
+          and "n of 1 or more" in pick("1000-9000/0", labels)[1]
+          and "runs backwards" in pick("9-1", labels)[1])
+    d = {"uri": "/d/s", "timesteps": labels}
+    check("the Series line: the series, then what is selected",
+          core.series_text(d, "1000-40000/4") == "88 timesteps: #1000 to #88000, every "
+          "1000\nselected: 10 timesteps: #1000 to #37000, every 4000",
+          core.series_text(d, "1000-40000/4"))
+    check("before the first Apply, and for one file",
+          core.series_text(None, "") == "Apply to read the series."
+          and core.series_text({"uri": "/f.h5", "timesteps": None}, "")
+          == "One file (no timesteps).")
+
+
 if __name__ == "__main__":
     sieve = fake_sieve()
     test_runner(sieve)
     test_env(sieve)
     test_keys_memo_session()
     test_status()
+    test_series()
     print(f"\nall {len(PASS)} checks passed")

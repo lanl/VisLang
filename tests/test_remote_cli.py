@@ -259,7 +259,7 @@ def main():
         code, out = run_cli(["inspect", folder_uri])
         check("inspect folder exit 0", code == 0, f"code={code}\n{out}")
         check("inspect folder says timeseries", "timeseries" in out.lower(), out)
-        check("inspect folder lists the #N range", "1..3" in out, out)
+        check("inspect folder describes the series", "3 timesteps: #1 to #3" in out, out)
         check("inspect folder shows the shared schema", "density" in out, out)
 
         print("== sieve estimate <remote spec>: static-check + cost, MATERIALIZE NOTHING ==")

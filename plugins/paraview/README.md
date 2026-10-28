@@ -35,16 +35,26 @@ Each session's `session.json` records which were in force.
    (`rho > 1.5`) and *Apply*, or press *Fetch Overview* to take it as it is.
    Press *Reset Camera* once it arrives (ParaView framed the empty first
    output). The panel reads top to bottom: Source, Fields, Stride, Value
-   Filter, Budget, Timesteps, Status, Spec, then the buttons. *Positions*
-   (behind the gear) names a point file's x, y, z variables, only when Sieve
-   cannot find them itself.
+   Filter, Budget, Timesteps, Series, Status, Spec, then the buttons.
+   *Positions* (behind the gear) names a point file's x, y, z variables, only
+   when Sieve cannot find them itself.
+   **What the source is** comes as three tables, opened once in a SpreadSheet
+   beside the view on the first Apply (close it with ×; *Show Metadata* brings
+   it back; its *Showing* list switches table): **Summary** (format, kind,
+   grid or point count, coordinates, the series, sizes, the overview's cost),
+   **Fields** (bytes per value, size in full and at the stride, which are in
+   view, their range once fetched) and **Timesteps** (every file: label,
+   name, size, whether the *Timesteps* field selects it, whether this
+   session already holds it at the current settings).
 2. **Sieve Detail** — select the overview, add the filter, drag the box over a
    feature, *Apply*: that box comes at full resolution, drawn in place. Put a
    detail under a detail to zoom again.
 3. **Time** — the slider walks the timesteps; each is fetched once (as
    `timesteps(src, N, N)`), then shown at once. *Timesteps* narrows
-   the series: `1-9` (a range), `1,4,9` (exactly these) or both, `1-9,20`;
-   empty is all. The slider offers only those, and *Prefetch* fetches them in
+   the series: `1-9` (a range), `1,4,9` (exactly these), `1-9/4` (every 4th
+   of that range), `/4` (every 4th of all), or several, `1-9,20`; empty is
+   all. *Series* under it says what the series has (`88 timesteps: #1000 to
+   #88000, every 1000`) and what the text selects. The slider offers only those, and *Prefetch* fetches them in
    one request, `timesteps(src, 1, 9)` or `timesteps(src, [1, 4, 9])` (on a
    Detail: the box across them).
 4. **Sieve Spec** — type any spec ending in `save(...)` (named boxes, a box

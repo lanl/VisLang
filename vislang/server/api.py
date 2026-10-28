@@ -79,9 +79,14 @@ def inspect(uri, positions=None):
         return {**out, "status": "error", "message": f"{type(e).__name__}: {e}"}
     desc = {**out, "status": "ok", **describe(info)}
     if series:
+        from vislang.formats.series import describe_series
         desc["timesteps"] = [lab for lab, _, _ in series]
         desc["timestep_bytes"] = series[0][2]
         desc["source_bytes"] = sum(size for _, _, size in series)
+        # Every file, for a client to list: [label, file name, bytes].
+        desc["timestep_files"] = [[lab, os.path.basename(str(u).rstrip("/")), int(size)]
+                                  for lab, u, size in series]
+        desc["series_text"] = describe_series(desc["timesteps"])
     else:
         desc["timesteps"] = None
         desc["source_bytes"] = _file_size(uri, info)

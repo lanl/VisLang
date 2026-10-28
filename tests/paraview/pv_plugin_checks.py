@@ -344,13 +344,81 @@ pl.UpdatePipeline(3.0)
 check("a timestep the series lacks is named, and nothing is fetched",
       "not in this series: #9" in status(pl), status(pl))
 
+print("== what the source is: the Series line and the metadata tables ==")
+
+
+def table(src, port):
+    src.UpdatePipeline()
+    data = servermanager.Fetch(src, None, None, port)
+    return {data.GetColumnName(c): [data.GetColumn(c).GetValue(r)
+                                    for r in range(data.GetNumberOfRows())]
+            for c in range(data.GetNumberOfColumns())}
+
+
+mt = SieveSource(Source=path("series"))
+mt.UpdatePipeline()
+mt.UpdatePropertyInformation()
+check("after the first Apply the Series line describes the series, and nothing is fetched",
+      mt.GetPropertyValue("Series").startswith("3 timesteps: #3 to #5")
+      and "selected: all" in mt.GetPropertyValue("Series")
+      and mt.GetDataInformation().GetNumberOfPoints() == 0,
+      mt.GetPropertyValue("Series"))
+summ = table(mt, 1)
+check("the Summary table: what it is, before any fetch",
+      summ["Item"][:3] == ["Source", "Format", "Kind"] and "Grid" in summ["Item"]
+      and any(v.startswith("3 timesteps") for v in summ["Value"]), summ)
+tst = table(mt, 3)
+check("the Timesteps table lists every file, all selected, none fetched",
+      tst["Label"] == ["3", "4", "5"] and tst["File"] == ["snap#3.h5", "snap#4.h5",
+                                                         "snap#5.h5"]
+      and tst["Selected"] == ["✓"] * 3 and tst["Fetched"] == [""] * 3, tst)
+fl = table(mt, 2)
+check("the Fields table: each field's size, nothing in view yet",
+      fl["Field"] == ["rho"] and fl["Bytes per value"] == [4] and fl["In view"] == ["chosen"],
+      fl)
+mt.Timesteps = "3,5"
+mt.Stride = 3                        # a stride no earlier check fetched
+mt.UpdatePipeline(3.0)
+mt.UpdatePropertyInformation()
+tst, fl = table(mt, 3), table(mt, 2)
+check("after a fetch: Selected follows the Timesteps text, Fetched marks what is held",
+      tst["Selected"] == ["✓", "", "✓"] and tst["Fetched"] == ["✓", "", ""]
+      and "selected: 2 timesteps: #3, #5" in mt.GetPropertyValue("Series"),
+      (tst, mt.GetPropertyValue("Series")))
+check("… and the Fields table shows what is in view, with its range",
+      fl["In view"] == ["✓"] and fl["Min"] == ["3000"] and fl["Max"] == ["3000"], fl)
+mt.Timesteps = "3-5/2"
+mt.UpdatePipeline(3.0)
+mt.UpdatePropertyInformation()
+check("every n-th: 3-5/2 selects #3 and #5",
+      "selected: 2 timesteps: #3, #5" in mt.GetPropertyValue("Series"),
+      mt.GetPropertyValue("Series"))
+
+ctl = servermanager.vtkSMParaViewPipelineControllerWithRendering()
+lay = CreateLayout("auto-show")
+rv = CreateView("RenderView")
+AssignViewToLayout(rv, lay)
+shown = [ctl.ShowInPreferredView(mt.SMProxy, i, rv.SMProxy) for i in range(4)]
+check("on Apply ParaView opens one SpreadSheet, on the Summary; Fields and Timesteps wait",
+      [v.GetXMLName() if v else None for v in shown]
+      == ["RenderView", "SpreadSheetView", None, None],
+      [v.GetXMLName() if v else None for v in shown])
+n_views = len([v for v in GetViews() if v.GetXMLName() == "SpreadSheetView"])
+SetActiveView(rv)
+mt.SMProxy.InvokeCommand("ShowMetadata")
+sheets = [v for v in GetViews() if v.GetXMLName() == "SpreadSheetView"]
+check("Show Metadata opens the tables again",
+      len(sheets) == n_views + 1
+      and GetDisplayProperties(OutputPort(mt, 1), sheets[-1]).Visibility == 1)
+Delete(mt)
+
 print("== the panel ==")
 import re
 from paraview.detail.pythonalgorithm import _undecorate
 xml = _undecorate(_pv.SieveSource)._pvsm_proxy_xml
 order = re.findall(r'<\w*Property\b[^>]*\bname="(\w+)"', xml)
 want = ["Source", "Fields", "Stride", "ValueFilter", "BudgetGB", "BudgetMinutes",
-        "Timesteps", "Status", "Spec"]
+        "Timesteps", "Series", "Status", "Spec"]
 check("Source first, then fields, stride, filter, budget, timesteps, status, spec",
       [p for p in order if p in want] == want, order)
 

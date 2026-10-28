@@ -32,11 +32,12 @@ import sieve_pv_core as core                           # noqa: E402
 
 from paraview.util.vtkAlgorithm import (VTKPythonAlgorithmBase, smdomain,  # noqa: E402
                                         smhint, smproperty, smproxy)
-from vtkmodules.vtkCommonCore import vtkDataArraySelection, vtkStringArray  # noqa: E402
+from vtkmodules.vtkCommonCore import (vtkDataArraySelection, vtkDoubleArray,  # noqa: E402
+                                      vtkLongLongArray, vtkStringArray)
 from vtkmodules.vtkCommonDataModel import (vtkDataObject, vtkImageData,  # noqa: E402
-                                           vtkPolyData, vtkStructuredGrid)
+                                           vtkPolyData, vtkStructuredGrid, vtkTable)
 from vtkmodules.vtkCommonExecutionModel import (  # noqa: E402
-    vtkStreamingDemandDrivenPipeline as SDDP)
+    vtkExecutive, vtkStreamingDemandDrivenPipeline as SDDP)
 from vtkmodules.vtkIOXML import (vtkXMLImageDataReader, vtkXMLPolyDataReader,  # noqa: E402
                                  vtkXMLStructuredGridReader)
 
@@ -172,11 +173,11 @@ class _Sieve(VTKPythonAlgorithmBase):
     NAME = "sieve"
     KIND = "sieve"
 
-    def __init__(self, nin):
+    def __init__(self, nin, nout=1):
         # The port is declared as any dataset: RequestDataObject makes the
         # concrete kind (grid, curvilinear grid, points) the data turns out to
         # be — a narrower declaration would have VTK swap it back.
-        VTKPythonAlgorithmBase.__init__(self, nInputPorts=nin, nOutputPorts=1,
+        VTKPythonAlgorithmBase.__init__(self, nInputPorts=nin, nOutputPorts=nout,
                                         outputType="vtkDataSet")
         self._job = None             # the request in flight (or last finished)
         self._job_key = None
@@ -227,23 +228,34 @@ class _Sieve(VTKPythonAlgorithmBase):
         """The panel reads Status and Spec only when ParaView refreshes property
         information — not after a live-source update. Ask for it when either
         changed (in the builtin session the proxy lives in this process)."""
-        text = (self._status, self._spec)
+        text = (self._status, self._spec, self._panel_extra())
         if text == self._shown_text:
             return
+        proxy = self._own_proxy()
+        if proxy is None:
+            return
+        self._shown_text = text
+        proxy.UpdatePropertyInformation()
+
+    def _panel_extra(self):
+        """Other read-only panel text a subclass shows (refreshed alike)."""
+        return None
+
+    def _own_proxy(self):
+        """This object's server-manager proxy (the builtin session keeps it in
+        this process), or None."""
         if self._proxy is None:
             try:
                 from paraview import servermanager
                 pxm = servermanager.ProxyManager()
-                for (_, _), p in pxm.GetProxiesInGroup("sources").items():
-                    if p.GetClientSideObject() is self:
-                        self._proxy = p
-                        break
-            except Exception:
-                return
-            if self._proxy is None:
-                return
-        self._shown_text = text
-        self._proxy.UpdatePropertyInformation()
+                for group in ("sources", "filters"):
+                    for (_, _), p in pxm.GetProxiesInGroup(group).items():
+                        if p.GetClientSideObject() is self:
+                            self._proxy = p
+                            return p
+            except Exception:                                   # noqa: BLE001
+                return None
+        return self._proxy
 
     def _poll(self):
         """Handle a finished job. Returns True when something changed."""
@@ -520,6 +532,13 @@ class _Sieve(VTKPythonAlgorithmBase):
 @smhint.xml('<ShowInMenu category="Sieve"/>')
 @smhint.xml('<LiveSource interval="500"/>')
 @smhint.xml('<RepresentationType view="RenderView" type="Surface"/>')
+@smhint.xml('<View type="SpreadSheetView" port="1"/>')
+@smhint.xml('<View type="None" port="2"/>')
+@smhint.xml('<View type="None" port="3"/>')
+@smproperty.xml('<OutputPort name="Data" index="0"/>')
+@smproperty.xml('<OutputPort name="Summary" index="1"/>')
+@smproperty.xml('<OutputPort name="Fields" index="2"/>')
+@smproperty.xml('<OutputPort name="Timesteps" index="3"/>')
 class SieveSource(_Sieve):
     """A coarse overview of a source — a file or a folder of timesteps, local
     or remote (ssh://host/path or user@host:/path)."""
@@ -528,11 +547,15 @@ class SieveSource(_Sieve):
     KIND = "source"
     PANEL = ("SetSource", "SetPositions", "GetFieldSelection", "SetStride",
              "SetValueFilter", "SetBudgetGB", "SetBudgetMinutes", "SetTimesteps",
-             "GetStatus", "GetSpec", "FetchOverview", "Prefetch", "FetchAnyway",
-             "Cancel", "Connect", "PromoteToSpec")
+             "GetSeries", "GetStatus", "GetSpec", "FetchOverview", "ShowMetadata",
+             "Prefetch", "FetchAnyway", "Cancel", "Connect", "PromoteToSpec")
+    # Outputs: the data, then what the source is, as three tables. ParaView
+    # opens a SpreadSheet on the Summary once (on the first Apply); its
+    # "Showing" list switches to Fields or Timesteps.
+    TABLES = (1, 2, 3)
 
     def __init__(self):
-        _Sieve.__init__(self, 0)
+        _Sieve.__init__(self, 0, nout=4)
         self._uri = ""
         self._positions = ""
         self._desc_job = None
@@ -627,6 +650,31 @@ class SieveSource(_Sieve):
             self._ts_text = v
             self._settings_changed()
 
+    @smproperty.xml('<StringVectorProperty name="Series" command="GetSeries" '
+                    'information_only="1" panel_visibility="default">'
+                    '<Hints><Widget type="multi_line"/></Hints></StringVectorProperty>')
+    def GetSeries(self):
+        return core.series_text(self._desc, self._ts_text)
+
+    def _panel_extra(self):
+        return self.GetSeries()
+
+    @smproperty.xml('<Property name="ShowMetadata" label="Show Metadata" '
+                    'command="ShowMetadata" panel_widget="command_button">'
+                    '<Documentation>Open the Summary, Fields and Timesteps tables '
+                    'beside the view.</Documentation></Property>')
+    def ShowMetadata(self):
+        try:
+            from paraview import simple
+            proxy = self._own_proxy()
+            view = simple.CreateView("SpreadSheetView")
+            simple.AssignViewToLayout(view)
+            simple.Show(simple.OutputPort(proxy, 1), view)
+            simple.Render(view)
+        except Exception as e:                                  # noqa: BLE001
+            self._status += f"\nCould not open the tables: {type(e).__name__}: {e}"
+            self.Modified()
+
     def _series_desc(self):
         """The descriptor with its timesteps narrowed to the Timesteps field;
         the series' full list rides along for Prefetch to choose its form."""
@@ -634,7 +682,7 @@ class SieveSource(_Sieve):
         ts = desc.get("timesteps")
         if not ts:
             return desc
-        keep, self._ts_problem = _pick_timesteps(self._ts_text, ts)
+        keep, self._ts_problem = core.pick_timesteps(self._ts_text, ts)
         return {**desc, "timesteps": keep or ts, "series_timesteps": ts}
 
     @smproperty.doublevector(name="TimestepValues", information_only="1",
@@ -711,10 +759,21 @@ class SieveSource(_Sieve):
         return _Sieve._poll(self)
 
     # -- pipeline -------------------------------------------------------------------
+    def FillOutputPortInformation(self, port, info):
+        # Port 0 is any dataset (made concrete in RequestDataObject); the
+        # others are tables, and must say so or VTK refuses them.
+        info.Set(vtkDataObject.DATA_TYPE_NAME(),
+                 "vtkTable" if port in self.TABLES else "vtkDataSet")
+        return 1
+
     def RequestDataObject(self, request, inInfo, outInfo):
         # The output's kind (grid, curvilinear, points) is the source's: read
         # its metadata first (in the background, unless running synchronously).
         self._need_descriptor()
+        for port in self.TABLES:
+            info = outInfo.GetInformationObject(port)
+            if not isinstance(info.Get(vtkDataObject.DATA_OBJECT()), vtkTable):
+                info.Set(vtkDataObject.DATA_OBJECT(), vtkTable())
         return _Sieve.RequestDataObject(self, request, inInfo, outInfo)
 
     def RequestInformation(self, request, inInfo, outInfo):
@@ -732,6 +791,11 @@ class SieveSource(_Sieve):
         return 1
 
     def RequestData(self, request, inInfo, outInfo):
+        self._overview(request, outInfo)
+        self._fill_tables(outInfo)
+        return 1
+
+    def _overview(self, request, outInfo):
         if not self._uri or self._need_descriptor() or self._desc is None:
             return 1
         if not self._armed:
@@ -740,7 +804,13 @@ class SieveSource(_Sieve):
         if self._ts_problem:
             self._status = f"Timesteps: {self._ts_problem}. Nothing fetched."
             return 1
-        info = outInfo.GetInformationObject(0)
+        # The time asked for, by whichever output asked (the view's time
+        # reaches the tables' SpreadSheet too).
+        port = request.Get(vtkExecutive.FROM_OUTPUT_PORT()) \
+            if request.Has(vtkExecutive.FROM_OUTPUT_PORT()) else 0
+        info = outInfo.GetInformationObject(port if 0 <= port < 4 else 0)
+        if not info.Has(SDDP.UPDATE_TIME_STEP()):
+            info = outInfo.GetInformationObject(0)
         label = None
         if desc.get("timesteps"):
             t = info.Get(SDDP.UPDATE_TIME_STEP()) \
@@ -755,6 +825,30 @@ class SieveSource(_Sieve):
             vtkDataObject.GetData(outInfo).GetInformation().Set(
                 vtkDataObject.DATA_TIME_STEP(), float(label))
         return 1
+
+    # -- the tables -------------------------------------------------------------
+    def _fill_tables(self, outInfo):
+        desc = self._series_desc() if self._desc else None
+        stride = self._stride
+        chosen = [self._fields.GetArrayName(i)
+                  for i in range(self._fields.GetNumberOfArrays())
+                  if self._fields.GetArraySetting(i)]
+        ranges = _ranges(self._shown)
+        fetched = set()
+        if desc and self._base is not None:
+            for lab in desc.get("series_timesteps") or desc.get("timesteps") or []:
+                if _memo().get(self._key({**self._base, "timestep": lab})) is not None:
+                    fetched.add(lab)
+        whole = bool(desc) and not desc.get("timesteps") and self._shown is not None
+        _table(vtkTable.GetData(outInfo, 1), ("Item", "Value"),
+               core.summary_table(desc, self._ts_text, stride))
+        _table(vtkTable.GetData(outInfo, 2),
+               ("Field", "Bytes per value", "Full MB", "At stride MB", "In view",
+                "Min", "Max"),
+               core.fields_table(desc, chosen, stride, ranges))
+        _table(vtkTable.GetData(outInfo, 3),
+               ("Index", "Label", "File", "Size MB", "Selected", "Fetched"),
+               core.timesteps_table(desc, self._ts_text, whole or fetched))
 
     def _params(self, desc, label):
         n = self._fields.GetNumberOfArrays()
@@ -940,36 +1034,38 @@ class SieveDetail(_Sieve):
             self._status += "\n" + self._box_warning
 
 
-def _pick_timesteps(text, available):
-    """The labels of `available` that a Timesteps field selects, and what is
-    wrong with it (None when nothing). "1-9" keeps the labels in [1, 9]; "4"
-    must be one of them; parts are separated by commas."""
-    text = (text or "").strip()
-    if not text:
-        return list(available), None
-    keep, missing = set(), []
-    for part in (p.strip() for p in text.split(",")):
-        if not part:
-            continue
-        lo, dash, hi = part.partition("-")
-        try:
-            lo = int(lo)
-            hi = int(hi) if dash else lo
-        except ValueError:
-            return [], f"cannot read {part!r} (write 1-9 or 1,4,9)"
-        if lo > hi:
-            return [], f"{part!r} runs backwards"
-        got = [t for t in available if lo <= t <= hi]
-        if not dash and not got:
-            missing.append(lo)
-        keep.update(got)
-    if missing:
-        return [], ("not in this series: " + ", ".join(f"#{m}" for m in missing)
-                    + f" (it has #{available[0]} … #{available[-1]})")
-    if not keep:
-        return [], (f"{text!r} matches no timestep (this series has "
-                    f"#{available[0]} … #{available[-1]})")
-    return sorted(keep), None
+_pick_timesteps = core.pick_timesteps          # kept for the checks
+
+
+def _ranges(data):
+    """{array: (min, max)} of the data on screen (first component)."""
+    out = {}
+    if data is None:
+        return out
+    for attrs in (data.GetPointData(), data.GetCellData()):
+        for k in range(attrs.GetNumberOfArrays()):
+            a = attrs.GetArray(k)
+            if a is not None and a.GetName() and a.GetNumberOfTuples():
+                out[a.GetName()] = tuple(a.GetRange(0))
+    return out
+
+
+def _table(table, names, rows):
+    """Fill a vtkTable: text columns as strings, numbers as numbers."""
+    table.Initialize()
+    cols = list(zip(*rows)) if rows else [()] * len(names)
+    for name, values in zip(names, cols):
+        if values and all(isinstance(v, int) and not isinstance(v, bool) for v in values):
+            arr = vtkLongLongArray()
+        elif values and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                            for v in values):
+            arr = vtkDoubleArray()
+        else:
+            arr = vtkStringArray()
+        arr.SetName(name)
+        for v in values:
+            arr.InsertNextValue(v if not isinstance(arr, vtkStringArray) else str(v))
+        table.AddColumn(arr)
 
 
 def _ready_text(desc):

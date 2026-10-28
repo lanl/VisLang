@@ -411,3 +411,201 @@ def status_text(job, result=None, showing=None):
     if st == "error":
         return "Failed: " + (r.get("error") or "unknown error")
     return f"Status: {st}"
+
+
+# ---------------------------------------------------------------------------
+# What the source is, as text and tables: the panel's Series line and the
+# Summary / Fields / Timesteps tables. Pure, so tested without ParaView.
+# ---------------------------------------------------------------------------
+def _series_module():
+    """vislang/formats/series.py, loaded on its own (standard library only), so
+    the panel describes a series exactly as `inspect` does."""
+    if "_series" not in globals():
+        import importlib.util
+        path = os.path.join(HERE, "..", "..", "vislang", "formats", "series.py")
+        mod = None
+        try:
+            spec = importlib.util.spec_from_file_location("sieve_series", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except (OSError, ImportError, AttributeError):
+            mod = None
+        globals()["_series"] = mod
+    return globals()["_series"]
+
+
+def describe_series(labels):
+    mod = _series_module()
+    if mod is not None:
+        return mod.describe_series(labels)
+    labels = sorted(labels)
+    return f"{len(labels)} timesteps: #{labels[0]} … #{labels[-1]}" if labels else \
+        "no timesteps"
+
+
+def pick_timesteps(text, available):
+    """The labels of `available` that a Timesteps field selects, and what is
+    wrong with it (None when nothing). Parts, separated by commas:
+        4          that timestep (it must exist)
+        1-9        every timestep whose label is in [1, 9]
+        1-9/4      every 4th timestep of those (the 1st, 5th, 9th, …)
+        /4         every 4th timestep of the whole series
+    Empty text selects everything."""
+    text = (text or "").strip()
+    available = sorted(available)
+    if not text:
+        return list(available), None
+    keep, missing = set(), []
+    for part in (p.strip() for p in text.split(",")):
+        if not part:
+            continue
+        span, slash, every = part.partition("/")
+        try:
+            k = int(every) if slash else 1
+        except ValueError:
+            return [], f"cannot read {part!r} (write 1-9, 1-9/4 or 1,4,9)"
+        if k < 1:
+            return [], f"{part!r}: every n-th needs n of 1 or more"
+        span = span.strip()
+        if not span:
+            got = list(available)
+            dash = True
+        else:
+            lo, dash, hi = span.partition("-")
+            try:
+                lo = int(lo)
+                hi = int(hi) if dash else lo
+            except ValueError:
+                return [], f"cannot read {part!r} (write 1-9, 1-9/4 or 1,4,9)"
+            if lo > hi:
+                return [], f"{part!r} runs backwards"
+            got = [t for t in available if lo <= t <= hi]
+            if not dash and not got:
+                missing.append(lo)
+        keep.update(got[::k])
+    if missing:
+        return [], ("not in this series: " + ", ".join(f"#{m}" for m in missing)
+                    + f" (it has #{available[0]} … #{available[-1]})")
+    if not keep:
+        return [], (f"{text!r} matches no timestep (this series has "
+                    f"#{available[0]} … #{available[-1]})")
+    return sorted(keep), None
+
+
+def series_text(desc, ts_text):
+    """The panel's Series line: what the series has, and what the Timesteps
+    field selects from it."""
+    if not desc:
+        return "Apply to read the series."
+    ts = desc.get("timesteps")
+    if not ts:
+        return "One file (no timesteps)."
+    have = desc.get("series_text") or describe_series(ts)
+    picked, problem = pick_timesteps(ts_text, ts)
+    if problem:
+        return f"{have}\nTimesteps: {problem}"
+    if len(picked) == len(ts):
+        return f"{have}\nselected: all"
+    return f"{have}\nselected: " + describe_series(picked)
+
+
+def _n_elements(desc, stride):
+    s = max(1, int(stride or 1))
+    if desc.get("grid"):
+        n = 1
+        for d in desc["grid"]:
+            n *= -(-int(d) // s)
+        full = 1
+        for d in desc["grid"]:
+            full *= int(d)
+        return full, n
+    if desc.get("particles"):
+        full = int(desc["particles"])
+        return full, -(-full // s)
+    return None, None
+
+
+def _kind_text(desc):
+    if desc.get("modality") == "particles":
+        return "points"
+    g = (desc.get("geometry") or {}).get("kind")
+    if g == "structured":
+        return "grid, curvilinear (every point's position is listed)"
+    if desc.get("coords") == "world":
+        return "grid, uniform (origin and spacing)"
+    return "grid with no stated position (placed in its own cells)"
+
+
+def summary_table(desc, ts_text, stride):
+    """[(Item, Value)] — what the source is."""
+    if not desc:
+        return [("Status", "Apply to read the source's metadata.")]
+    rows = [("Source", desc.get("uri", "")),
+            ("Format", str(desc.get("filetype", ""))),
+            ("Kind", _kind_text(desc))]
+    if desc.get("grid"):
+        rows.append(("Grid", " × ".join(str(int(d)) for d in desc["grid"])))
+    if desc.get("particles"):
+        rows.append(("Points", f"{int(desc['particles']):,}"))
+    fields = [v for v in desc.get("variables") or [] if v not in (desc.get("positions")
+                                                                   or [])]
+    rows.append(("Fields", f"{len(fields)}: " + ", ".join(fields)))
+    if desc.get("positions"):
+        rows.append(("Positions", ", ".join(desc["positions"])))
+    rows.append(("Region coordinates", str(desc.get("region_text") or desc.get("coords"))))
+    ts = desc.get("timesteps")
+    if ts:
+        rows.append(("Timesteps", series_text(desc, ts_text).replace("\n", "; ")))
+        if desc.get("timestep_bytes"):
+            rows.append(("Size per timestep", _mb(desc["timestep_bytes"] / 1024 ** 2)))
+    if desc.get("source_bytes"):
+        rows.append(("Size on disk" + (" (all timesteps)" if ts else ""),
+                     _mb(desc["source_bytes"] / 1024 ** 2)))
+    s = int(stride) if stride and int(stride) > 0 else int(desc.get("suggested_stride") or 1)
+    per = sum((desc.get("itemsizes") or {}).get(v, 0) for v in fields)
+    _, n = _n_elements(desc, s)
+    if n and per:
+        rows.append((f"Overview at stride {s}",
+                     _mb(n * per / 1024 ** 2) + (" per timestep" if ts else "")))
+    return rows
+
+
+def fields_table(desc, chosen, stride, shown_ranges):
+    """Rows of (Field, Bytes per value, Full MB, At stride MB, In view, Min, Max).
+    `shown_ranges`: {field: (min, max)} of the data on screen (empty before)."""
+    if not desc:
+        return []
+    s = int(stride) if stride and int(stride) > 0 else int(desc.get("suggested_stride") or 1)
+    full, n = _n_elements(desc, s)
+    rows = []
+    for v in desc.get("variables") or []:
+        if v in (desc.get("positions") or []):
+            continue
+        b = int((desc.get("itemsizes") or {}).get(v, 0))
+        rng = shown_ranges.get(v)
+        rows.append((v, b,
+                     round(full * b / 1024 ** 2, 2) if full and b else float("nan"),
+                     round(n * b / 1024 ** 2, 2) if n and b else float("nan"),
+                     "✓" if v in shown_ranges else ("chosen" if v in chosen else ""),
+                     "" if rng is None else f"{rng[0]:.6g}",
+                     "" if rng is None else f"{rng[1]:.6g}"))
+    return rows
+
+
+def timesteps_table(desc, ts_text, fetched):
+    """Rows of (Index, Label, File, Size MB, Selected, Fetched)."""
+    if not desc:
+        return []
+    files = desc.get("timestep_files")
+    if not desc.get("timesteps"):
+        name = os.path.basename(str(desc.get("uri", "")).rstrip("/"))
+        size = desc.get("source_bytes")
+        return [(0, "", name, round(size / 1024 ** 2, 2) if size else float("nan"),
+                 "✓", "✓" if fetched else "")]
+    if not files:
+        files = [[lab, "", None] for lab in desc["timesteps"]]
+    picked, _ = pick_timesteps(ts_text, [f[0] for f in files])
+    picked = set(picked)
+    return [(i, str(lab), name, round(size / 1024 ** 2, 2) if size else float("nan"),
+             "✓" if lab in picked else "", "✓" if lab in fetched else "")
+            for i, (lab, name, size) in enumerate(files)]

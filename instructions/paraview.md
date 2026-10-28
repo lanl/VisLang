@@ -19,7 +19,12 @@ Buttons: **Fetch Anyway** (approve a held request: over budget, or a fallback
 whole-file copy), **Cancel**, **Connect** (opens the password dialog),
 **Prefetch** (every timestep of a series in one request — within the Source's
 *Timesteps* field, `1-9` or `1,4,9`; on a Detail, the box across time), **Promote To Spec** (copy the spec into a Sieve Spec to edit).
-*Status* says what happened; *Spec* shows the spec that ran.
+*Status* says what happened; *Spec* shows the spec that ran. The Source also
+has three table outputs — **Summary**, **Fields**, **Timesteps** — what the
+first Apply's `inspect` returned, kept current (selected / fetched / in view);
+ParaView opens a SpreadSheet on the Summary once (the `View` hints), and
+**Show Metadata** reopens it. The *Series* line under *Timesteps* describes the
+series as `inspect` does (`vislang/formats/series.py`).
 
 The box becomes a region in the data's own coordinates — the numbers on
 ParaView's axes: world coordinates on points and on grids that state where
