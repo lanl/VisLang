@@ -32,9 +32,14 @@ def main():
     check("two runs, and the labels missing from the first",
           d(two) == "119 timesteps: #0 to #50000 every 500, then #51000 to "
                     "#70000 every 1000\nmissing #12500, #33000", d(two))
-    check("short runs are listed one by one",
-          d([2, 9, 10, 11, 40, 41, 300]) == "7 timesteps: #2, #9 to #11, #40, #41, #300",
+    check("a few labels that are not one run are simply listed",
+          d([2, 9, 10, 11, 40, 41, 300]) == "7 timesteps: #2, #9, #10, #11, #40, #41, #300"
+          and d([1000, 18000, 33000, 48000, 64000, 79000])
+          == "6 timesteps: #1000, #18000, #33000, #48000, #64000, #79000",
           d([2, 9, 10, 11, 40, 41, 300]))
+    many = list(range(0, 50, 1)) + [70, 90, 130, 170, 260, 300, 310, 400, 999]
+    check("more labels mix runs and singles", d(many).startswith(
+        "59 timesteps: #0 to #49, #70, #90"), d(many))
     check("a long irregular series is cut short, saying how much is left",
           d([2 ** k for k in range(11)]).endswith("… (3 more)"),
           d([2 ** k for k in range(11)]))

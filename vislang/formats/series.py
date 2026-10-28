@@ -75,6 +75,9 @@ def describe_series(labels, noun="timesteps"):
         return f"1 {noun[:-1] if noun.endswith('s') else noun}: #{labels[0]}"
     runs, missing = _bridge(_runs(labels))
     toks = _tokens(runs)
+    if len(toks) > 1 and n <= _MAX_TOKENS:
+        # A few labels that are not one run read best as themselves.
+        return f"{n} {noun}: " + ", ".join(f"#{v}" for v in labels)
     if len(toks) == 1:
         return f"{n} {noun}: " + toks[0][1].replace(" every", ", every") + \
             ("\nmissing " + ", ".join(f"#{v}" for v in missing) if missing else "")

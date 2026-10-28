@@ -826,6 +826,29 @@ class SieveSource(_Sieve):
                 vtkDataObject.DATA_TIME_STEP(), float(label))
         return 1
 
+    def _finished(self, job):
+        _Sieve._finished(self, job)
+        r = job.result or {}
+        if job.action != "overview" or r.get("status") != "ok":
+            return
+        params = (job.request or {}).get("params") or {}
+        notes = []
+        ts = self._series_desc().get("timesteps")
+        if ts and params.get("timestep") is not None:
+            held = sum(1 for lab in ts if _memo().get(
+                self._key({**(job.base or {}), "timestep": lab})) is not None)
+            notes.append(
+                f"Showing timestep #{params['timestep']}: {held} of the {len(ts)} "
+                f"selected are fetched." + ("" if held == len(ts) else
+                                            f" The time slider fetches each as you "
+                                            f"reach it; Prefetch fetches all {len(ts)} "
+                                            f"in one request."))
+        if self._stride <= 0 and int(params.get("stride") or 1) > 1:
+            notes.append(f"Stride {params['stride']} was chosen automatically (Stride "
+                         f"0); set Stride to 1 for full resolution.")
+        if notes:
+            self._status += "\n" + "\n".join(notes)
+
     # -- the tables -------------------------------------------------------------
     def _fill_tables(self, outInfo):
         desc = self._series_desc() if self._desc else None

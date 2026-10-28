@@ -393,6 +393,14 @@ mt.UpdatePropertyInformation()
 check("every n-th: 3-5/2 selects #3 and #5",
       "selected: 2 timesteps: #3, #5" in mt.GetPropertyValue("Series"),
       mt.GetPropertyValue("Series"))
+mt.Stride = 0
+mt.UpdatePipeline(5.0)
+check("after a fetch the panel says which timestep shows, how many of the selection are "
+      "held, and that the stride was automatic",
+      "Showing timestep #5: " in status(mt) and "of the 2 selected are fetched" in status(mt),
+      status(mt))
+check("… and that the stride was automatic when it was",
+      ("chosen automatically" in status(mt)) == ("subsample" in spec(mt)), status(mt))
 
 ctl = servermanager.vtkSMParaViewPipelineControllerWithRendering()
 lay = CreateLayout("auto-show")
