@@ -914,7 +914,7 @@ class SieveDetail(_Sieve):
 
     NAME = "detail"
     KIND = "detail"
-    PANEL = ("SetBoxPosition", "SetBoxLength", "SetUseReferenceBounds", "_region_group", "GetFieldSelection",
+    PANEL = ("SetBoxPosition", "SetBoxLength", "SetUseReferenceBounds", "SetReferenceBounds", "_region_group", "GetFieldSelection",
              "SetStride", "SetValueFilter", "SetBudgetGB", "SetBudgetMinutes",
              "GetStatus", "GetSpec", "FetchAnyway", "Cancel", "PromoteToSpec")
 
@@ -925,6 +925,7 @@ class SieveDetail(_Sieve):
         self._len = [1.0, 1.0, 1.0]
         self._use_ref = False
         self._ref = None             # the input's bounds (the widget's reference)
+        self._ref_given = None       # the reference the widget was told, if any
 
     def FillInputPortInformation(self, port, info):
         info.Set(self.INPUT_REQUIRED_DATA_TYPE(), "vtkDataObject")
@@ -982,21 +983,37 @@ class SieveDetail(_Sieve):
         self._use_ref = bool(v)
         self.Modified()
 
+    # Declared as ParaView's own Axis Aligned Box declares it: the widget keeps
+    # Position/Scale absolute only when the group names both switch and bounds.
+    @smproperty.xml('''<DoubleVectorProperty name="ReferenceBounds"
+        command="SetReferenceBounds" number_of_elements="6"
+        default_values="0 1 0 1 0 1" panel_visibility="never">
+        <BoundsDomain mode="data_bounds" name="range">
+          <RequiredProperties><Property function="Input" name="Input"/></RequiredProperties>
+        </BoundsDomain>
+        <Hints><NoDefault/></Hints></DoubleVectorProperty>''')
+    def SetReferenceBounds(self, *b):
+        self._ref_given = list(b)
+        self.Modified()
+
     # The widget group must come after the properties it names (see PANEL).
     @smproperty.xml('''<PropertyGroup label="Region" panel_widget="InteractiveBox">
         <Property function="Position" name="BoxPosition"/>
         <Property function="Scale" name="BoxLength"/>
-        <Property function="UseReferenceBounds" name="UseReferenceBounds"/>
         <Property function="Input" name="Input"/>
+        <Property function="UseReferenceBounds" name="UseReferenceBounds"/>
+        <Property function="ReferenceBounds" name="ReferenceBounds"/>
         </PropertyGroup>''')
     def _region_group(self):
         pass
 
     def _box(self):
-        if self._use_ref and self._ref is not None:
+        ref = self._ref_given if self._ref_given not in (None, [0, 1, 0, 1, 0, 1]) \
+            else self._ref
+        if self._use_ref and ref is not None:
             # vtkPVBox: each point of the reference box, scaled, then moved.
-            a = [self._pos[i] + self._len[i] * self._ref[2 * i] for i in range(3)]
-            b = [self._pos[i] + self._len[i] * self._ref[2 * i + 1] for i in range(3)]
+            a = [self._pos[i] + self._len[i] * ref[2 * i] for i in range(3)]
+            b = [self._pos[i] + self._len[i] * ref[2 * i + 1] for i in range(3)]
         else:
             a = list(self._pos)
             b = [p + l for p, l in zip(self._pos, self._len)]
