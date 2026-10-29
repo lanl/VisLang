@@ -98,6 +98,7 @@ class SubsampleNode(Node):
     upstream: Node
     uniform: object = None
     per_axis: tuple = ()
+    method: str = "stride"       # 'stride' | 'mean' | 'min' | 'max' (grids only)
     kind = "subsample"
 
 

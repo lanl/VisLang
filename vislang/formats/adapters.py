@@ -90,6 +90,23 @@ class FormatAdapter:
         raise NotImplementedError
 
 
+def _grid_coarsened(dset_like, selection):
+    """A block-reduced (mean/min/max) read of a 3-D grid dataset, for
+    adapters with supports_strided_read=True. Reads the CROPPED region in
+    full (step=1 on every axis — coarsening needs every byte, unlike a
+    stride) via `dset_like[unstrided_indexer]`, then delegates the actual
+    block reduction to narrowing.coarsen_block (shared with the
+    read-full-then-slice fallback, apply_selection, for adapters with no
+    partial read at all).
+
+    `dset_like` must support basic slicing (h5py.Dataset, or a numpy/memmap
+    array). Trailing elements that don't fill a whole block are trimmed."""
+    from vislang.interpreter.narrowing import coarsen_block
+    cropped = dset_like[selection.unstrided_indexer(3, dset_like.shape[0])]
+    factors = selection.block_factors(3) or (1, 1, 1)
+    return coarsen_block(np.asarray(cropped), factors, selection.subsample_method)
+
+
 # ---------------------------------------------------------------------------
 # Shared helpers (used by load implementations)
 # ---------------------------------------------------------------------------
@@ -315,6 +332,10 @@ class HDF5Adapter(FormatAdapter):
                 # is read), then row-subsample via the shared fallback.
                 return apply_selection(dset[:, comp], selection)
             if dset.ndim == 3:
+                if getattr(selection, "subsample_method", "stride") != "stride":
+                    # Block-coarsen: reads the full cropped region (every byte,
+                    # no sparse hyperslab) then mean/min/max-reduces it.
+                    return _grid_coarsened(dset, selection)
                 # Grid hyperslab pushdown: dset[(s,s,s)] reads only strided cells;
                 # dset[slice(None)] reads the full cube.
                 return dset[selection.indexer(3, dset.shape[0])]
@@ -529,6 +550,8 @@ class AstropyAdapter(FormatAdapter):
                 if data is None:
                     return np.asarray([])
                 if data.ndim == 3:
+                    if getattr(selection, "subsample_method", "stride") != "stride":
+                        return _grid_coarsened(data, selection)
                     # memmap strided slice -> only the strided planes are paged in
                     return np.asarray(data[selection.indexer(3, data.shape[0])])
                 return np.asarray(data)

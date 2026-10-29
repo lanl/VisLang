@@ -77,6 +77,10 @@ def _fuse_forms(forms, grid_dims):
         return None
     if any(f[0] not in ("region", "subsample") for f in forms):
         return None                              # threshold / non-geometric form
+    if any(f[0] == "subsample" and len(f) > 3 and f[3] not in (None, "stride")
+           for f in forms):
+        return None                              # coarsened — exact-key match only,
+                                                   # never served by slicing a superset
     from vislang.interpreter.planner import _grid_ranges              # lazy: avoid an import cycle
     from vislang.dsl.nodes import RegionNode, SubsampleNode
     regions, subs = [], []

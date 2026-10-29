@@ -375,7 +375,7 @@ def _narrow_key(middle, label=None):
             forms.append(["region", [[a, lo, hi] for a, lo, hi in n.ranges]])
         elif n.kind == "subsample":
             forms.append(["subsample", n.uniform,
-                          [[a, f] for a, f in (n.per_axis or ())]])
+                          [[a, f] for a, f in (n.per_axis or ())], n.method])
         elif n.kind == "threshold":
             forms.append(["threshold", n.var, n.op, n.value])
     return {"forms": forms}
@@ -442,7 +442,8 @@ def _rebuild_prefix(remote_path, positions, prefix, project):
         if n.kind == "region":
             node = dataclasses.replace(n, upstream=node)
         elif n.kind == "subsample":
-            node = SubsampleNode(upstream=node, uniform=n.uniform, per_axis=n.per_axis)
+            node = SubsampleNode(upstream=node, uniform=n.uniform, per_axis=n.per_axis,
+                                 method=n.method)
         elif n.kind == "threshold":
             node = ThresholdNode(upstream=node, var=n.var, op=n.op, value=n.value)
     return node
@@ -1451,7 +1452,8 @@ def _rebuild_delta_source(remote_dir, positions, narrow_prefix):
         if nn.kind == "region":
             node = dataclasses.replace(nn, upstream=node)
         elif nn.kind == "subsample":
-            node = SubsampleNode(upstream=node, uniform=nn.uniform, per_axis=nn.per_axis)
+            node = SubsampleNode(upstream=node, uniform=nn.uniform, per_axis=nn.per_axis,
+                                 method=nn.method)
         elif nn.kind == "threshold":
             node = ThresholdNode(upstream=node, var=nn.var, op=nn.op, value=nn.value)
     return node

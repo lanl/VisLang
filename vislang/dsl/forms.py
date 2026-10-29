@@ -366,8 +366,18 @@ def region(node, center=None, size=None, track=None, **axes):
     return RegionNode(upstream=node, ranges=tuple(ranges))
 
 
-def subsample(node, factor=None, **axes):
+_SUBSAMPLE_METHODS = ("stride", "mean", "min", "max")
+
+
+def subsample(node, factor=None, method="stride", **axes):
+    """method='stride' (default) keeps every f-th cell. 'mean'/'min'/'max'
+    instead block-reduces each f-sized block — a true decimated preview, at
+    the cost of reading every byte in the cropped region (grids only;
+    enforced in the planner, which knows the modality)."""
     _require_node(node, "subsample")
+    if method not in _SUBSAMPLE_METHODS:
+        raise ValueError(f"subsample(): unknown method {method!r}; use "
+                         f"one of {_SUBSAMPLE_METHODS}")
     if factor is not None and axes:
         raise ValueError("subsample(): give a single uniform factor OR per-axis "
                          "factors, not both")
@@ -376,12 +386,14 @@ def subsample(node, factor=None, **axes):
                          "subsample(d, x=5, y=5, z=5)")
     if factor is not None:
         _check_factor(factor, "subsample")
-        return SubsampleNode(upstream=node, uniform=factor, per_axis=())
+        return SubsampleNode(upstream=node, uniform=factor, per_axis=(),
+                             method=method)
     per_axis = []
     for axis, f in axes.items():
         _check_factor(f, f"subsample({axis}=...)")
         per_axis.append((axis, f))
-    return SubsampleNode(upstream=node, uniform=None, per_axis=tuple(per_axis))
+    return SubsampleNode(upstream=node, uniform=None, per_axis=tuple(per_axis),
+                         method=method)
 
 
 def threshold(node, expr):

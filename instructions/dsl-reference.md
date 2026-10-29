@@ -136,11 +136,19 @@ save(region(snapshot, center={"core": (150, 150, 150), "jet": (40, 151, 150)},
 - **Remote**: every box runs in one remote job. The extent catalog keys each box
   by its centre and size, not its tag, so renaming a tag still reuses it.
 
-## subsample(node, factor) | subsample(node, x=…, y=…, z=…) -> node
+## subsample(node, factor, method="stride") | subsample(node, x=…, y=…, z=…) -> node
 Reduce resolution. A factor is an **int stride** (keep every f-th) or a **float
 fraction** in (0,1]. A single `factor` is uniform; per-axis `x=/y=/z=` is for
 grids. On point data use a single factor (stride or fraction of rows).
 `region` and `subsample` on the same grid compose into one strided crop.
+
+`method="stride"` (default) keeps every f-th cell — a sparse read, cheap on
+any adapter that pushes a stride into the read. `method="mean"|"min"|"max"`
+instead block-reduces each f×f×f (or per-axis) block of the cropped region —
+a true decimated preview instead of an aliased sample, at the cost of reading
+every byte of the crop (no sparse read like a stride; the cost estimate
+prices this correctly). **Grids only** — particles have no blocks to
+coarsen, and a non-default `method` on point data raises.
 
 **Order matters next to `threshold`/point-`region`:** `subsample` means "every
 Nth of *what's left*", so on point data `threshold(...)` then `subsample(...)`

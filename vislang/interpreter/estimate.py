@@ -252,6 +252,23 @@ def _selected_grid_cells(narrowing, grid):
     return prod
 
 
+def _cropped_grid_cells(narrowing, grid):
+    """Cells in the cropped region BEFORE any stride — i.e. with every axis's
+    step forced to 1. A block-coarsen (method != 'stride') must read every
+    one of these bytes (no sparse hyperslab), unlike a true stride, which
+    only reads _selected_grid_cells of them."""
+    from vislang.interpreter.narrowing import AxisRange
+    if narrowing is not None and narrowing.grid_ranges:
+        prod = 1
+        for r, dim in zip(narrowing.grid_ranges, grid):
+            prod *= _grid_axis_count(AxisRange(r.start, r.stop, 1), dim)
+        return prod
+    prod = 1
+    for d in grid:
+        prod *= d
+    return prod
+
+
 def _selected_particles(narrowing, total):
     if narrowing is None or narrowing.particle_index is None:
         return total
@@ -334,6 +351,14 @@ def estimate_plan_cost(*, info, narrowing, site, n_timesteps=1, sink_kind=None,
     strided = caps.get('strided_read', False)
     col_pushdown = caps.get('column_pushdown', False)
 
+    coarsening = (modality == 'volume' and narrowing is not None
+                 and getattr(narrowing, 'subsample_method', 'stride') != 'stride')
+    # A block-coarsen reads every byte of the cropped region (no sparse
+    # hyperslab, unlike a true stride) — price the UNSTRIDED crop, not the
+    # coarsened output shape, or a remote budget gate would underestimate
+    # the wire transfer / disk read a coarsened preview actually costs.
+    read_cells = _cropped_grid_cells(narrowing, grid) if coarsening else selected
+
     output_mb = read_mb = None
     if selected is not None:
         output_mb = _bytes_mb(info, read_set, selected)
@@ -342,9 +367,19 @@ def estimate_plan_cost(*, info, narrowing, site, n_timesteps=1, sink_kind=None,
                 read_mb = read_mb_override
             else:
                 read_mb = _bytes_mb(info, wire_vars if wire_vars is not None
-                                    else read_set, selected)
+                                    else read_set, read_cells)
+                if coarsening:
+                    notes.append(f"method={narrowing.subsample_method!r}: reads "
+                                 f"every byte of the cropped region before "
+                                 f"reducing, not a sparse stride.")
         elif strided:
-            read_mb = output_mb                      # stride pushed into the read
+            if coarsening:
+                read_mb = _bytes_mb(info, read_set, read_cells)
+                notes.append(f"method={narrowing.subsample_method!r}: reads "
+                             f"every byte of the cropped region before "
+                             f"reducing, not a sparse stride.")
+            else:
+                read_mb = output_mb                  # stride pushed into the read
         elif col_pushdown:
             read_mb = _bytes_mb(info, read_set, full)
             notes.append(f"{info.filetype} reads full columns then slices — disk "

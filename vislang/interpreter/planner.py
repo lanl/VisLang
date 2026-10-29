@@ -292,6 +292,19 @@ def _grid_ranges(region_nodes, subsample_nodes, grid):
                 ranges[i] = AxisRange(ranges[i].start, ranges[i].stop, _step_from_factor(f))
     return ranges
 
+
+def _grid_subsample_method(subsample_nodes):
+    """The single coarsening method ('stride'/'mean'/'min'/'max') written
+    across `subsample_nodes` on one grid chain. Several nodes may compose
+    strides together (see _grid_ranges), but they must agree on HOW to
+    reduce — a spec asking for both 'mean' and 'max' is ambiguous, not a
+    fusion the interpreter can silently pick a side on."""
+    methods = {sn.method for sn in subsample_nodes if sn.method != "stride"}
+    if len(methods) > 1:
+        raise ValueError(f"subsample(): conflicting methods {sorted(methods)} "
+                         f"on the same grid; use one coarsening method per chain")
+    return methods.pop() if methods else "stride"
+
 def _bbox_of(region_node):
     """A particle region: a world-coordinate box on the position variables."""
     lo, hi = [None, None, None], [None, None, None]
@@ -836,6 +849,11 @@ def _lower(info, middle, steps, label=None):
                 if node.uniform is None:
                     raise ValueError("per-axis subsample doesn't apply to point data; "
                                      "use a single factor, e.g. subsample(d, 0.1)")
+                if node.method != "stride":
+                    raise ValueError(
+                        f"subsample(method={node.method!r}) only applies to grids; "
+                        f"particle/point data has no blocks to coarsen — use the "
+                        f"default method='stride' here")
                 if not seen_computed and pushdown_subsample is None:
                     pushdown_subsample = node      # safe: no computed cut precedes it
                     steps.append(f"subsample uniform={node.uniform} (pushdown)")
@@ -866,11 +884,13 @@ def _lower(info, middle, steps, label=None):
     if modality == "grid":
         ranges = _grid_ranges(grid_region_nodes, grid_subsample_nodes,
                               (info.dimensions or {}).get("grid"))
+        method = _grid_subsample_method(grid_subsample_nodes)
         echo = {}
         if ranges:
             echo["grid_ranges"] = [(r.start, r.stop, r.step) for r in ranges]
         narrowing = Narrowing(grid_ranges=ranges, dimensions=echo,
-                              positions=getattr(info, "positions", None))
+                              positions=getattr(info, "positions", None),
+                              subsample_method=method)
     else:
         total = (info.dimensions or {}).get("particles", 0)
         dims = None

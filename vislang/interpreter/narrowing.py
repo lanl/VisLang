@@ -211,7 +211,7 @@ class Narrowing:
 
     def __init__(self, *, grid_ranges=None, particle_index=None, bbox=None,
                  predicates=(), post_ops=(), project=None, dimensions=None,
-                 total_particles=0, positions=None):
+                 total_particles=0, positions=None, subsample_method="stride"):
         self.grid_ranges = grid_ranges          # list[AxisRange] (len == ndim) or None
         self.particle_index = particle_index     # slice | np.ndarray | None
         self.bbox = bbox                          # BBox or None  (legacy mask path)
@@ -221,6 +221,10 @@ class Narrowing:
         self.dimensions = dimensions or {}        # echo for selection_info
         self.total_particles = total_particles or 0
         self.positions = positions
+        # 'stride' (default, a sparse read) | 'mean'/'min'/'max' (a block
+        # reduction — reads every byte of the cropped region; see
+        # unstrided_indexer/block_factors below).
+        self.subsample_method = subsample_method or "stride"
 
     def indexer(self, ndim, leading_len):
         # NEW: per-axis grid crop + stride (region / per-axis subsample).
@@ -239,6 +243,26 @@ class Narrowing:
             return self.particle_index if ndim == 1 else (self.particle_index, slice(None))
         return TAKE_ALL
 
+    def unstrided_indexer(self, ndim, leading_len):
+        """Like indexer(), but with every axis's step forced to 1 — the cropped
+        region a block-coarsen must read in full before reducing. Only
+        meaningful when subsample_method != 'stride'; callers should check
+        that first."""
+        if ndim == 3 and self.grid_ranges:
+            return tuple(slice(r.start, r.stop, 1) for r in self.grid_ranges)
+        return TAKE_ALL
+
+    def block_factors(self, ndim):
+        """Per-axis block size for a coarsening reduce (the AxisRange.step
+        values), or None if there is nothing to coarsen by."""
+        if ndim == 3 and self.grid_ranges:
+            return tuple(r.step or 1 for r in self.grid_ranges)
+        return None
+
+    @property
+    def is_coarsening(self):
+        return self.subsample_method != "stride"
+
     @property
     def has_row_mask(self):
         return self.bbox is not None or bool(self.predicates)
@@ -256,10 +280,44 @@ def narrowing_from_dimensions(dimensions, total_particles, positions=None):
 # ---------------------------------------------------------------------------
 # Read-full-then-slice fallback + row mask
 # ---------------------------------------------------------------------------
+_COARSEN_REDUCERS = {"mean": np.mean, "min": np.min, "max": np.max}
+
+
+def coarsen_block(arr, factors, method):
+    """Block-reduce `arr` by `factors` (one int per axis) using `method`
+    ('mean'/'min'/'max'). Trailing elements that don't fill a whole block are
+    trimmed. Shared by every adapter path — the ones with a direct hyperslab
+    (HDF5/FITS) call this on the cropped-but-unstrided read; apply_selection
+    below calls it on the full in-memory array for adapters with no partial
+    read at all (raw/GenericIO/VTK/yt)."""
+    reducer = _COARSEN_REDUCERS[method]
+    out = arr
+    for axis, f in enumerate(factors):
+        if f <= 1:
+            continue
+        n = out.shape[axis]
+        trimmed = (n // f) * f
+        if trimmed != n:
+            out = np.take(out, range(trimmed), axis=axis)
+        new_shape = out.shape[:axis] + (trimmed // f, f) + out.shape[axis + 1:]
+        out = reducer(out.reshape(new_shape), axis=axis + 1)
+    return out
+
+
 def apply_selection(arr, selection):
     """Apply a Narrowing's basic index to a materialized array (used by adapters
-    whose library can't push the selection into the read)."""
+    whose library can't push the selection into the read).
+
+    When the Narrowing asks for a block-coarsen (subsample_method !=
+    'stride'), this crops to the unstrided region first (every byte of the
+    crop, no sparse stride) and then block-reduces it — the read-full adapter
+    has no cheaper option anyway, so coarsening here is free beyond the crop."""
     arr = np.asarray(arr)
+    if getattr(selection, "subsample_method", "stride") != "stride" and arr.ndim == 3:
+        idx = selection.unstrided_indexer(arr.ndim, arr.shape[0])
+        cropped = arr if idx is TAKE_ALL else arr[idx]
+        factors = selection.block_factors(arr.ndim) or (1,) * arr.ndim
+        return coarsen_block(cropped, factors, selection.subsample_method)
     idx = selection.indexer(arr.ndim, arr.shape[0] if arr.ndim else 0)
     return arr if idx is TAKE_ALL else arr[idx]
 

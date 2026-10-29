@@ -109,7 +109,8 @@ def _ser_region(n):
 
 def _ser_subsample(n):
     return {"kind": "subsample", "uniform": n.uniform,
-            "per_axis": [_as_list(p) for p in n.per_axis]}
+            "per_axis": [_as_list(p) for p in n.per_axis],
+            "method": n.method}
 
 
 def _ser_threshold(n):
@@ -146,7 +147,7 @@ _STEP_KEYS = {
     "source":    frozenset(("kind", "uri", "positions")),
     "fields":    frozenset(("kind", "keep")),
     "region":    frozenset(("kind", "ranges")),
-    "subsample": frozenset(("kind", "uniform", "per_axis")),
+    "subsample": frozenset(("kind", "uniform", "per_axis", "method")),
     "threshold": frozenset(("kind", "var", "op", "value")),
     "compress":  frozenset(("kind", "variables", "error_bound", "mode")),
     "save":      frozenset(("kind", "path")),
@@ -362,8 +363,14 @@ def _val_region(s, where):
             _fail(where, f"range ({axis}): need lo < hi, got ({lo}, {hi})")
 
 
+_SUBSAMPLE_METHODS = ("stride", "mean", "min", "max")
+
+
 def _val_subsample(s, where):
     uniform, per_axis = s["uniform"], s["per_axis"]
+    method = s["method"]
+    if method not in _SUBSAMPLE_METHODS:
+        _fail(where, f"'method' must be one of {_SUBSAMPLE_METHODS}, got {method!r}")
     if not _is_seq(per_axis):
         _fail(where, f"'per_axis' must be a list, got {per_axis!r}")
     if uniform is not None and per_axis:
@@ -509,7 +516,8 @@ def _build_region(s, up):
 
 def _build_subsample(s, up):
     return SubsampleNode(upstream=up, uniform=s["uniform"],
-                         per_axis=tuple(tuple(p) for p in s["per_axis"]))
+                         per_axis=tuple(tuple(p) for p in s["per_axis"]),
+                         method=s["method"])
 
 
 def _build_threshold(s, up):
@@ -631,8 +639,11 @@ def describe_plan(plan):
                 f"{a}:({lo},{hi})" for a, lo, hi in step.get("ranges") or []) + "}")
         elif kind == "subsample":
             per = step.get("per_axis") or []
-            parts.append(f"subsample({step.get('uniform')})" if not per else
-                         "subsample{" + ",".join(f"{a}:{f}" for a, f in per) + "}")
+            method = step.get("method") or "stride"
+            suffix = f",method={method}" if method != "stride" else ""
+            parts.append(f"subsample({step.get('uniform')}{suffix})" if not per else
+                         "subsample{" + ",".join(f"{a}:{f}" for a, f in per)
+                         + "}" + (f"[method={method}]" if method != "stride" else ""))
         elif kind == "threshold":
             parts.append(f"threshold({step.get('var')}"
                          f"{step.get('op')}{step.get('value')})")
