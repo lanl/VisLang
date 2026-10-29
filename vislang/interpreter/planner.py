@@ -401,6 +401,16 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
         # metadata-only `stat` over ssh (planner._plan_remote_folder next to the
         # data, mirroring _plan_folder).
         remote_src = bool(_REMOTE.match(src.uri))
+        if remote_src and not dry_run and sink is not None:
+            # The folder probe below reads "unreachable" as "a single file";
+            # with no session that would surface as a misleading error (e.g.
+            # "timesteps() applies only to a folder"), so hold for it first.
+            held = _session_gate(src.uri, sink.kind, [])
+            if held is not None:
+                timing.note(route="held_session")
+                if _tracing():
+                    held["steps"].insert(0, _describe_ast(chain))
+                return held
         if remote_src:
             from vislang.formats.inspect import remote_is_dir
             # The remote folder probe is skipped on a dry run to keep the dry run

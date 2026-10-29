@@ -217,6 +217,17 @@ def main():
         check("handshake promises the secret stays out of the transcript",
               "never reaches VisLang" in text)
         check("handshake states nothing was read", "Nothing was read" in text)
+
+        # The folder probe cannot tell "no session" from "a single file"; a
+        # timeseries spec must hold for the session, not fail on timesteps().
+        from vislang.dsl import forms
+        from vislang.interpreter import planner
+        sink = forms.save(forms.timesteps(forms.source("ssh://h//data/series/"), 1, 3),
+                          "/tmp/never-written.vts")
+        r = planner.plan_pipeline(sink)
+        check("a folder spec with no session holds for it, not 'a single file'",
+              r.get("needs_session") and not r.get("materialized")
+              and r.get("connect_cmd") == connect_command("u@h"), r)
     finally:
         reduce.establish_connection = real_establish
         reduce.host_reachable = real_reach
