@@ -62,8 +62,13 @@ template per form, so a checker can rebuild them and compare.
   geometry), not physical units. When the spec left `coords=` open, `resolved.region_coords` says how
   the numbers were read (`world` or `cells`), so a re-run can pin it; a world
   box on a grid also lists the cells it selected under `resolved.region_cells`.
-- A named box (`region(center={tag: …})`) says which box the output is and
-  names its siblings. Each tag's output is its own artifact with its own
+- A box placed per timestep says where its numbers came from (the spec, or
+  the track file named in `resolved.region_track` with its sha256), and each
+  timestep's resolved box is under `resolved.region_boxes`. A box given by its
+  bounds (`region(bounds=…)`) is explained in the bounds as written — `keep the
+  box at #19: x 512.5 to 537.5, …` — never as a centre and size.
+- A named box (`region(center={tag: …})` or `region(bounds={tag: …})`) says
+  which box the output is and names its siblings. Each tag's output is its own artifact with its own
   record: `resolved.region_tag` holds the tag, and `resolved.region_boxes`
   (a series, per timestep) or `resolved.region_box` (one file) only that tag's
   boxes.

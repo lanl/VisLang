@@ -36,7 +36,12 @@ a grid that states its origin/spacing or points; cells on a grid that does not);
 `[(step, x,y[,z][, size]), …]` — a box per timestep, a row's size overriding
 `size=` — or `"f.csv"` with those columns; several **named boxes** with
 `center={tag: either}`, `size=` then a number or `{tag: s}` — `save` writes one
-output per tag, `<dir>/<tag>/…`)
+output per tag, `<dir>/<tag>/…`; or by bounds: `region(node, bounds=…)`, the
+same shapes with a `(lo, hi)` pair per axis in x, y[, z] order in place of a
+centre — `((xlo,xhi),(ylo,yhi)[,(zlo,zhi)])`, rows `[(step, (xlo,xhi), …), …]`,
+`"f.csv"` with `[tag,][step,]xmin,xmax,ymin,ymax[,zmin,zmax]`, or `{tag: either}`
+— exactly the `x=(lo,hi)` box at each timestep, no `size=`; centre and bounds
+tags may share one region as two dicts with different tags)
 · `subsample(node, f)` / `subsample(node, x=…, y=…)` · `threshold(node, "var > v")`
 · `timesteps(node, start, stop)` or `timesteps(node, [labels])` · `compress(node, variables, error_bound)` ·
 `save(node, path)` [sink] · `render(node, cmap=None, opacity=None)` [sink]. Full

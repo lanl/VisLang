@@ -8,10 +8,17 @@ cell indices; points: world coordinates on the position variables). A centre
 written as a bare (x, y[, z]) is a box that stays put — the one box on a file,
 the same box at every timestep of a series.
 
-Several NAMED boxes — `center={tag: …}` with either kind of box per tag, or a
-track file with a leading `tag` column — are the same thing per tag: each tag
-is an ordinary box that exists at the timesteps it lists (every timestep, for a
-box that stays put).
+`region(series, bounds=[(N, (xlo, xhi), (ylo, yhi)[, (zlo, zhi)]), …])` or
+`bounds="file.csv"` (header `[tag,][step,]xmin,xmax,ymin,ymax[,zmin,zmax]`)
+gives the box per timestep by its bounds instead: at each timestep it is
+exactly the fixed box x=(lo, hi), … — kept as those ranges, never turned into
+a centre and size, so inclusive particle bounds, open ends and cell bounds
+survive unchanged.
+
+Several NAMED boxes — `center={tag: …}` and/or `bounds={tag: …}` with either
+kind of box per tag, or a track file with a leading `tag` column — are the same
+thing per tag: each tag is an ordinary box that exists at the timesteps it lists
+(every timestep, for a box that stays put).
 
 This module owns the host-side steps that make that sound:
 
@@ -23,10 +30,10 @@ This module owns the host-side steps that make that sound:
 - `check_coverage` refuses, before any bulk read, a series where a selected
   timestep has no centre or a centre names a timestep that does not exist;
   `tag_plan` is its counterpart for named boxes, where a gap is allowed.
-- `box_for_step` turns one timestep's centre into a concrete fixed-box
-  RegionNode, so lowering, the static bounds check, and geometry tracking run
-  exactly as they do for an ordinary region. `tag_view` first turns one named
-  box into exactly that kind of region.
+- `box_for_step` turns one timestep's centre (or bounds) into a concrete
+  fixed-box RegionNode, so lowering, the static bounds check, and geometry
+  tracking run exactly as they do for an ordinary region. `tag_view` first
+  turns one named box into exactly that kind of region.
 """
 
 import csv
@@ -35,7 +42,7 @@ import io
 import math
 import os
 
-from vislang.dsl.forms import resolve_center
+from vislang.dsl.forms import resolve_center, resolve_bounds
 from vislang.dsl.nodes import RegionNode
 
 _AXES = ("x", "y", "z")
@@ -49,15 +56,27 @@ def per_step_regions(nodes):
 # ---------------------------------------------------------------------------
 # track files
 # ---------------------------------------------------------------------------
+# header -> (which keyword reads it, kind): centre files for center=, min/max
+# files for bounds=.
 _HEADERS = {}
-for _cols, _kind in ((("step", "x", "y"), "step"), (("tag", "step", "x", "y"), "tag_step"),
-                     (("tag", "x", "y"), "tag")):
-    for _h in (_cols, _cols + ("z",)):
-        _HEADERS[_h] = _kind
-        _HEADERS[_h + ("size",)] = _kind
+for _lead, _kind in (((), "step"), (("tag",), "tag_step"), (("tag",), "tag")):
+    _lead = _lead + (("step",) if _kind != "tag" else ())
+    for _ax in (("x", "y"), ("x", "y", "z")):
+        _HEADERS[_lead + _ax] = ("center", _kind)
+        _HEADERS[_lead + _ax + ("size",)] = ("center", _kind)
+        _HEADERS[_lead + tuple(f"{a}{m}" for a in _ax for m in ("min", "max"))] = \
+            ("bounds", _kind)
+
+_HEADER_TEXT = {
+    "center": "'step,x,y[,z][,size]', 'tag,step,x,y[,z][,size]' or "
+              "'tag,x,y[,z][,size]'",
+    "bounds": "'step,xmin,xmax,ymin,ymax[,zmin,zmax]', "
+              "'tag,step,xmin,xmax,ymin,ymax[,zmin,zmax]' or "
+              "'tag,xmin,xmax,ymin,ymax[,zmin,zmax]'",
+}
 
 
-def read_track(path):
+def read_track(path, keyword="center"):
     """Read a track CSV. The header says which kind it is:
 
         step,x,y[,z][,size]       one box per timestep
@@ -66,20 +85,26 @@ def read_track(path):
         tag,x,y[,z][,size]        named boxes that stay put
 
     A `size` cell overrides size= for its row (left blank, it does not).
-    Returns (center, sizes, sha256, ndim): `center` written exactly as a spec would
-    write it inline — rows (step, x, y[, z][, size]) or {tag: rows | centre} —
-    so resolve_center checks both the same way; `sizes` is {tag: size} from
-    the size column of a `tag,x,y…` file, whose centres have no row to carry
-    it; `ndim` is the centre dimension the header names (2 or 3)."""
+    With keyword="bounds" the file gives each box by its bounds instead —
+    `xmin,xmax,ymin,ymax[,zmin,zmax]` in place of `x,y[,z][,size]`, after the
+    same leading `tag` and/or `step` columns; a blank bound is open-ended. Each
+    keyword reads only its own headers, and names the other when handed one.
+
+    Returns (spec, sizes, sha256, ndim): `spec` written exactly as a spec would
+    write it inline — centre rows (step, x, y[, z][, size]) or {tag: rows |
+    centre}; bounds rows (step, (lo, hi), …) or {tag: rows | box} — so
+    resolve_center / resolve_bounds check both the same way; `sizes` is {tag:
+    size} from the size column of a `tag,x,y…` file, whose centres have no row
+    to carry it; `ndim` is the box dimension the header names (2 or 3)."""
     from vislang.runtime.provenance import short_sha256
     full = os.path.abspath(path)
+    where = f"region({keyword}={path!r})"
     try:
         with open(full, "rb") as f:
             blob = f.read()
     except OSError as e:
-        raise FileNotFoundError(f"region(center={path!r}): cannot read {full}: "
+        raise FileNotFoundError(f"{where}: cannot read {full}: "
                                 f"{e.strerror or e}") from None
-    where = f"region(center={path!r})"
     reader = csv.reader(io.StringIO(blob.decode("utf-8-sig")))
     header = kind = None
     rows, seen = [], set()
@@ -89,11 +114,16 @@ def read_track(path):
             continue                                  # blank line / comment
         if header is None:
             header = tuple(c.lower() for c in rec)
-            kind = _HEADERS.get(header)
-            if kind is None:
-                raise ValueError(f"{where}: header must be 'step,x,y[,z][,size]', "
-                                 f"'tag,step,x,y[,z][,size]' or 'tag,x,y[,z][,size]', "
+            found = _HEADERS.get(header)
+            if found is not None and found[0] != keyword:
+                other = "min/max" if found[0] == "bounds" else "centre"
+                raise ValueError(f"{where}: this is a {other} file (header "
+                                 f"{','.join(rec)!r}); give it as "
+                                 f"region({found[0]}={path!r})")
+            if found is None:
+                raise ValueError(f"{where}: header must be {_HEADER_TEXT[keyword]}, "
                                  f"got {','.join(rec)!r}")
+            kind = found[1]
             continue
         if len(rec) != len(header):
             raise ValueError(f"{where}: line {lineno} has {len(rec)} value(s), "
@@ -108,6 +138,14 @@ def read_track(path):
                 raise ValueError(f"{where}: line {lineno}: step must be an integer "
                                  f"timestep label, got {rest[0]!r}") from None
             rest = rest[1:]
+        if keyword == "bounds":
+            rows.append((tag, label, _bounds_cells(rest, where, lineno), None))
+            if (tag, label) in seen:
+                at = f" at timestep {label}" if label is not None else ""
+                who = f"tag {tag!r} has" if tag is not None else "there is"
+                raise ValueError(f"{where}: line {lineno}: {who} more than one box{at}")
+            seen.add((tag, label))
+            continue
         cell = rest.pop() if header[-1] == "size" else ""
         try:
             coords = tuple(float(c) for c in rest)
@@ -126,8 +164,19 @@ def read_track(path):
     if header is None:
         raise ValueError(f"{where}: the file is empty")
     if not rows:
-        raise ValueError(f"{where}: no centres given")
+        raise ValueError(f"{where}: no {'boxes' if keyword == 'bounds' else 'centres'} "
+                         f"given")
     sizes = {}
+    if keyword == "bounds":
+        if kind == "step":
+            spec = [(lab, *b) for _, lab, b, _ in rows]
+        elif kind == "tag_step":
+            spec = {}
+            for tag, lab, b, _ in rows:
+                spec.setdefault(tag, []).append((lab, *b))
+        else:
+            spec = {tag: b for tag, _, b, _ in rows}
+        return spec, {}, short_sha256(blob), 3 if "zmin" in header else 2
     if kind == "step":
         center = [(lab, *c) + ((sz,) if sz else ()) for _, lab, c, sz in rows]
     elif kind == "tag_step":
@@ -139,6 +188,32 @@ def read_track(path):
         sizes = {tag: sz for tag, _, _, sz in rows if sz}
     ndim = 3 if "z" in header else 2
     return center, sizes, short_sha256(blob), ndim
+
+
+def _bounds_cells(cells, where, lineno):
+    """A min/max row's bound cells -> ((lo, hi), …) per axis; blank is open.
+    A whole number stays an int, as the same row written in a spec would: on a
+    grid in cells the bounds are slice indices."""
+    def number(c):
+        if not c:
+            return None
+        try:
+            return int(c)
+        except ValueError:
+            return float(c)
+    try:
+        vals = [number(c) for c in cells]
+    except ValueError:
+        raise ValueError(f"{where}: line {lineno}: bounds must be numbers (or "
+                         f"blank for open-ended), got {cells!r}") from None
+    if not all(v is None or math.isfinite(v) for v in vals):
+        raise ValueError(f"{where}: line {lineno}: values must be finite")
+    pairs = tuple(zip(vals[0::2], vals[1::2]))
+    for axis, (lo, hi) in zip(_AXES, pairs):
+        if lo is not None and hi is not None and not lo < hi:
+            raise ValueError(f"{where}: line {lineno}: {axis} bounds ({lo:g}, "
+                             f"{hi:g}) need min < max")
+    return pairs
 
 
 def _size_as_written(node):
@@ -158,8 +233,12 @@ def resolve_tracks(nodes):
     remote host already resolved — pass through untouched."""
     out = []
     for n in nodes:
-        if (isinstance(n, RegionNode) and n.track is not None
-                and not n.centers and not n.tags):
+        if isinstance(n, RegionNode) and n.track_pending and n.track_kind == "bounds":
+            where = f"region(bounds={n.track!r})"
+            spec, _, sha, ndim = read_track(n.track, "bounds")
+            n = dataclasses.replace(n, track_sha=sha, track_kind=None,
+                                    **resolve_bounds(spec, where, ndim))
+        elif isinstance(n, RegionNode) and n.track_pending:
             where = f"region(center={n.track!r})"
             center, file_sizes, sha, ndim = read_track(n.track)
             size = _size_as_written(n)
@@ -195,19 +274,43 @@ def tagged_region(nodes):
 
 
 def tag_names(node):
-    """The tags of a named-box region, in the order written."""
-    return [t for t, _, _, _ in node.tags]
+    """The tags of a named-box region: the centre tags in the order written,
+    then the bounds tags."""
+    return [t for t, _, _, _ in node.tags] + [t for t, _ in node.tag_ranges]
 
 
 def tag_view(node, tag):
-    """One named box as an ordinary centre-placed region (centres + sizes), so
-    lowering, the bounds check and box_for_step treat it exactly as an unnamed
-    box. A box that stays put has one centre, labelled None."""
+    """One named box as an ordinary per-timestep region — centres + sizes, or
+    bounds per timestep — so lowering, the bounds check and box_for_step treat
+    it exactly as an unnamed box. A box that stays put has one row, labelled
+    None."""
     for t, size, rows, step_sizes in node.tags:
         if t == tag:
             return RegionNode(upstream=node.upstream, centers=rows, size=size,
                               step_sizes=step_sizes, coords=node.coords)
+    for t, rows in node.tag_ranges:
+        if t == tag:
+            return RegionNode(upstream=node.upstream, step_ranges=rows,
+                              coords=node.coords)
     raise KeyError(tag)
+
+
+def box_labels(node):
+    """The timestep labels an unnamed per-timestep region has a box for ({None}
+    for a box that stays put)."""
+    return {r[0] for r in node.centers} | {r[0] for r in node.step_ranges}
+
+
+def first_label(node):
+    """The label of a per-timestep region's first box (None: it stays put)."""
+    return (node.centers or node.step_ranges)[0][0]
+
+
+def _src(node):
+    """How the spec gave a region's boxes, for an error message."""
+    kw = ("bounds" if node.step_ranges or (node.tag_ranges and not node.tags)
+          else "center/bounds" if node.tag_ranges else "center")
+    return f"{kw}={node.track!r}" if node.track else f"{kw}="
 
 
 def for_tag(nodes, tag):
@@ -225,10 +328,10 @@ def tag_plan(node, selected, available):
     file, or a selection where no tag has a box.
     `skipped` lists the tags with no box in the selection — they write nothing."""
     selected, available = set(selected), set(available)
-    src = f"center={node.track!r}" if node.track else "center="
+    src = _src(node)
     plan, skipped = {}, []
-    for tag, _size, rows, _ in node.tags:
-        labels = {r[0] for r in rows}
+    for tag in tag_names(node):
+        labels = box_labels(tag_view(node, tag))
         if None in labels:
             labels = set(selected)
         unknown = labels - available
@@ -262,17 +365,18 @@ def check_coverage(nodes, selected, available):
     left out is fine — the track can be longer than the selection."""
     selected, available = set(selected), set(available)
     for n in per_step_regions(nodes):
-        have = {r[0] for r in n.centers}
+        have = box_labels(n)
         if None in have:
             continue                    # a box that stays put: every timestep
-        src = f"center={n.track!r}" if n.track else "center="
+        src = _src(n)
         unknown = have - available
         if unknown:
             raise ValueError(f"region({src}): no timestep file for "
                              f"{_labels_text(unknown)} in this folder")
         missing = selected - have
         if missing:
-            raise ValueError(f"region({src}): no centre for timestep(s) "
+            what = "box" if n.step_ranges else "centre"
+            raise ValueError(f"region({src}): no {what} for timestep(s) "
                              f"{_labels_text(missing)}; add them, or drop those "
                              f"timesteps with timesteps(...)")
 
@@ -290,14 +394,63 @@ def box_at(node, label):
     return tuple(row[1:]), dict(node.step_sizes).get(label, node.size)
 
 
+def ranges_at(node, label):
+    """The fixed-box ranges of a bounds region at timestep `label`, or None
+    when it has no box there. A box that stays put is at every label."""
+    rows = node.step_ranges
+    row = next((r for r in rows if r[0] == label), None)
+    if row is None and len(rows) == 1 and rows[0][0] is None:
+        row = rows[0]
+    return None if row is None else row[1]
+
+
+def _bounds_for_step(node, label, grid):
+    """box_for_step for a box given by its bounds: its own ranges, unchanged —
+    on a grid (index space, cells [lo, hi)) clipped to the grid."""
+    ranges = ranges_at(node, label)
+    if ranges is None:                    # check_coverage should have caught it
+        raise ValueError(f"region: no box for timestep #{label}")
+    at = f" at timestep #{label}" if label is not None else ""
+    if grid is None:
+        return RegionNode(upstream=node.upstream, ranges=ranges,
+                          coords=node.coords), []
+    out, clipped = [], []
+    for axis, lo, hi in ranges:
+        a = _AXES.index(axis) if axis in _AXES else len(_AXES)
+        if a >= len(grid):
+            raise ValueError(f"region{at}: axis {axis!r} is not one of this "
+                             f"{len(grid)}-D grid's axes "
+                             f"({', '.join(_AXES[:len(grid)])})")
+        dim = int(grid[a])
+        clo = lo if lo is None else max(lo, 0)
+        chi = hi if hi is None else min(hi, dim)
+        if ((clo if clo is not None else 0) >= (chi if chi is not None else dim)):
+            raise ValueError(
+                f"region{at}: the box on {axis} [{_bound_text(lo)}:{_bound_text(hi)}] "
+                f"lies entirely outside the grid 0..{dim}")
+        if (clo, chi) != (lo, hi):
+            clipped.append(axis)
+        out.append((axis, clo, chi))
+    return (RegionNode(upstream=node.upstream, ranges=tuple(out),
+                       coords=node.coords), clipped)
+
+
+def _bound_text(v):
+    return "" if v is None else f"{v:g}"
+
+
 def box_for_step(node, label, grid=None):
     """One timestep's concrete box as a fixed-range RegionNode.
 
     `grid` is the grid shape for grid data (index space: the box is rounded to
     whole cells and clipped to the grid), or None for point data (world
     coordinates, not clipped — a particle box has no known domain to clip to).
-    Returns (region_node, clipped) where `clipped` lists the axes cut back to
-    the domain edge."""
+    A box given by its bounds keeps its numbers (clipped on a grid, never
+    rounded): it is exactly the fixed box those numbers write. Returns
+    (region_node, clipped) where `clipped` lists the axes cut back to the
+    domain edge."""
+    if node.step_ranges:
+        return _bounds_for_step(node, label, grid)
     at = box_at(node, label)
     if at is None:                        # check_coverage should have caught it
         raise ValueError(f"region: no centre for timestep #{label}")
@@ -334,17 +487,26 @@ def _size_text(size):
 
 
 def describe(node):
-    """Short human text for a centre-placed or named-box region, e.g.
-    region{center×30, size=(30, 30, 30)} or region{tags=v1,v2 (5 boxes), size=(20, 20, 20)}."""
-    where = []
+    """Short human text for a centre-placed, bounds or named-box region, e.g.
+    region{center×30, size=(30, 30, 30)}, region{bounds×5} or
+    region{tags=v1,v2 (5 boxes), size=(20, 20, 20)}."""
+    where, size = [], None
     if node.tagged:
-        n = sum(len(rows) for _, _, rows, _ in node.tags)
+        n = (sum(len(rows) for _, _, rows, _ in node.tags)
+             + sum(len(rows) for _, rows in node.tag_ranges))
         where.append(f"tags={','.join(tag_names(node))}"
                      + (f" ({n} boxes)" if node.tag_series else ""))
-        sizes = {tuple(s) for _, s, _, _ in node.tags}
-        size = (_size_text(next(iter(sizes))) if len(sizes) == 1 else "per tag")
-        if any(st for _, _, _, st in node.tags):
-            size += ", some rows differ"
+        if node.tags:
+            sizes = {tuple(s) for _, s, _, _ in node.tags}
+            size = (_size_text(next(iter(sizes))) if len(sizes) == 1 else "per tag")
+            if any(st for _, _, _, st in node.tags):
+                size += ", some rows differ"
+            if node.tag_ranges:
+                size += " (centre tags)"
+    elif node.step_ranges:
+        where.append(f"bounds×{len(node.step_ranges)}")
+    elif node.track_pending and node.track_kind == "bounds":
+        where.append("bounds")
     else:
         if node.centers and node.centers[0][0] is None:
             where.append("center=(" + ", ".join(f"{c:g}" for c in node.centers[0][1:]) + ")")
@@ -353,4 +515,6 @@ def describe(node):
         size = _size_text(node.size) + (", some rows differ" if node.step_sizes else "")
     if node.track:
         where.append(f"track={os.path.basename(node.track)}")
-    return f"region{{{', '.join(where)}, size={size}}}"
+    if size is not None:
+        where.append(f"size={size}")
+    return f"region{{{', '.join(where)}}}"

@@ -85,14 +85,28 @@ def _step_sizes_wire(step_sizes):
     return [[lab, _as_list(sz)] for lab, sz in step_sizes]
 
 
+def _step_ranges_wire(rows):
+    return [[lab, [_as_list(r) for r in ranges]] for lab, ranges in rows]
+
+
 def _ser_region(n):
     out = {"kind": "region", "ranges": [_as_list(r) for r in n.ranges]}
     if n.tagged:
         # Named boxes: each tag's size and centre table travel inline.
         # A 4th entry, when present, lists the rows that carry their own size.
-        out.update(tags=[[t, _as_list(size), [_as_list(r) for r in rows]]
-                         + ([_step_sizes_wire(st)] if st else [])
-                         for t, size, rows, st in n.tags],
+        # Bounds tags travel apart, as `tag_ranges` — so a plan with none keeps
+        # the shape an older remote accepts.
+        if n.tags:
+            out["tags"] = [[t, _as_list(size), [_as_list(r) for r in rows]]
+                           + ([_step_sizes_wire(st)] if st else [])
+                           for t, size, rows, st in n.tags]
+        if n.tag_ranges:
+            out["tag_ranges"] = [[t, _step_ranges_wire(rows)]
+                                 for t, rows in n.tag_ranges]
+        out.update(track=n.track, track_sha=n.track_sha)
+    elif n.step_ranges:
+        # A box given by its bounds per timestep: each row's ranges inline.
+        out.update(step_ranges=_step_ranges_wire(n.step_ranges),
                    track=n.track, track_sha=n.track_sha)
     elif n.per_step:
         # A moving box: the centre table travels inline (the planner resolves a
@@ -104,6 +118,9 @@ def _ser_region(n):
         if n.tag_sizes:
             # A track not read yet whose size names its boxes ({tag: size}).
             out["tag_sizes"] = [[t, _as_list(sz)] for t, sz in n.tag_sizes]
+        if n.track_kind is not None:
+            # A min/max track not read yet (bounds="f.csv").
+            out["track_kind"] = n.track_kind
     if n.coords is not None:
         # Only when given or decided: an unpinned region keeps the old shape.
         out["coords"] = n.coords
@@ -163,9 +180,12 @@ _STEP_KEYS = {
 # keys a kind MAY carry on top of _STEP_KEYS (absent = the old wire shape)
 _PER_STEP_KEYS = frozenset(("centers", "size", "track", "track_sha"))
 _TAGGED_KEYS = frozenset(("tags", "track", "track_sha"))
-_PER_STEP_EXTRA = frozenset(("step_sizes", "tag_sizes"))
+_PER_STEP_EXTRA = frozenset(("step_sizes", "tag_sizes", "track_kind"))
+_BOUNDS_KEYS = frozenset(("step_ranges", "track", "track_sha"))
+_TAG_LISTS = frozenset(("tags", "tag_ranges"))
 _OPTIONAL_KEYS = {
-    "region": _PER_STEP_KEYS | _TAGGED_KEYS | _PER_STEP_EXTRA | {"coords"},
+    "region": (_PER_STEP_KEYS | _TAGGED_KEYS | _PER_STEP_EXTRA | _BOUNDS_KEYS
+               | _TAG_LISTS | {"coords"}),
     "timesteps": frozenset(("labels",)),
 }
 
@@ -251,21 +271,98 @@ def _val_step_sizes(step_sizes, labels, ndim, where):
                          f"{ndim}-D centres")
 
 
+def _val_ranges(ranges, where, what="range", axes=None):
+    """[[axis, lo, hi], ...]: a fixed box, as region(x=(lo, hi), ...) writes it.
+    `axes`, when given, limits the axis names and allows each once."""
+    if not _is_seq(ranges) or not ranges:
+        _fail(where, f"'{what}' must be a non-empty list, got {ranges!r}")
+    seen = set()
+    for r in ranges:
+        if not _is_seq(r) or len(r) != 3:
+            _fail(where, f"each range must be [axis, lo, hi], got {r!r}")
+        axis, lo, hi = r
+        if not isinstance(axis, str) or not axis:
+            _fail(where, f"range axis must be a non-empty string, got {axis!r}")
+        if axes is not None and (axis not in axes or axis in seen):
+            _fail(where, f"range axis must be one of {list(axes)}, each once; "
+                         f"got {axis!r} in {ranges!r}")
+        seen.add(axis)
+        for b in (lo, hi):
+            if b is not None and not _is_num(b):
+                _fail(where, f"range bounds must be numbers or null, got {b!r}")
+        if lo is not None and hi is not None and not lo < hi:
+            _fail(where, f"range ({axis}): need lo < hi, got ({lo}, {hi})")
+
+
+def _val_step_ranges(rows, where, allow_still=True):
+    """[[label|null, ranges], ...]: a box given by its bounds per timestep
+    (integer labels, each once), or one box that stays put (a null label) —
+    the invariants forms.resolve_bounds enforces."""
+    if not _is_seq(rows) or not rows:
+        _fail(where, f"'step_ranges' must be a non-empty list of [label, ranges], "
+                     f"got {rows!r}")
+    labels = []
+    for r in rows:
+        if not _is_seq(r) or len(r) != 2:
+            _fail(where, f"each box must be [label, ranges], got {r!r}")
+        lab = r[0]
+        if lab is None:
+            if not allow_still or len(rows) != 1:
+                _fail(where, "a null label is one box that stays put; "
+                             + ("a box that stays put is plain 'ranges'"
+                                if not allow_still else "it must be the only box"))
+        elif isinstance(lab, bool) or not isinstance(lab, int):
+            _fail(where, f"box label must be an integer, got {lab!r}")
+        _val_ranges(r[1], where, "ranges", axes=("x", "y", "z"))
+        labels.append(lab)
+    if len(set(labels)) != len(labels):
+        _fail(where, "a timestep label appears in more than one box")
+
+
+def _val_region_bounds(s, where):
+    if s["ranges"]:
+        _fail(where, "a region has either 'ranges' or 'step_ranges', not both")
+    if set(s) != _STEP_KEYS["region"] | _BOUNDS_KEYS:
+        _fail(where, "a region given by its bounds per timestep needs exactly "
+                     "step_ranges, track and track_sha")
+    _val_track(s, where)
+    _val_step_ranges(s["step_ranges"], where, allow_still=False)
+
+
 def _val_region_tagged(s, where):
-    """Named boxes: [[tag, size, [[label|null, x, y(, z)], ...](, step_sizes)],
-    ...]. The invariants forms.resolve_center enforces, so a rebuilt node is
-    one a spec could have built: valid, distinct tags; each tag placed per
-    timestep (integer labels, each once) or one centre that stays put (null
-    label); per-row sizes only at a tag's own timesteps."""
+    """Named boxes: `tags` [[tag, size, [[label|null, x, y(, z)], ...](,
+    step_sizes)], ...] and/or `tag_ranges` [[tag, step_ranges], ...]. The
+    invariants forms.resolve_center / resolve_bounds enforce, so a rebuilt node
+    is one a spec could have built: valid tags, distinct across both lists;
+    each tag placed per timestep (integer labels, each once) or one box that
+    stays put (null label); per-row sizes only at a tag's own timesteps."""
     if s["ranges"]:
         _fail(where, "a region has either 'ranges' or 'tags', not both")
-    if set(s) != _STEP_KEYS["region"] | _TAGGED_KEYS:
-        _fail(where, "a region with named boxes needs exactly tags, track and track_sha")
+    lists = set(s) & _TAG_LISTS
+    if not lists or set(s) != _STEP_KEYS["region"] | {"track", "track_sha"} | lists:
+        _fail(where, "a region with named boxes needs exactly tags and/or "
+                     "tag_ranges, track and track_sha")
     _val_track(s, where)
+    seen = set()
+    if "tag_ranges" in s:
+        entries = s["tag_ranges"]
+        if not _is_seq(entries) or not entries:
+            _fail(where, f"'tag_ranges' must be a non-empty list, got {entries!r}")
+        for e in entries:
+            if not _is_seq(e) or len(e) != 2:
+                _fail(where, f"each bounds tag must be [tag, step_ranges], got {e!r}")
+            if not valid_tag(e[0]):
+                _fail(where, f"bad tag {e[0]!r}")
+            if e[0].lower() in seen:
+                _fail(where, f"tag {e[0]!r} appears twice (tags are case-insensitive)")
+            seen.add(e[0].lower())
+            _val_step_ranges(e[1], f"{where} tag {e[0]!r}")
+    if "tags" not in s:
+        return
     tags = s["tags"]
     if not _is_seq(tags) or not tags:
         _fail(where, f"'tags' must be a non-empty list, got {tags!r}")
-    seen, ndim = set(), None
+    ndim = None
     for e in tags:
         if not _is_seq(e) or len(e) not in (3, 4):
             _fail(where, f"each tag must be [tag, size, centres(, step_sizes)], "
@@ -313,6 +410,14 @@ def _val_region_per_step(s, where):
         _fail(where, "a per-timestep region needs centers, size, track and track_sha")
     centers, size, track = s["centers"], s["size"], s["track"]
     _val_track(s, where)
+    if "track_kind" in s:
+        # Only a min/max track not yet read says its kind: once read, its
+        # boxes travel as step_ranges / tag_ranges.
+        if s["track_kind"] != "bounds" or centers or track is None or size \
+                or set(s) & {"step_sizes", "tag_sizes"}:
+            _fail(where, "'track_kind' is 'bounds', for a min/max track file not "
+                         "yet read (no centres, no size)")
+        return
     if "tag_sizes" in s:
         # Only an unread track can still be waiting on its tags' sizes.
         if centers or track is None or size or "step_sizes" in s:
@@ -359,24 +464,13 @@ def _val_region(s, where):
         if s["coords"] not in allowed:
             _fail(where, f"'coords' must be one of {list(allowed)}, got {s['coords']!r}")
         s = {k: v for k, v in s.items() if k != "coords"}
-    if "tags" in s:
+    if set(s) & _TAG_LISTS:
         return _val_region_tagged(s, where)
+    if "step_ranges" in s:
+        return _val_region_bounds(s, where)
     if set(s) & _OPTIONAL_KEYS["region"]:
         return _val_region_per_step(s, where)
-    ranges = s["ranges"]
-    if not _is_seq(ranges) or not ranges:
-        _fail(where, f"'ranges' must be a non-empty list, got {ranges!r}")
-    for r in ranges:
-        if not _is_seq(r) or len(r) != 3:
-            _fail(where, f"each range must be [axis, lo, hi], got {r!r}")
-        axis, lo, hi = r
-        if not isinstance(axis, str) or not axis:
-            _fail(where, f"range axis must be a non-empty string, got {axis!r}")
-        for b in (lo, hi):
-            if b is not None and not _is_num(b):
-                _fail(where, f"range bounds must be numbers or null, got {b!r}")
-        if lo is not None and hi is not None and not lo < hi:
-            _fail(where, f"range ({axis}): need lo < hi, got ({lo}, {hi})")
+    _val_ranges(s["ranges"], where, "ranges")
 
 
 def _val_subsample(s, where):
@@ -517,13 +611,23 @@ def _build_step_sizes(rows):
     return tuple((lab, tuple(sz)) for lab, sz in rows)
 
 
+def _build_step_ranges(rows):
+    return tuple((lab, tuple(tuple(r) for r in ranges)) for lab, ranges in rows)
+
+
 def _build_region(s, up):
     coords = s.get("coords")
-    if "tags" in s:
+    if "tags" in s or "tag_ranges" in s:
         return RegionNode(upstream=up, tags=tuple(
             (e[0], tuple(e[1]), tuple(tuple(r) for r in e[2]),
-             _build_step_sizes(e[3] if len(e) == 4 else ())) for e in s["tags"]),
+             _build_step_sizes(e[3] if len(e) == 4 else ()))
+            for e in s.get("tags") or ()),
+            tag_ranges=tuple((e[0], _build_step_ranges(e[1]))
+                             for e in s.get("tag_ranges") or ()),
             track=s["track"], track_sha=s["track_sha"], coords=coords)
+    if "step_ranges" in s:
+        return RegionNode(upstream=up, step_ranges=_build_step_ranges(s["step_ranges"]),
+                          track=s["track"], track_sha=s["track_sha"], coords=coords)
     if "centers" in s:
         return RegionNode(upstream=up, centers=tuple(tuple(r) for r in s["centers"]),
                           size=tuple(s["size"]),
@@ -532,7 +636,7 @@ def _build_region(s, up):
                           track_sha=s["track_sha"],
                           tag_sizes=tuple((t, tuple(sz))
                                           for t, sz in s.get("tag_sizes") or ()),
-                          coords=coords)
+                          track_kind=s.get("track_kind"), coords=coords)
     return RegionNode(upstream=up, ranges=tuple(tuple(r) for r in s["ranges"]),
                       coords=coords)
 
@@ -648,12 +752,21 @@ def describe_plan(plan):
             parts.append(f"source({step.get('uri')})")
         elif kind == "fields":
             parts.append("fields[" + ",".join(step.get("keep") or []) + "]")
-        elif kind == "region" and step.get("tags") is not None:
+        elif kind == "region" and (step.get("tags") is not None
+                                   or step.get("tag_ranges") is not None):
             src = f",track={step['track']}" if step.get("track") else ""
-            names = ",".join(str(e[0]) for e in step["tags"])
-            sizes = {json.dumps(e[1]) for e in step["tags"]}
-            size = step["tags"][0][1] if len(sizes) == 1 else "per tag"
-            parts.append(f"region{{tags={names},size={size}{src}}}")
+            ctags, btags = step.get("tags") or [], step.get("tag_ranges") or []
+            names = ",".join(str(e[0]) for e in ctags + btags)
+            more = ""
+            if ctags:
+                sizes = {json.dumps(e[1]) for e in ctags}
+                more += f",size={ctags[0][1] if len(sizes) == 1 else 'per tag'}"
+            if btags:
+                more += f",bounds×{sum(len(e[1]) for e in btags)}"
+            parts.append(f"region{{tags={names}{more}{src}}}")
+        elif kind == "region" and step.get("step_ranges") is not None:
+            src = f",track={step['track']}" if step.get("track") else ""
+            parts.append(f"region{{bounds×{len(step['step_ranges'])}{src}}}")
         elif kind == "region" and step.get("centers") is not None:
             src = f",track={step['track']}" if step.get("track") else ""
             parts.append(f"region{{center×{len(step['centers'])},"

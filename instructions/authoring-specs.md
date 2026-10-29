@@ -37,6 +37,14 @@ For a first look at an unfamiliar dataset, skip the narrowing and just
 - For several boxes, name them in one `region(center={tag: …})` rather than
   writing a region and a `save` per box: the file is read once, a remote run is
   one job, and the output folder has one series per tag plus a ParaView index.
+- **Bounds or a centre?** Write the box the way the human knows it. Edges read
+  off ParaView, a halo catalogue's min/max, or a box that is not the same size
+  on every axis or every timestep → `bounds=` (min–max pairs, exact: a point on
+  an edge stays in, cells are not rounded, an end may be open). A tracked
+  position with a fixed box around it → `center=` + `size=`, which keeps one
+  shape at every timestep. Both work per timestep, named, and from a CSV; named
+  boxes of both kinds can share one `region()` (`center={…}` and `bounds={…}`,
+  different tags). A single fixed box is clearest as `x=/y=/z=`.
 
 ## Don't
 - Don't import readers, hand-parse bytes, or call `load`/`subset`/`download` in a

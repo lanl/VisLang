@@ -75,8 +75,7 @@ def resolve_regions(info, middle, steps=None, *, read_points=True, label=None,
     out, modes = [], []
     for n in middle:
         if isinstance(n, RegionNode):
-            pending = n.track is not None and not n.centers and not n.tags
-            mode = None if pending else decide(info, n)
+            mode = None if n.track_pending else decide(info, n)
             modes.append(None if mode == "index" else mode)
             n = _resolve(info, n, steps, read_points, label, convert)
         out.append(n)
@@ -85,7 +84,7 @@ def resolve_regions(info, middle, steps=None, *, read_points=True, label=None,
 
 
 def _resolve(info, node, steps, read_points, label, convert):
-    if node.track is not None and not node.centers and not node.tags:
+    if node.track_pending:
         return node                         # a track file not read yet
     mode = decide(info, node)
     from vislang.interpreter.planner import _modality
@@ -104,9 +103,19 @@ def _resolve(info, node, steps, read_points, label, convert):
         tags = tuple((t, *_centres_to_cells(geometry, grid, size, rows, step_sizes,
                                             label, f"box {t!r}"))
                      for t, size, rows, step_sizes in node.tags)
+        tag_ranges = tuple((t, _bounds_to_cells(geometry, grid, rows, label,
+                                                f"box {t!r}", steps))
+                           for t, rows in node.tag_ranges)
         _note(steps, f"region: named boxes placed in world coordinates on the "
                      f"file's {geometry['kind']} geometry")
-        return dataclasses.replace(node, tags=tags, coords="index")
+        return dataclasses.replace(node, tags=tags, tag_ranges=tag_ranges,
+                                   coords="index")
+    if node.step_ranges:
+        rows = _bounds_to_cells(geometry, grid, node.step_ranges, label, "region",
+                                steps)
+        _note(steps, f"region: per-timestep bounds placed in world coordinates on "
+                     f"the file's {geometry['kind']} geometry")
+        return dataclasses.replace(node, step_ranges=rows, coords="index")
     if node.per_step:
         size, rows, step_sizes = _centres_to_cells(geometry, grid, node.size,
                                                    node.centers, node.step_sizes,
@@ -133,7 +142,15 @@ def _cells_to_index(info, node, steps, label):
         tags = tuple((t, *_centres_to_cells(geometry, grid, size, rows, step_sizes,
                                             label, f"box {t!r}"))
                      for t, size, rows, step_sizes in node.tags)
-        return dataclasses.replace(node, tags=tags, coords="index")
+        tag_ranges = tuple((t, _source_cell_rows(rows, grid, o, s))
+                           for t, rows in node.tag_ranges)
+        return dataclasses.replace(node, tags=tags, tag_ranges=tag_ranges,
+                                   coords="index")
+    if node.step_ranges:
+        # Each box in this file's indices, unclipped: box_for_step clips it
+        # to the grid as it does any per-timestep box.
+        return dataclasses.replace(node, coords="index", step_ranges=
+                                   _source_cell_rows(node.step_ranges, grid, o, s))
     if node.per_step:
         size, rows, step_sizes = _centres_to_cells(geometry, grid, node.size,
                                                    node.centers, node.step_sizes,
@@ -142,15 +159,12 @@ def _cells_to_index(info, node, steps, label):
                                    step_sizes=step_sizes, coords="index")
     ranges = []
     for axis, lo, hi in node.ranges:
-        if axis not in _AXIS_INDEX or _AXIS_INDEX[axis] >= len(grid):
-            raise ValueError(f"region axis {axis!r} not one of this grid's axes")
-        a = _AXIS_INDEX[axis]
+        a = _grid_axis(axis, grid)
         n, first, step = grid[a], o[a], s[a]
         last = first + (n - 1) * step
-        # Source cell c is this file's index (c - first) / step; [lo, hi) keeps
-        # the indices whose source cell falls inside it.
-        start = 0 if lo is None else -(-(lo - first) // step)
-        stop = n if hi is None else -(-(hi - first) // step)
+        start, stop = _source_cells(lo, hi, first, step)
+        start = 0 if start is None else start
+        stop = n if stop is None else stop
         if start < 0 or stop > n or start >= stop:
             raise ValueError(
                 f"region {axis}=({lo}, {hi}): this file holds cells {first:g} to "
@@ -162,6 +176,33 @@ def _cells_to_index(info, node, steps, label):
           + " (source cells) -> this file's indices "
           + ", ".join(f"{a} [{b}:{e}]" for a, b, e in ranges))
     return dataclasses.replace(node, ranges=tuple(ranges), coords="index")
+
+
+def _grid_axis(axis, grid):
+    if axis not in _AXIS_INDEX or _AXIS_INDEX[axis] >= len(grid):
+        raise ValueError(f"region axis {axis!r} not one of this grid's axes")
+    return _AXIS_INDEX[axis]
+
+
+def _source_cells(lo, hi, first, step):
+    """Source cells [lo, hi) as this file's indices [start, stop): source cell
+    c is index (c - first) / step, and the range keeps the indices whose source
+    cell falls inside it. An open bound stays open (None)."""
+    start = None if lo is None else int(-(-(lo - first) // step))
+    stop = None if hi is None else int(-(-(hi - first) // step))
+    return start, stop
+
+
+def _source_cell_rows(rows, grid, origin, spacing):
+    """Per-timestep bounds rows in source cells as this file's own indices."""
+    out = []
+    for lab, ranges in rows:
+        new = []
+        for axis, lo, hi in ranges:
+            a = _grid_axis(axis, grid)
+            new.append((axis, *_source_cells(lo, hi, origin[a], spacing[a])))
+        out.append((lab, tuple(new)))
+    return tuple(out)
 
 
 def _geometry(info, read_points):
@@ -205,6 +246,35 @@ def _ranges_to_cells(node, geometry, grid, steps):
           + (f"; clipped to the grid on {', '.join(clipped)}" if clipped else ""))
     _record(node.ranges, ranges, clipped)
     return dataclasses.replace(node, ranges=ranges, coords="index")
+
+
+def _bounds_to_cells(geometry, grid, rows, label, who, steps):
+    """A bounds box's per-timestep rows (label, ranges) in cells: each world
+    box becomes the samples it selects (world_box_to_cells, bounds inclusive,
+    clipped to the grid as a fixed world box is). Only timestep `label`'s row
+    when it is given."""
+    if label is not None:
+        rows = (tuple(r for r in rows if r[0] == label)
+                or tuple(r for r in rows if r[0] is None) or rows)
+    out = []
+    for lab, ranges in rows:
+        box = {}
+        for axis, lo, hi in ranges:
+            if axis not in _AXIS_INDEX:
+                raise ValueError(f"region axis {axis!r} not one of x, y, z")
+            box[_AXIS_INDEX[axis]] = (lo, hi)
+        at = f" at timestep #{lab}" if lab is not None else ""
+        try:
+            cells, clipped = world_box_to_cells(geometry, grid, box)
+        except ValueError as e:
+            raise ValueError(f"{who}{at}: {e}") from None
+        if not cells:
+            cells = {0: (0, grid[0])}       # the whole grid, as one full axis
+        if clipped:
+            _note(steps, f"{who}{at}: box clipped to the grid edge on "
+                         f"{', '.join(clipped)}")
+        out.append((lab, tuple((_AXES[i], a, b) for i, (a, b) in sorted(cells.items()))))
+    return tuple(out)
 
 
 def _centres_to_cells(geometry, grid, size, rows, step_sizes, label, who):

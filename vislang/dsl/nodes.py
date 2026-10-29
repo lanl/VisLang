@@ -54,6 +54,14 @@ class RegionNode(Node):
     # the plan carries data, never a path the remote cannot see. `tag_sizes`
     # holds a `size={tag: …}` until a track file's tags are known.
     #
+    # Or a box given by its BOUNDS per timestep: `step_ranges` rows (label,
+    # ranges), each `ranges` shaped like the fixed box's — exactly the box
+    # x=(lo, hi), … writes, at that timestep. Named bounds boxes are
+    # `tag_ranges` rows (tag, step_ranges), beside the centre-placed `tags`;
+    # the outputs follow the centre tags, then these. A label of None is a box
+    # that stays put, as for centres. `track_kind` is "bounds" for a min/max
+    # track file not yet read (its header is then held to that kind).
+    #
     # `coords` says which coordinates every number above is in: "world" (where
     # the samples sit in space), "cells" (grid indices), or None — the data's
     # own, decided by the planner from the file (interpreter/coords.py).
@@ -67,35 +75,48 @@ class RegionNode(Node):
     tags: tuple = ()
     tag_sizes: tuple = ()
     coords: str = None
+    step_ranges: tuple = ()
+    tag_ranges: tuple = ()
+    track_kind: str = None
     kind = "region"
 
     @property
+    def track_pending(self):
+        """True for a track file the planner has not read yet."""
+        return (self.track is not None and not self.centers and not self.tags
+                and not self.step_ranges and not self.tag_ranges)
+
+    @property
     def per_step(self):
-        """True when ONE box is placed by its centre (centres, or a track file
-        not yet read). Named boxes are `tagged`, not per_step."""
-        if self.tags:
+        """True when ONE box depends on the timestep: placed by its centre, given
+        by its bounds per timestep, or a track file not yet read. Named boxes
+        are `tagged`, not per_step."""
+        if self.tagged:
             return False
-        return bool(self.centers) or self.track is not None
+        return bool(self.centers or self.step_ranges) or self.track is not None
 
     @property
     def tagged(self):
         """True for several named boxes, each written to its own output."""
-        return bool(self.tags)
+        return bool(self.tags or self.tag_ranges)
 
     @property
     def moves(self):
-        """True when some box is placed per timestep (a labelled centre row),
-        so the region needs a timeseries. A track file not yet read counts."""
-        if self.track is not None and not self.centers and not self.tags:
+        """True when some box is placed per timestep (a labelled row), so the
+        region needs a timeseries. A track file not yet read counts."""
+        if self.track_pending:
             return True
-        rows = ([r for _, _, rs, _ in self.tags for r in rs] if self.tags
-                else self.centers)
+        if self.tagged:
+            rows = ([r for _, _, rs, _ in self.tags for r in rs]
+                    + [r for _, rs in self.tag_ranges for r in rs])
+        else:
+            rows = list(self.centers) + list(self.step_ranges)
         return any(r[0] is not None for r in rows)
 
     @property
     def tag_series(self):
         """True when some named box is placed per timestep (a timeseries)."""
-        return bool(self.tags) and self.moves
+        return self.tagged and self.moves
 
 
 @dataclass(frozen=True)

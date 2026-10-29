@@ -373,7 +373,7 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
     tagged = tagged_region(middle)              # raises on two
     if tagged is not None and sink is not None and sink.kind == "render":
         raise NotImplementedError(
-            f"render shows one dataset, and this region names {len(tagged.tags)} "
+            f"render shows one dataset, and this region names {len(tag_names(tagged))} "
             f"boxes ({', '.join(tag_names(tagged))}). save() writes each to its own "
             f"output (.vti/.vtp adds a ParaView index that opens them together); "
             f"to look at one box here, render a plain region for it.")
@@ -428,10 +428,16 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
             raise ValueError("timesteps() applies only to a folder (timeseries) "
                              f"source; {src.uri!r} is a single file.")
         elif any(n.moves for n in moving):
-            raise ValueError("region(center=[(step, …), …]) gives a box per "
-                             "timestep, so it needs a folder (timeseries) source; "
-                             f"{src.uri!r} is a single file. Give one centre "
-                             "here: center=(x, y, z).")
+            bounds = any(n.step_ranges or n.track_kind == "bounds" for n in moving)
+            raise ValueError(
+                (f"region(bounds=[(step, …), …]) gives a box per timestep, so it "
+                 f"needs a folder (timeseries) source; {src.uri!r} is a single "
+                 f"file. Give one box here: bounds=((xlo, xhi), (ylo, yhi), "
+                 f"(zlo, zhi)).") if bounds else
+                ("region(center=[(step, …), …]) gives a box per "
+                 "timestep, so it needs a folder (timeseries) source; "
+                 f"{src.uri!r} is a single file. Give one centre "
+                 "here: center=(x, y, z)."))
         elif remote_src:
             result = _plan_remote(src, middle, sink, terminal, dry_run, approval)
         else:
@@ -450,6 +456,11 @@ def _check_tag_shape(tagged, is_folder, uri):
     """Named boxes placed per timestep need a folder; on one file each box is
     one centre. (A box that stays put works on either.)"""
     if not is_folder and tagged.tag_series:
+        if any(r[0] is not None for _, rows in tagged.tag_ranges for r in rows):
+            raise ValueError(
+                f"region(bounds={{tag: [(step, …), …]}}) gives a box per timestep, "
+                f"but {uri!r} is a single file; on one file give each tag one "
+                f"box: bounds={{tag: ((xlo, xhi), (ylo, yhi), (zlo, zhi))}}")
         raise ValueError(
             f"region(center={{tag: [(step, …), …]}}) places a box per timestep, "
             f"but {uri!r} is a single file; on one file give each tag one "
@@ -737,7 +748,7 @@ def _boxes_at(info, middle, label, steps, tag=None):
     the box in a clip note. Returns (middle, boxes) with boxes [(ranges,
     clipped_axes)]."""
     from vislang.interpreter.coords import resolve_regions
-    from vislang.interpreter.track import box_for_step
+    from vislang.interpreter.track import box_for_step, first_label
     # Every region in this file's own coordinates first: a grid's world box
     # becomes the cells it selects, so a moving box below is cut in cells.
     middle = resolve_regions(info, middle, steps, label=label)
@@ -748,7 +759,7 @@ def _boxes_at(info, middle, label, steps, tag=None):
                 and n.coords != "index":
             pass                            # placed where the file is read
         elif isinstance(n, RegionNode) and n.per_step:
-            lab = label if label is not None else n.centers[0][0]
+            lab = label if label is not None else first_label(n)
             n, clipped = box_for_step(n, lab, grid)
             boxes.append((n.ranges, clipped))
             if clipped:
@@ -1385,7 +1396,7 @@ def _check_remote_coverage(middle, files, available, steps):
     if not per_step_regions_in(middle):
         return None
     check_coverage(middle, [f[0] for f in files], available)
-    steps.append(f"per-timestep region: a centre for each of the {len(files)} "
+    steps.append(f"per-timestep region: a box for each of the {len(files)} "
                  f"selected timestep(s)")
     return None
 

@@ -590,7 +590,10 @@ def _tagged_lines(step, tag, grid, labels):
     A track file's tags are read after the plan was recorded; when the plan was
     not updated, the step carries only the track and the sizes as written."""
     entries = step.get("tags") or []
-    names = [e[0] for e in entries]
+    names = [e[0] for e in entries] + [e[0] for e in step.get("tag_ranges") or []]
+    bounds = next((e for e in step.get("tag_ranges") or [] if e[0] == tag), None)
+    if bounds is not None:
+        return _tagged_bounds_lines(step, tag, grid, labels, bounds[1], names)
     mine = next((e for e in entries if e[0] == tag), None)
     own = {}
     if mine is not None:
@@ -633,6 +636,55 @@ def _tagged_lines(step, tag, grid, labels):
     return head, more
 
 
+def _tagged_bounds_lines(step, tag, grid, labels, rows, names):
+    """_tagged_lines for a named box given by its bounds (`rows` its
+    [label, ranges] table)."""
+    box = {r[0]: r[1] for r in rows}
+    if None in box:                             # a box that stays put
+        at = ("" if not labels else f" at #{labels[0]}" if len(labels) == 1
+              else f" at each of its {len(labels)} timesteps here")
+        head = f"keep the box named {tag}: {_bounds_text(box[None])}{at}"
+    elif not labels:
+        head = f"keep the box named {tag}"
+    elif len(labels) == 1:
+        lab = labels[0]
+        head = (f"keep the box named {tag} at #{lab}: {_bounds_text(box[lab])}"
+                if lab in box else f"keep the box named {tag} at #{lab}")
+    else:
+        head = (f"keep the box named {tag}: its own bounds at each of its "
+                f"{len(labels)} timesteps here")
+    src = (f"bounds from {os.path.basename(step['track'])}" if step.get("track")
+           else "bounds given in the spec")
+    others = [n for n in names if n != tag]
+    more = [f"  one of {len(names)} named boxes in the spec"
+            + (f" (the others: {_names(others)})" if others else ""),
+            f"  {src}; " + _bounds_space(step, grid)
+            + ("; the box per timestep is under resolved.region_boxes" if labels
+               else "; the box is under resolved.region_box")]
+    return head, more
+
+
+def _bounds_text(ranges):
+    """A box's bounds as written: `x 515 to 535, y from 10, z up to 4`."""
+    def one(a, lo, hi):
+        if lo is None:
+            return f"{a} up to {_num(hi)}"
+        if hi is None:
+            return f"{a} from {_num(lo)}"
+        return f"{a} {_num(lo)} to {_num(hi)}"
+    return ", ".join(one(*r) for r in ranges)
+
+
+def _bounds_space(step, grid):
+    """How a bounds region's numbers were read, for its explanation."""
+    if not grid:
+        return "world coordinates, bounds inclusive"
+    if step.get("coords") == "world":
+        return ("world coordinates (bounds inclusive), placed on the file's "
+                "geometry and clipped to the grid")
+    return "cells [lo, hi), clipped to the grid"
+
+
 def _in_cells_text(geometry):
     """The qualifier for a placement in source cells, not physical units."""
     if geometry.get("space") == "cells":
@@ -668,8 +720,19 @@ def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
             drop = [c for c in avail if c not in keep]
             head = f"keep {_names(keep)}" + (f"; drop {_names(drop)}" if drop else "")
             avail = keep
-        elif kind == "region" and "tags" in step:
+        elif kind == "region" and ("tags" in step or "tag_ranges" in step):
             head, more = _tagged_lines(step, tag, grid, labels or [])
+        elif kind == "region" and "step_ranges" in step:
+            rows = step.get("step_ranges") or []
+            box = {r[0]: r[1] for r in rows}
+            if labels and len(labels) == 1 and labels[0] in box:
+                head = f"keep the box at #{labels[0]}: {_bounds_text(box[labels[0]])}"
+            else:
+                head = "keep each timestep's own box, given by its bounds"
+            src = (f"bounds from {os.path.basename(step['track'])}"
+                   if step.get("track") else f"{len(rows)} boxes given in the spec")
+            more = [f"  {src}; " + _bounds_space(step, grid)
+                    + "; the box per timestep is under resolved.region_boxes"]
         elif kind == "region" and "centers" in step:
             size = ", ".join("whole" if v is None else _num(v)
                              for v in step.get("size") or [])

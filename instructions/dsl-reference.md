@@ -100,7 +100,8 @@ region(series, center="halo_track.csv", size=30)          # the same rows, from 
   The planner reads the file once, before any data read, inlines its rows into
   the plan (so a remote run never needs the file) and records its sha256 in
   provenance.
-- Give axis ranges or `center=`, not both; `size` only goes with `center=`.
+- Give axis ranges, `center=` or `bounds=` (below), not two of them; `size`
+  only goes with `center=`.
   Rows (a box per timestep) on a single-file source raise.
 - **Checked before any bulk read:** every selected timestep needs a row (drop
   timesteps with `timesteps(...)`; rows beyond the selection are fine), and a
@@ -165,6 +166,65 @@ save(region(snapshot, center={"core": (150, 150, 150), "jet": (40, 151, 150)},
   region for one box, or open the saved boxes in ParaView.
 - **Remote**: every box runs in one remote job. The extent catalog keys each box
   by its centre and size, not its tag, so renaming a tag still reuses it.
+
+### A box given by its bounds: region(node, bounds=...)
+The same box as `x=(lo, hi), y=…, z=…`, but it can change per timestep, carry a
+name, or come from a file, as a centre box can. One `(lo, hi)` pair per axis,
+**in x, y[, z] order**; `bounds` takes the same shapes as `center`:
+```python
+region(data, bounds=((10, 50), (0, 40), (5, 25)))      # one box (identical to x=, y=, z=)
+
+region(series, bounds=[                                 # one box per timestep
+    # step  (xlo, xhi)    (ylo, yhi)      (zlo, zhi)
+    (3,  (515, 535),     (164.5, 184.5), (771.4, 791.4)),
+    (19, (512.5, 537.5), (162, 187),     (768.9, 793.9)),
+])
+
+region(series, bounds="boxes.csv")                     # the same rows, from a file
+
+boxes = region(series, bounds={                         # named boxes, either shape per tag
+    "halo":  [(3, (515, 535), (164.5, 184.5), (771.4, 791.4)),
+              (19, (512.5, 537.5), (162, 187), (768.9, 793.9))],
+    "field": ((460, 520), (130, 170), (740, 780)),      # stays put: every timestep
+})
+save(boxes, "boxes.vtp")   # boxes/halo/timestep#3,#19.vtp, boxes/field/…, boxes/boxes.pvd
+```
+- **The meaning is exactly the fixed box's** at that timestep: world
+  coordinates on points and on a grid with geometry, bounds inclusive; cells
+  `[lo, hi)` on a grid without. `coords=` applies to every box. The numbers are
+  never turned into a centre and size, so a particle exactly on a bound stays
+  in and cell bounds are not rounded.
+- `None` is an open end; `(None, None)` keeps that axis whole (as leaving an axis
+  out of `x=/y=/z=` does). A box whose every axis is whole raises. Both bounds
+  given need `lo < hi`. Every box in one region has the same number of pairs.
+- A **row** is `(step, (lo, hi), (lo, hi)[, (lo, hi)])`: the `#N` label, then
+  the pairs. A box with no step stays put. Coverage, gaps, outputs, the ParaView
+  index and provenance are the same as for centre boxes (above).
+- On a grid a box crossing the edge is clipped and the clip reported; a box with
+  nothing left raises, naming the timestep and axis. Point boxes are not clipped.
+- **No `size=`**: a bounds box already says its extent.
+- **Centre tags and bounds tags may share one region** when both are `{tag: …}`
+  dicts with different names. `size=` then sizes the centre tags only, and the
+  outputs follow the centre tags, then the bounds tags:
+  ```python
+  region(series, center={"probe": (300, 300, 300)}, size=20,
+         bounds={"halo": [(3, (515, 535), (164, 184), (771, 791))]})
+  ```
+  Any other mix of `center=`, `bounds=` and axis ranges raises, and a file on
+  either side cannot be mixed (put every box in one file).
+- A **min/max track file** has one of these headers (case-insensitive; blank
+  lines and `#` comments allowed); a blank bound cell is open-ended:
+  ```
+  step,xmin,xmax,ymin,ymax[,zmin,zmax]          one box per timestep
+  tag,step,xmin,xmax,ymin,ymax[,zmin,zmax]      named boxes over a series
+  tag,xmin,xmax,ymin,ymax[,zmin,zmax]           named boxes that stay put
+  ```
+  `bounds="f.csv"` reads only these, and `center="f.csv"` only the centre
+  headers; each names the other keyword when handed the wrong kind. As with a
+  centre file, the planner reads it once, inlines its rows, and records its
+  sha256.
+- The dry run lists each timestep's box. Over a remote folder the catalog keys
+  each timestep on its own bounds and reuses a cached box only on an exact match.
 
 ## subsample(node, factor) | subsample(node, x=…, y=…, z=…) -> node
 Reduce resolution. A factor is an **int stride** (keep every f-th) or a **float

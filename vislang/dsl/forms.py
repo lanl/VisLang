@@ -11,6 +11,7 @@ These names are injected into the spec namespace by form_namespace() — the spe
 does not import them.
 """
 
+import math
 import re
 
 from .nodes import (
@@ -223,6 +224,28 @@ def _parse_rows(rows, ndim, where):
     return tuple(sorted(out)), sizes
 
 
+def _check_tags(tags, where, what="centres"):
+    """The keys of a {tag: box} dict: present, strings, safe as a path
+    component, and distinct even on a case-insensitive filesystem."""
+    if not tags:
+        raise ValueError(f"{where}: no {what} given")
+    if not all(isinstance(t, str) for t in tags):
+        if all(isinstance(t, int) and not isinstance(t, bool) for t in tags):
+            raise TypeError(_OLD_FORM.format(got="a {timestep: centre} dict")
+                            if what == "centres" else _OLD_BOUNDS)
+        raise TypeError(f"{where}: keys name the boxes (strings), got "
+                        f"{[t for t in tags if not isinstance(t, str)]!r}")
+    seen = {}
+    for t in tags:
+        _check_tag(t, where)
+        if t.lower() in seen:
+            # A case-insensitive filesystem (macOS, Windows) would write
+            # both into one folder.
+            raise ValueError(f"{where}: tags {seen[t.lower()]!r} and {t!r} "
+                             f"differ only in case, so their outputs would collide")
+        seen[t.lower()] = t
+
+
 def resolve_center(center, size, where="region(center=...)", ndim=None):
     """Validate a centre spec and return the RegionNode fields it fills.
 
@@ -237,22 +260,7 @@ def resolve_center(center, size, where="region(center=...)", ndim=None):
     with the track-file reader so both enforce the same rules."""
     if isinstance(center, dict):
         tags = list(center)
-        if not tags:
-            raise ValueError(f"{where}: no centres given")
-        if not all(isinstance(t, str) for t in tags):
-            if all(isinstance(t, int) and not isinstance(t, bool) for t in tags):
-                raise TypeError(_OLD_FORM.format(got="a {timestep: centre} dict"))
-            raise TypeError(f"{where}: keys name the boxes (strings), got "
-                            f"{[t for t in tags if not isinstance(t, str)]!r}")
-        seen = {}
-        for t in tags:
-            _check_tag(t, where)
-            if t.lower() in seen:
-                # A case-insensitive filesystem (macOS, Windows) would write
-                # both into one folder.
-                raise ValueError(f"{where}: tags {seen[t.lower()]!r} and {t!r} "
-                                 f"differ only in case, so their outputs would collide")
-            seen[t.lower()] = t
+        _check_tags(tags, where)
         boxes = {t: _box_spec(center[t], f"{where} tag {t!r}") for t in tags}
     else:
         if isinstance(size, dict):
@@ -301,10 +309,162 @@ def resolve_center(center, size, where="region(center=...)", ndim=None):
     return {"centers": rows, "size": default, "step_sizes": step_sizes}
 
 
+# ---------------------------------------------------------------------------
+# boxes given by their bounds
+# ---------------------------------------------------------------------------
+_OLD_BOUNDS = ("region(bounds=...): a box per timestep is a list of rows "
+               "(step, (xlo, xhi), (ylo, yhi)[, (zlo, zhi)]), e.g. "
+               "bounds=[(3, (0, 10), (0, 10), (0, 10)), …]; a dict names boxes "
+               "(string keys), not timesteps")
+
+
+def _is_pair(v):
+    return (isinstance(v, (tuple, list)) and len(v) == 2
+            and not any(isinstance(b, (tuple, list)) for b in v))
+
+
+def _is_bounds_row(v):
+    return (isinstance(v, (tuple, list)) and len(v) >= 2
+            and not isinstance(v[0], (tuple, list))
+            and all(isinstance(p, (tuple, list)) for p in v[1:]))
+
+
+def _bounds_box(value, where):
+    """One bounds box as written -> ("fixed", (pair, …)) or ("rows", [row, …])."""
+    if isinstance(value, dict):
+        raise TypeError(_OLD_BOUNDS)
+    if isinstance(value, (tuple, list)) and not value:
+        raise ValueError(f"{where}: no boxes given")
+    if not isinstance(value, (tuple, list)):
+        raise TypeError(f"{where}: expected a box ((xlo, xhi), (ylo, yhi)[, (zlo, "
+                        f"zhi)]) or a list of rows (step, (xlo, xhi), …), got "
+                        f"{value!r}")
+    if all(_is_pair(p) for p in value):
+        return "fixed", tuple(value)
+    if all(_is_bounds_row(r) for r in value):
+        return "rows", [tuple(r) for r in value]
+    raise TypeError(f"{where}: give one box ((xlo, xhi), (ylo, yhi)[, (zlo, zhi)]) "
+                    f"or a list of rows (step, (xlo, xhi), (ylo, yhi)[, (zlo, zhi)]), "
+                    f"got {value!r}")
+
+
+def _bounds_ranges(pairs, ndim, where):
+    """One box's (lo, hi) pairs, in x, y[, z] order -> fixed-box ranges
+    ((axis, lo, hi), …), held to the checks region(x=(lo, hi)) makes. A pair of
+    (None, None) keeps that axis whole, so it is left out — as an axis that is
+    not written is."""
+    if len(pairs) not in (2, 3):
+        raise ValueError(f"{where}: a box is two or three (lo, hi) pairs, one per "
+                         f"axis in x, y[, z] order, got {len(pairs)}")
+    if ndim is not None and len(pairs) != ndim:
+        raise ValueError(f"{where}: a {len(pairs)}-D box, but the others are "
+                         f"{ndim}-D; every box needs the same number of axes")
+    ranges = []
+    for axis, pair in zip(_CENTER_AXES, pairs):
+        if not _is_pair(pair):
+            raise ValueError(f"{where}: {axis} bounds must be a (lo, hi) pair, got "
+                             f"{pair!r}")
+        lo, hi = pair
+        for b in (lo, hi):
+            if b is not None and (not _is_number(b) or not math.isfinite(b)):
+                raise TypeError(f"{where}: {axis} bounds must be finite numbers or "
+                                f"None, got {b!r}")
+        if lo is not None and hi is not None and not lo < hi:
+            raise ValueError(f"{where}: {axis}=({lo}, {hi}): need lo < hi")
+        if lo is not None or hi is not None:
+            ranges.append((axis, lo, hi))
+    if not ranges:
+        raise ValueError(f"{where}: every axis is (None, None), which keeps the "
+                         f"whole domain — drop region(), or give that box a bound")
+    return tuple(ranges)
+
+
+def _bounds_rows(rows, ndim, where):
+    """Rows (step, (lo, hi), …) -> sorted (label, ranges) rows."""
+    out, seen = [], set()
+    for r in rows:
+        label = r[0]
+        if isinstance(label, bool) or not isinstance(label, int):
+            raise TypeError(f"{where}: a row starts with its timestep (the N in "
+                            f"…#N), an integer; got {label!r} in {r!r}")
+        if label in seen:
+            raise ValueError(f"{where}: timestep {label} has more than one box")
+        seen.add(label)
+        out.append((label, _bounds_ranges(r[1:], ndim, f"{where} timestep {label}")))
+    return tuple(sorted(out, key=lambda r: r[0]))
+
+
+def resolve_bounds(bounds, where="region(bounds=...)", ndim=None):
+    """Validate a bounds spec and return the RegionNode fields it fills.
+
+    `bounds` is one box or {tag: box}; a box is ((xlo, xhi), (ylo, yhi)[,
+    (zlo, zhi)]) — a box that stays put — or a list of rows (step, (xlo, xhi),
+    …) giving it per timestep. Each box means exactly what region(x=(lo, hi),
+    …) means at its timestep. Returns {"ranges"} for one box that stays put
+    (it IS that fixed box), {"step_ranges"} for one box per timestep,
+    {"tag_ranges"} for named boxes (in the order written). `ndim` fixes the
+    box dimension when it is known (a track file's header). Shared with the
+    track-file reader so both enforce the same rules."""
+    if isinstance(bounds, dict):
+        tags = list(bounds)
+        _check_tags(tags, where, what="boxes")
+        boxes = {t: _bounds_box(bounds[t], f"{where} tag {t!r}") for t in tags}
+    else:
+        boxes = {None: _bounds_box(bounds, where)}
+    dims = set()
+    for kind, v in boxes.values():
+        dims |= {len(v)} if kind == "fixed" else {len(r) - 1 for r in v}
+    if ndim is None:
+        if len(dims & {2, 3}) > 1:
+            raise ValueError(f"{where}: boxes disagree on 2-D vs 3-D; every box "
+                             f"needs the same number of (lo, hi) pairs")
+        ndim = (dims & {2, 3}).pop() if dims & {2, 3} else None
+    out = []
+    for t, (kind, v) in boxes.items():
+        tw = where if t is None else f"{where} tag {t!r}"
+        if kind == "fixed":
+            rows = ((None, _bounds_ranges(v, ndim, tw)),)
+        else:
+            rows = _bounds_rows(v, ndim, tw)
+        out.append((t, rows))
+    if isinstance(bounds, dict):
+        return {"tag_ranges": tuple(out)}
+    rows = out[0][1]
+    if rows[0][0] is None:
+        return {"ranges": rows[0][1]}
+    return {"step_ranges": rows}
+
+
+def _mixed_tags(center, bounds, size, coords, node):
+    """center={…} and bounds={…} in one region: named boxes of both kinds, the
+    centre tags first. size= sizes the centre tags only."""
+    if not (isinstance(center, dict) and isinstance(bounds, dict)):
+        raise ValueError("region(): center= and bounds= together only name boxes: "
+                         "give both as {tag: …} dicts with different tags, e.g. "
+                         "center={\"a\": (x, y, z)}, size=s, bounds={\"b\": ((xlo, "
+                         "xhi), (ylo, yhi), (zlo, zhi))}; otherwise give one of them")
+    clash = sorted({t.lower() for t in center if isinstance(t, str)}
+                   & {t.lower() for t in bounds if isinstance(t, str)})
+    if clash:
+        raise ValueError(f"region(): tag(s) {', '.join(map(repr, clash))} appear in "
+                         f"both center= and bounds=; a name holds one box — rename "
+                         f"one, or give it in one of them")
+    if isinstance(size, dict):
+        named = [t for t in size if t in bounds]
+        if named:
+            raise ValueError(f"region(size=...): {', '.join(map(repr, named))} "
+                             f"is a bounds box, which needs no size; size= covers "
+                             f"the center= tags only")
+    tags = resolve_center(center, size)["tags"]
+    tag_ranges = resolve_bounds(bounds)["tag_ranges"]
+    return RegionNode(upstream=node, tags=tags, tag_ranges=tag_ranges, coords=coords)
+
+
 COORDS = ("world", "cells")
 
 
-def region(node, center=None, size=None, track=None, coords=None, **axes):
+def region(node, center=None, size=None, track=None, coords=None, bounds=None,
+           **axes):
     """Spatial selection — "which part of the box", in the data's OWN
     coordinates: the ones ParaView shows on its axes.
 
@@ -335,6 +495,21 @@ def region(node, center=None, size=None, track=None, coords=None, **axes):
                                            one output per tag. size= may then
                                            be {tag: size}.
 
+    Or give a box by its bounds — the box x=(lo, hi), … writes, at each
+    timestep it names. `bounds` is shaped like `center`, one (lo, hi) pair per
+    axis in x, y[, z] order (None open-ended, (None, None) the whole axis):
+
+        ((xlo, xhi), (ylo, yhi)[, (zlo, zhi)])    one box (as x=, y=, z=)
+        [(step, (xlo, xhi), …), …]               a box per timestep
+        "boxes.csv"                              the same rows from a file
+                                                 (header step,xmin,xmax,ymin,
+                                                 ymax[,zmin,zmax])
+        {tag: either of the first two}           several NAMED boxes
+
+    No size= (a bounds box already says its extent), except beside
+    center={tag: …}: centre tags and bounds tags may share one region when
+    their names differ, the centre tags' outputs first.
+
     A track file names its boxes with a leading `tag` column. The file is read
     by the planner, not here — forms read no data. (`track=` is the older
     spelling of center="track.csv".)"""
@@ -343,6 +518,8 @@ def region(node, center=None, size=None, track=None, coords=None, **axes):
         raise ValueError(f"region(coords={coords!r}): expected one of "
                          f"{', '.join(repr(c) for c in COORDS)}, or leave it out "
                          f"to use the data's own coordinates")
+    if bounds is not None:
+        return _region_bounds(node, bounds, center, size, track, coords, axes)
     if isinstance(center, str):
         if track is not None:
             raise ValueError("region(): give the track file once, as center=")
@@ -385,6 +562,33 @@ def region(node, center=None, size=None, track=None, coords=None, **axes):
             raise ValueError(f"region({axis}=({lo},{hi})): need lo < hi")
         ranges.append((axis, lo, hi))
     return RegionNode(upstream=node, ranges=tuple(ranges), coords=coords)
+
+
+def _region_bounds(node, bounds, center, size, track, coords, axes):
+    """region(bounds=...): the checks on what may come with it, then the box."""
+    if axes:
+        raise ValueError(f"region(): give the box once — as bounds= or as axis "
+                         f"ranges ({', '.join(f'{a}=' for a in axes)}), not both")
+    if track is not None:
+        raise ValueError("region(): track= is a centre file; a min/max file is "
+                         "bounds=\"….csv\" alone")
+    if center is not None:
+        if isinstance(center, str) or isinstance(bounds, str):
+            raise ValueError("region(): center= and bounds= together only name "
+                             "boxes inline ({tag: …} dicts); a track file is given "
+                             "alone — put every box in one file, or write both "
+                             "dicts in the spec")
+        return _mixed_tags(center, bounds, size, coords, node)
+    if size is not None:
+        raise ValueError("region(bounds=..., size=...): a bounds box already says "
+                         "its extent, so it takes no size; drop size=, or place "
+                         "the box by its centre with center=")
+    if isinstance(bounds, str):
+        if not bounds:
+            raise TypeError("region(bounds=...): expected a CSV path, got ''")
+        return RegionNode(upstream=node, track=bounds, track_kind="bounds",
+                          coords=coords)
+    return RegionNode(upstream=node, coords=coords, **resolve_bounds(bounds))
 
 
 def subsample(node, factor=None, **axes):

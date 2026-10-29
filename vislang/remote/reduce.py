@@ -364,10 +364,19 @@ def _narrow_key(middle, label=None):
 
     A per-timestep region keys on THIS timestep's centre and size (`label`), so
     two timesteps — or two tracks — never share an extent. The `region_at` form
-    is not a plain crop, so the catalog reuses it on an exact match only."""
+    is not a plain crop, so the catalog reuses it on an exact match only. A box
+    given by its bounds keys on this timestep's ranges as `region_box_at`, also
+    exact only: it is clipped to the grid after the key is made."""
     forms = []
     for n in middle:
-        if n.kind == "region" and n.per_step:
+        if n.kind == "region" and n.per_step and n.step_ranges:
+            from vislang.interpreter.track import ranges_at
+            ranges = ranges_at(n, label)
+            if ranges is None:
+                raise ValueError(f"region: no box for timestep #{label}")
+            forms.append([_region_form(n, "region_box_at"),
+                          [[a, lo, hi] for a, lo, hi in ranges]])
+        elif n.kind == "region" and n.per_step:
             from vislang.interpreter.track import box_at
             at = box_at(n, label)
             if at is None:
@@ -421,6 +430,11 @@ def _stale_remote_hint(detail):
     if "unknown ['coords']" in text:
         return (f"{text} — the remote checkout predates region(coords=…); update "
                 f"it: git pull in VISLANG_REMOTE_REPO")
+    if "unknown [" in text and any(f"'{k}'" in text for k in
+                                   ("step_ranges", "tag_ranges", "track_kind")):
+        return (f"{text} — the remote checkout predates boxes given by their "
+                f"bounds (region(bounds=…)); update it: git pull in "
+                f"VISLANG_REMOTE_REPO")
     if "unknown ['tags']" in text or "has no attribute 'items'" in text:
         return (f"{text} — the remote checkout predates named boxes "
                 f"(region(center={{tag: …}})); update it: git pull in "
@@ -1099,7 +1113,7 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
     meta = _parse_meta(out)
     if meta is None or not meta.get("ok", False):
         detail = (meta or {}).get("error") or err.strip()[-_ERR_TAIL:] or f"rc={rc}"
-        raise RuntimeError(f"remote reduce failed: {detail}")
+        raise RuntimeError(f"remote reduce failed: {_stale_remote_hint(detail)}")
 
     # The remote ran its OWN plan_pipeline (same tracing code) — surface what it
     # actually did, not just that it ran (mirrors the folder path's local:/remote:
