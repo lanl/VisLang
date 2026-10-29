@@ -48,6 +48,12 @@ every point inside it — a block that may also hold points outside, since the
 grid's rows do not follow the box. A box reaching past the grid is clipped to
 it, and the clip is reported; a box holding no sample raises.
 
+**Cells are whole indices.** A cell bound written as a whole-number float
+(`x=(2.0, 6.0)`, as a CSV or arithmetic gives it) is read as `x=(2, 6)`; a
+fraction (`x=(2.5, 6)`) raises before any read and names the two whole boxes
+nearest it (`x=(2, 6)` or `x=(3, 6)`) — it is never rounded for you. World
+coordinates have no such rule.
+
 **`coords=` pins the meaning** where it matters, so a spec does not change
 meaning when it runs on another file:
 - `coords="cells"` — cell indices `[a:b)`, even on a grid with geometry.

@@ -424,10 +424,117 @@ def test_cell_placement():
             os.environ.pop(k, None)
 
 
+def test_whole_cells():
+    """Cells are whole indices: 6.0 is cell 6, a fraction is refused before any
+    read with the two whole boxes nearest it — never rounded."""
+    print("== cells are whole indices ==")
+    import h5py
+    from vislang.interpreter import load
+    d = os.path.join(TMP, "wcells")
+    os.makedirs(d)
+    full = np.arange(16 ** 3, dtype=np.float32).reshape(16, 16, 16)
+    for t in (1, 2):
+        with h5py.File(os.path.join(d, f"snap#{t}.hdf5"), "w") as f:
+            f.create_dataset("rho", data=full + t)
+    f1 = os.path.join(d, "snap#1.hdf5")
+
+    def rho(path):
+        with np.load(path) as z:
+            return z["rho"]
+    run(save(region(source(f1), x=(2.0, 6.0), y=(0.0, 4)), os.path.join(TMP, "wf.npz")))
+    run(save(region(source(f1), x=(2, 6), y=(0, 4)), os.path.join(TMP, "wi.npz")))
+    check("x=(2.0, 6.0) is x=(2, 6)", np.array_equal(rho(os.path.join(TMP, "wf.npz")),
+                                                    rho(os.path.join(TMP, "wi.npz"))))
+    run(save(region(timesteps(source(d), 1, 2),
+                    bounds=[(1, (2.0, 6.0), (0, 4), (0, 16)), (2, (2, 6), (0, 4), (0, 16))]),
+             os.path.join(TMP, "wb.npz")))
+    check("a bounds row in whole floats is the same box",
+          np.array_equal(rho(os.path.join(TMP, "wb", "timestep#1.npz")) - 1,
+                         rho(os.path.join(TMP, "wb", "timestep#2.npz")) - 2))
+
+    reads = []
+    orig = load._read
+    load._read = lambda *a, **k: reads.append(a[0].filepath) or orig(*a, **k)
+    try:
+        raises("a fractional bound is refused, with what to write",
+               lambda: run(save(region(source(f1), x=(2.5, 6)), os.path.join(TMP, "w1.npz"))),
+               "region: x=(2.5, 6) is in cells, which are whole indices [lo, hi) — write "
+               "x=(2, 6) or x=(3, 6); a fraction is not rounded")
+        raises("both ends fractional: the outward and the inward box",
+               lambda: run(save(region(source(f1), x=(2.5, 6.5)), os.path.join(TMP, "w2.npz"))),
+               "write x=(2, 7) or x=(3, 6)")
+        raises("an open end stays None",
+               lambda: run(save(region(source(f1), x=(None, 6.5)), os.path.join(TMP, "w3.npz"))),
+               "write x=(None, 7) or x=(None, 6)")
+        raises("coords='cells' is held to it too",
+               lambda: run(save(region(source(f1), x=(1, 3.25), coords="cells"),
+                                os.path.join(TMP, "w4.npz"))), "x=(1, 3.25)")
+        raises("a bounds row names its timestep",
+               lambda: run(save(region(timesteps(source(d), 1, 2),
+                                       bounds=[(1, (2, 6), (0, 4), (0, 4)),
+                                               (2, (2, 6), (0.5, 4), (0, 4))]),
+                                os.path.join(TMP, "w5.npz"))),
+               "region at timestep #2: y=(0.5, 4)")
+        raises("a named bounds box names its tag",
+               lambda: run(save(region(source(d), bounds={"a": ((0, 4), (0, 4), (0, 4.5))}),
+                                os.path.join(TMP, "w6.npz"))),
+               "box 'a': region: z=(0, 4.5)")
+        csv = os.path.join(TMP, "wfrac.csv")
+        with open(csv, "w") as fh:
+            fh.write("step,xmin,xmax,ymin,ymax,zmin,zmax\n1,2,6,0,4,0,4\n2,2,6.5,0,4,0,4\n")
+        raises("a min/max file is held to it",
+               lambda: run(save(region(source(d), bounds=csv), os.path.join(TMP, "w7.npz"))),
+               "x=(2, 6.5)")
+    finally:
+        load._read = orig
+    check("nothing read for any refusal", reads == [], reads)
+    check("nothing written", not any(os.path.exists(os.path.join(TMP, f"w{i}"))
+                                     or os.path.exists(os.path.join(TMP, f"w{i}.npz"))
+                                     for i in range(1, 8)))
+    check("a centre box is unaffected (rounded to whole cells, as documented)",
+          run(save(region(source(f1), center=(4.5, 4.5, 4.5), size=3),
+                   os.path.join(TMP, "wc.npz")))["materialized"])
+
+    from vislang.interpreter.narrowing import Narrowing, AxisRange, validate_narrowing
+    from vislang.formats.inspect import inspect_file
+    n = Narrowing()
+    n.grid_ranges = [AxisRange(2.5, 6, 1), AxisRange(None, None, 1), AxisRange(None, None, 1)]
+    raises("the static check refuses a fractional slice from any route",
+           lambda: validate_narrowing(inspect_file(f1), n), "whole indices")
+
+    _install_fake_remote()
+    os.environ["VISLANG_CACHE"] = os.path.join(TMP, "wcache")
+    os.environ["VISLANG_REMOTE"] = "force"
+    os.environ["VISLANG_REMOTE_TMP"] = os.path.join(TMP, "wremote_tmp")
+    os.makedirs(os.environ["VISLANG_REMOTE_TMP"])
+    try:
+        # Cold cache: the host holds no schema yet, so (as for every static
+        # check) the remote side refuses it — with the same message.
+        f2 = os.path.join(d, "snap#2.hdf5")
+        raises("remote, cold: refused by the remote with the same message",
+               lambda: run(save(region(fields(source(f"u@fakehost:{f2}"), ["rho"]),
+                                       x=(2.5, 6)), os.path.join(TMP, "wr0.npz"))),
+               "x=(2.5, 6) is in cells")
+        run(save(region(fields(source(f"u@fakehost:{f1}"), ["rho"]), x=(2.0, 6.0)),
+                 os.path.join(TMP, "wr2.npz")))
+        check("remote: whole floats cut the same box",
+              np.array_equal(rho(os.path.join(TMP, "wr2.npz")), full[2:6] + 1))
+        n0 = len(EXECS)
+        raises("remote, schema cached: refused on the host",
+               lambda: run(save(region(fields(source(f"u@fakehost:{f1}"), ["rho"]),
+                                       x=(2.5, 6)), os.path.join(TMP, "wr.npz"))),
+               "x=(2.5, 6) is in cells")
+        check("remote, schema cached: no job launched", len(EXECS) == n0, len(EXECS) - n0)
+    finally:
+        for k in ("VISLANG_CACHE", "VISLANG_REMOTE", "VISLANG_REMOTE_TMP"):
+            os.environ.pop(k, None)
+
+
 if __name__ == "__main__":
     test_form_and_wire()
     test_conversion()
     test_local()
     test_remote()
     test_cell_placement()
+    test_whole_cells()
     print(f"\nall {len(PASS)} checks passed")

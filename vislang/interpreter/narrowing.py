@@ -336,6 +336,12 @@ def validate_narrowing(info, n):
             raise ValueError(f"region/subsample: dataset grid {grid!r} does not have "
                              f"{len(n.grid_ranges)} axes")
         for ax, (r, size) in enumerate(zip(n.grid_ranges, grid)):
+            for b in (r.start, r.stop):
+                # coords.py makes cell bounds whole; this guards any route
+                # that skipped it, so the read never gets a fractional slice.
+                if b is not None and (isinstance(b, bool) or not isinstance(b, int)):
+                    raise ValueError(f"region axis {ax}: cell bounds must be whole "
+                                     f"indices, got [{r.start}:{r.stop}]")
             a = 0 if r.start is None else r.start
             b = size if r.stop is None else r.stop
             if not (0 <= a < b <= size):

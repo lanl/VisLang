@@ -26,6 +26,7 @@ Resolution is idempotent: a region already in "index" passes through.
 """
 
 import dataclasses
+import math
 
 from vislang.dsl.nodes import RegionNode
 from vislang.formats.dataset_info import in_cells, world_box_to_cells
@@ -131,7 +132,11 @@ def _cells_to_index(info, node, steps, label):
     """A region in cells as the file's own array indices. Plain cells already
     are; a file Sieve placed among its source's cells counts them from its
     origin, every `spacing` (its stride) — so the numbers keep meaning the
-    source's cells, which is also what a viewer's axes show for it."""
+    source's cells, which is also what a viewer's axes show for it.
+
+    Cells are whole indices: a bound like 6.0 is read as 6, and a fraction is
+    refused here — before any read — rather than rounded one way or the other."""
+    node = _whole_cells(node)
     geometry = getattr(info, "geometry", None)
     if not in_cells(geometry) or (all(v == 0 for v in geometry["origin"])
                                   and all(v == 1 for v in geometry["spacing"])):
@@ -176,6 +181,55 @@ def _cells_to_index(info, node, steps, label):
           + " (source cells) -> this file's indices "
           + ", ".join(f"{a} [{b}:{e}]" for a, b, e in ranges))
     return dataclasses.replace(node, ranges=tuple(ranges), coords="index")
+
+
+def _whole_cells(node):
+    """`node` with its cell bounds as ints: a whole-number float (6.0, from a
+    CSV or arithmetic) names one cell exactly, so it becomes 6; a fraction
+    (2.5) has no one meaning in cells [lo, hi) and raises, saying what to write.
+    Covers the fixed box and boxes given by their bounds; a centre-placed box
+    is rounded to whole cells by box_for_step, as documented."""
+    def as_int(b):
+        if b is None or (isinstance(b, int) and not isinstance(b, bool)):
+            return b
+        return int(b) if float(b).is_integer() else None
+
+    def text(v):
+        return "None" if v is None else f"{v:g}"
+
+    def whole(ranges, lab=None, tag=None):
+        out = []
+        for axis, lo, hi in ranges:
+            new = [as_int(b) for b in (lo, hi)]
+            if any(b is not None and v is None for b, v in zip((lo, hi), new)):
+                # The box rounded outward and inward — the two whole boxes
+                # nearest what was written; the spec says which it meant.
+                fl = lambda v, f: None if v is None else int(f(v))
+                alts = []
+                for a, b in ((fl(lo, math.floor), fl(hi, math.ceil)),
+                             (fl(lo, math.ceil), fl(hi, math.floor))):
+                    if (a is None or b is None or a < b) and (a, b) not in alts:
+                        alts.append((a, b))
+                who = ("region" + (f" box {tag!r}" if tag else "")
+                       + (f" at timestep #{lab}" if lab is not None else ""))
+                raise ValueError(
+                    f"{who}: {axis}=({text(lo)}, {text(hi)}) is in cells, which are "
+                    f"whole indices [lo, hi) — write "
+                    + " or ".join(f"{axis}=({text(a)}, {text(b)})" for a, b in alts)
+                    + "; a fraction is not rounded. (On a grid that states where it "
+                    "sits, coords='world' reads the numbers as positions.)")
+            out.append((axis, *new))
+        return tuple(out)
+    changes = {}
+    if node.ranges:
+        changes["ranges"] = whole(node.ranges)
+    if node.step_ranges:
+        changes["step_ranges"] = tuple((lab, whole(r, lab)) for lab, r in node.step_ranges)
+    if node.tag_ranges:
+        changes["tag_ranges"] = tuple(
+            (t, tuple((lab, whole(r, lab, t)) for lab, r in rows))
+            for t, rows in node.tag_ranges)
+    return dataclasses.replace(node, **changes) if changes else node
 
 
 def _grid_axis(axis, grid):
