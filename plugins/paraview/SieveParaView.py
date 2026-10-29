@@ -79,6 +79,15 @@ def _memo():
     return _STATE["memo"]
 
 
+def _objects():
+    """Every live Sieve object in this process (held weakly: a deleted one
+    drops out)."""
+    if "objects" not in _STATE:
+        import weakref
+        _STATE["objects"] = weakref.WeakSet()
+    return _STATE["objects"]
+
+
 def _sync():
     return os.environ.get("SIEVE_PV_SYNC") == "1"
 
@@ -201,14 +210,30 @@ class _Sieve(VTKPythonAlgorithmBase):
         self._kick = False           # a button asked for a pipeline pass
         self._cancelled = None       # the request Cancel stopped: not asked again
         self._shown_text = None      # the (status, spec) the panel last read
+        _objects().add(self)
 
     def _key(self, params):
         return core.request_key(self.KIND, (self._desc or {}).get("uri"), params)
 
     # -- the live-source hook: ParaView's GUI calls this on a timer ------------
     def GetNeedsUpdate(self, *args):
-        runner = _runner()
-        runner.tick()
+        """ParaView 6.1's GUI times only sources, never a filter (a Sieve
+        Detail): each tick advances every Sieve object, and one that changed
+        but is not this one is marked modified here — saying yes for it has
+        ParaView update the pipelines and render the views it shows in."""
+        _runner().tick()
+        changed = False
+        for obj in list(_objects()):
+            if obj is self:
+                changed = self._step() or changed
+            elif obj._step():
+                obj.Modified()
+                changed = True
+        return changed
+
+    def _step(self):
+        """One tick of this object: hand over a finished request, refresh the
+        running status and the panel. True when its output must update."""
         changed = self._poll()
         import time
         if not changed and self._job is not None and self._job.state == "running" \
@@ -889,7 +914,7 @@ class SieveDetail(_Sieve):
 
     NAME = "detail"
     KIND = "detail"
-    PANEL = ("SetBoxPosition", "SetBoxLength", "_region_group", "GetFieldSelection",
+    PANEL = ("SetBoxPosition", "SetBoxLength", "SetUseReferenceBounds", "_region_group", "GetFieldSelection",
              "SetStride", "SetValueFilter", "SetBudgetGB", "SetBudgetMinutes",
              "GetStatus", "GetSpec", "FetchAnyway", "Cancel", "PromoteToSpec")
 
@@ -898,6 +923,8 @@ class SieveDetail(_Sieve):
         self._stride = 1
         self._pos = [0.0, 0.0, 0.0]
         self._len = [1.0, 1.0, 1.0]
+        self._use_ref = False
+        self._ref = None             # the input's bounds (the widget's reference)
 
     def FillInputPortInformation(self, port, info):
         info.Set(self.INPUT_REQUIRED_DATA_TYPE(), "vtkDataObject")
@@ -943,19 +970,38 @@ class SieveDetail(_Sieve):
         self._len = [x, y, z]
         self.Modified()
 
+    # Without this switch in its group, ParaView's box widget reads Position
+    # and Scale against the input's bounds (box = Position + Scale * bounds);
+    # stated and off, they are the box's corner and size, as the panel says.
+    @smproperty.xml('''<IntVectorProperty name="UseReferenceBounds"
+        label="Relative To Input" command="SetUseReferenceBounds"
+        number_of_elements="1" default_values="0"><BooleanDomain name="bool"/>
+        <Documentation>Off: Box Corner and Box Size are the box itself. On: they
+        move and scale the input's bounds.</Documentation></IntVectorProperty>''')
+    def SetUseReferenceBounds(self, v):
+        self._use_ref = bool(v)
+        self.Modified()
+
     # The widget group must come after the properties it names (see PANEL).
     @smproperty.xml('''<PropertyGroup label="Region" panel_widget="InteractiveBox">
         <Property function="Position" name="BoxPosition"/>
         <Property function="Scale" name="BoxLength"/>
+        <Property function="UseReferenceBounds" name="UseReferenceBounds"/>
         <Property function="Input" name="Input"/>
         </PropertyGroup>''')
     def _region_group(self):
         pass
 
     def _box(self):
-        lo = [min(p, p + l) for p, l in zip(self._pos, self._len)]
-        hi = [max(p, p + l) for p, l in zip(self._pos, self._len)]
-        return {"lo": lo, "hi": hi}
+        if self._use_ref and self._ref is not None:
+            # vtkPVBox: each point of the reference box, scaled, then moved.
+            a = [self._pos[i] + self._len[i] * self._ref[2 * i] for i in range(3)]
+            b = [self._pos[i] + self._len[i] * self._ref[2 * i + 1] for i in range(3)]
+        else:
+            a = list(self._pos)
+            b = [p + l for p, l in zip(self._pos, self._len)]
+        return {"lo": [min(x, y) for x, y in zip(a, b)],
+                "hi": [max(x, y) for x, y in zip(a, b)]}
 
     def RequestUpdateExtent(self, request, inInfo, outInfo):
         # This output is fetched, not computed from the input: ask the input
@@ -973,8 +1019,9 @@ class SieveDetail(_Sieve):
                             "Detail): it needs to know which data the box is on.")
             return 1
         self._desc = desc
-        box = self._box()
         bounds = source.GetBounds() if hasattr(source, "GetBounds") else None
+        self._ref = bounds
+        box = self._box()
         if bounds is not None and _covers(box, bounds):
             self._status = ("Drag the box over a feature (or type its corner and "
                             "size), then Apply — that box comes at full resolution.")

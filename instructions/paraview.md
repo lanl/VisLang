@@ -35,6 +35,11 @@ they sit (bounds rounded outward, never inward), cells on grids that do not
 details of grids with no geometry are placed in their source's cells, so they
 overlay exactly. See `dsl-reference.md` → `region`.
 
+Box Corner and Box Size are the box itself. ParaView's box widget would read
+them against the input's bounds (box = corner + size × bounds) unless told
+otherwise; *Relative To Input* (off by default) is that switch, and when on the
+plugin applies the same transform.
+
 ## How it runs
 
 The plugin never imports Sieve. Each request is one `sieve api run` process

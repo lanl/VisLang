@@ -121,6 +121,15 @@ check("the detail is the box, at full resolution",
       bounds(d) == [110.5, 119.5, 10.0, 30.0, 2.0, 33.0], bounds(d))
 check("its spec names world coordinates",
       "coords='world'" in spec(d) and "subsample" not in spec(d), spec(d))
+dr = SieveDetail(Input=s)
+dr.RelativeToInput = 1             # corner + size * the overview's bounds
+dr.BoxCorner, dr.BoxSize = [60.0, 6.0, 0.0], [0.5, 0.25, 1.0]
+da = SieveDetail(Input=s)
+da.BoxCorner, da.BoxSize = [110.0, 5.0, 2.0], [15.5, 23.0, 30.0]
+check("a box relative to the input is the box ParaView draws",
+      bounds(dr) == bounds(da) and bounds(dr)[0] == 110.0, (bounds(dr), bounds(da)))
+Delete(dr)
+Delete(da)
 d2 = SieveDetail(Input=s)
 check("an untouched box asks for nothing", "Drag the box" in status(d2) or
       bounds(d2) == [1.0, -1.0, 1.0, -1.0, 1.0, -1.0], status(d2))
@@ -294,6 +303,22 @@ a.SMProxy.InvokeCommand("FetchOverview")
 tick(a, 10.0)
 check("Fetch Overview asks again after a cancel",
       len(steps()) == n + 1 and "Fetched" in status(a), status(a))
+
+# ParaView's GUI times only sources: a detail's result must come through its
+# source's tick, never its own.
+ad = SieveDetail(Input=a)
+ad.BoxCorner, ad.BoxSize = [110.2, 10.0, 0.0], [9.6, 20.0, 99.0]
+ad.UpdatePipeline()
+t0 = time.time()
+while time.time() - t0 < 60 and ad.GetDataInformation().GetNumberOfPoints() == 0:
+    if algo.GetNeedsUpdate():
+        a.SMProxy.MarkModified(a.SMProxy)
+        ad.UpdatePipeline()
+    time.sleep(0.1)
+check("a detail's result arrives through its source's tick alone",
+      bounds(ad) == [110.5, 119.5, 10.0, 30.0, 2.0, 33.0] and "Fetched" in status(ad),
+      (bounds(ad), status(ad)))
+Delete(ad)
 os.environ["SIEVE_PV_SYNC"] = "1"
 
 print("== choosing the timesteps ==")
