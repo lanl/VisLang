@@ -225,18 +225,24 @@ Note that `uv sync` makes the environment match exactly, so a later plain
 `uv sync` removes the extra again — keep `--extra trame` on subsequent syncs.
 
 ```json
-"args": ["-m", "siva.server", "--trame", "--workdir", "/path/to/your/data"]
+"args": ["-m", "siva.server", "--trame", "--trame-port", "8765",
+         "--workdir", "/path/to/your/data"]
 ```
 
 When the first view is ready, the AI relays a URL for the **view index
-page** — one stable page listing every live view, updating as views are
-added. Open it once and keep the tab; each view opens in its own tab where
-you can rotate, zoom, and inspect while the AI edits the pipeline. The AI
-can repeat the URL via `view_url()`; it's also in `.siva/server.log`.
+page** — here `http://localhost:8765/views`, one stable page listing every
+live view, updating as views are added. Open it once and keep the tab; each
+view opens in its own tab where you can rotate, zoom, and inspect while the AI
+edits the pipeline. The AI can repeat the URL via `view_url()`; it's also in
+`.siva/server.log`.
 
-You can configure the port trame serves on with `--trame-port <N>`, and change
-the interface the trame server binds to with `--trame-host <ip>`. In a headless
-environment, the server must be run with `xvfb-run -a`.
+`--trame-port` pins the port everything is served on. Without it the server
+picks a free port at random each time it starts, so the URL changes whenever
+your assistant restarts the MCP server (e.g. on an editor reload); pinning it
+keeps one bookmarkable URL. If the port is already in use the server fails to
+start — pick another. You can change the interface the trame server binds to
+with `--trame-host <ip>`. In a headless environment, the server must be run
+with `xvfb-run -a`.
 
 ## Sample data
 
