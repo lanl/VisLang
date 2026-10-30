@@ -84,6 +84,15 @@ def structured_pending():
     return {"kind": "structured", "points": None}
 
 
+def sampled_geometry(points, steps):
+    """A curvilinear grid known only by every `steps`-th point on each axis,
+    from index 0 — the positions an overview brought back. For PRICING a world
+    box only: world_box_to_cells estimates the block the box selects on it (see
+    _sampled_box_to_cells). A cut is always placed on the file's own points."""
+    return {"kind": "structured", "points": None, "sample": np.asarray(points),
+            "sample_steps": tuple(int(s) for s in steps)}
+
+
 def narrowed_geometry(geometry, grid_ranges):
     """`geometry` as it applies to a block cut out by `grid_ranges`.
 
@@ -260,6 +269,9 @@ def world_box_to_cells(geometry, grid, box):
     if geometry.get("kind") == "uniform":
         return _uniform_box_to_cells(geometry, grid, box)
     if geometry.get("kind") == "structured":
+        if geometry.get("points") is None and geometry.get("sample") is not None:
+            return _sampled_box_to_cells(geometry["sample"], geometry["sample_steps"],
+                                         grid, box)
         if geometry.get("points") is None:
             raise ValueError("this grid's point positions are not read yet")
         return _structured_box_to_cells(np.asarray(geometry["points"]), grid, box)
@@ -323,6 +335,94 @@ def _structured_box_to_cells(points, grid, box):
         start, stop = int(hits[0]), int(hits[-1]) + 1
         if (start, stop) != (0, grid[axis]):
             cells[axis] = (start, stop)
+    return cells, clipped
+
+
+_SAMPLED_BLOCKS = {}          # (sample digest, steps, grid, box) -> block: a
+                              # series sharing one terrain sizes its box once
+
+
+def _sampled_box_to_cells(sample, steps, grid, box):
+    """An estimate of the block a world box selects, from every `steps`-th point.
+
+    The sampled points are interpolated linearly back to every grid index (the
+    last sampled layer carried on linearly to the grid's last index), one slab
+    at a time, and the block is taken on those positions as on real ones, then
+    widened by one grid index on every side. On a grid that bends smoothly
+    between samples — terrain sampled finer than its hills — that is the exact
+    block or a little more; a grid that bends within a sampled cell can select
+    points it misses, which is why this prices a request and never cuts one.
+    Unsampled at stride 1, it is the exact block."""
+    import hashlib
+    sample = np.asarray(sample)
+    steps = tuple(int(s) for s in steps)
+    if len(steps) != len(grid) or len(grid) != 3 or sample.shape[:-1] != tuple(
+            -(-n // s) for n, s in zip(grid, steps)):
+        raise ValueError(f"the sampled points {sample.shape[:-1]} at every {steps} "
+                         f"do not cover this grid {grid}")
+    if all(s == 1 for s in steps):
+        return _structured_box_to_cells(sample, grid, box)
+    key = (hashlib.sha1(np.ascontiguousarray(sample).tobytes()).hexdigest(), steps,
+           tuple(grid), tuple(sorted(box.items())))
+    if key in _SAMPLED_BLOCKS:
+        return _SAMPLED_BLOCKS[key]
+    for axis, (lo, hi) in sorted(box.items()):
+        # Wholly past every sampled point: only the unsampled edge layers (the
+        # extrapolated ones) could be inside, and extrapolation is no measure.
+        c = sample[..., axis] if axis <= 2 else None
+        if c is not None and ((lo is not None and lo > c.max())
+                              or (hi is not None and hi < c.min())):
+            raise ValueError(f"the box lies past every sampled point on "
+                             f"{'xyz'[axis]}; only the grid's own points place it")
+
+    def weights(n, s, m):
+        """Per grid index: the two sampled layers around it and the weight of
+        the second (past the last layer: carried on from the last two)."""
+        if m == 1:
+            z = np.zeros(n, dtype=int)
+            return z, z, np.zeros(n)
+        pos = np.arange(n) / s
+        lo = np.minimum(np.floor(pos).astype(int), m - 2)
+        return lo, lo + 1, pos - lo
+
+    (i0, i1, wi), (j0, j1, wj), (k0, k1, wk) = (
+        weights(n, s, m) for n, s, m in zip(grid, steps, sample.shape[:3]))
+    S = sample.astype(np.float32, copy=False)
+    # Along y and z for every sampled x layer; each grid x slab is then a blend
+    # of two of these — the full grid's positions are never held at once.
+    A = S[:, j0] * (1 - wj)[None, :, None, None] + S[:, j1] * wj[None, :, None, None]
+    A = A[:, :, k0] * (1 - wk)[None, None, :, None] + A[:, :, k1] * wk[None, None, :, None]
+    hit = [np.zeros(n, dtype=bool) for n in grid]
+    for i in range(grid[0]):
+        P = A[i0[i]] * (1 - wi[i]) + A[i1[i]] * wi[i]
+        inside = np.ones(P.shape[:2], dtype=bool)
+        for axis, (lo, hi) in box.items():
+            if axis > 2:
+                raise ValueError(f"world axis {axis} is not one of x, y, z")
+            if lo is not None:
+                inside &= P[..., axis] >= lo
+            if hi is not None:
+                inside &= P[..., axis] <= hi
+        if inside.any():
+            hit[0][i] = True
+            hit[1] |= inside.any(axis=1)
+            hit[2] |= inside.any(axis=0)
+    clipped = [("xyz"[a]) for a, (lo, hi) in sorted(box.items())
+               if (lo is not None and lo < sample[..., a].min())
+               or (hi is not None and hi > sample[..., a].max())]
+    if not hit[0].any():
+        spans = ", ".join(f"{'xyz'[a]} {sample[..., a].min():g} to "
+                          f"{sample[..., a].max():g}" for a in sorted(box))
+        raise ValueError(f"the box holds no grid point; the sampled points span {spans}")
+    cells = {}
+    for axis, n in enumerate(grid):
+        h = np.flatnonzero(hit[axis])
+        start, stop = max(0, int(h[0]) - 1), min(n, int(h[-1]) + 2)
+        if (start, stop) != (0, n):
+            cells[axis] = (start, stop)
+    if len(_SAMPLED_BLOCKS) > 256:
+        _SAMPLED_BLOCKS.clear()
+    _SAMPLED_BLOCKS[key] = (cells, clipped)
     return cells, clipped
 
 

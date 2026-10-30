@@ -607,7 +607,7 @@ def _probe_bandwidth(uri, steps):
 
 
 def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=1,
-                     schema_uri=None, plan=None):
+                     schema_uri=None, plan=None, sid=None):
     """Price a remote request WITHOUT running it — the `estimate` path.
 
     This is a dry run with a sink present, which is a different intent from a
@@ -628,7 +628,10 @@ def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=
 
     `schema_uri` names the file whose schema stands for the request (one timestep
     of a folder); `n_timesteps` scales the estimate over the series. Named boxes
-    are priced per tag; `plan` ({label: [tags]}) says which run where.
+    are priced per tag; `plan` ({label: [tags]}) says which run where. A world
+    box on a curvilinear grid is sized on the cached strided positions of the
+    file `sid` names, when there are some; the grid positions that cross with
+    a curvilinear cut are priced too.
     """
     from vislang.formats.inspect import inspect_source, SchemaUnavailable
     from vislang.interpreter.estimate import (estimate_plan_cost, estimate_boxes_cost,
@@ -659,10 +662,28 @@ def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=
     if tagged is None:
         with timing.phase("lower"):
             narrowing, _pending = _lower(info, middle, steps)   # raises on a bad request
+        from vislang.remote.reduce import (_unplaced_box, _sized_on_sample, _points_mb,
+                                           _sized_note)
+        dtype, sized = None, []
+        if _unplaced_box(info, middle):
+            from vislang.remote.catalog import ExtentCatalog
+            from vislang.runtime.paths import cache_root
+            got = _sized_on_sample(info, middle, None, ExtentCatalog(cache_root()), sid)
+            if got is not None:
+                narrowing, step, dtype = got
+            sized = _sized_note({step: 1} if got else {}, 0 if got else 1)
+        bw = _probe_bandwidth(src.uri, steps)
         estimate = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",
                                       n_timesteps=n_timesteps, sink_kind=sink.kind,
-                                      wire_vars=narrowing.project,
-                                      net_bw_bps=_probe_bandwidth(src.uri, steps))
+                                      wire_vars=narrowing.project, net_bw_bps=bw)
+        pts = _points_mb(info, narrowing, dtype)
+        if pts and estimate.read_mb is not None:
+            estimate = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",
+                                          n_timesteps=n_timesteps, sink_kind=sink.kind,
+                                          wire_vars=narrowing.project, net_bw_bps=bw,
+                                          read_mb_override=estimate.read_mb / max(
+                                              1, int(n_timesteps)) + pts)
+        estimate.notes += [n.replace("world box(es)", "world box") for n in sized]
     else:
         plan = plan or {None: tag_names(tagged)}
         counts, firsts = _tag_summary(plan)
@@ -910,10 +931,12 @@ def _lower(info, middle, steps, label=None):
                 # A world box this side could not place (a curvilinear grid's
                 # points are bulk data; an old schema did not say). The side
                 # that reads the file resolves it; here it neither crops nor
-                # fails, so the check and the price cover the whole grid.
+                # fails, so the check covers the whole grid. The price is sized
+                # on cached positions where an overview left some (see
+                # reduce._sized_on_sample), else it is the whole grid too.
                 steps.append(f"region {_region_text(node)} — world coordinates, "
-                             f"placed where the file is read; checked and priced "
-                             f"as the whole grid (an upper bound)")
+                             f"placed where the file is read; checked against the "
+                             f"whole grid")
             elif modality == "grid":
                 grid_region_nodes.append(node)   # structural index crop
                 steps.append(f"region {dict((a, (lo, hi)) for a, lo, hi in node.ranges)} "
@@ -1528,9 +1551,10 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, approval
                      f"{sum(f[2] for f in files) / (1024 ** 2):.0f} MiB of source")
         timing.note(selected_timesteps=len(files),
                     source_bytes=int(sum(f[2] for f in files)))
+        from vislang.remote.catalog import make_source_id
         return _estimate_remote(src, middle, sink, steps, mode, has_narrowing,
                                 n_timesteps=len(files), schema_uri=files[0][1],
-                                plan=plan)
+                                plan=plan, sid=make_source_id(*files[0][1:4]))
 
     # Execute: one remote job for the whole folder (gates mirror _plan_remote).
     steps = []

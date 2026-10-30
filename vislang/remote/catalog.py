@@ -259,6 +259,16 @@ class ExtentCatalog:
                             "shape": list(np.asarray(arr).shape),
                             "dtype": str(arr.dtype)})
 
+    def extents(self, source_id, var):
+        """The manifest entries cached for (source_id, var) — {narrow, shape,
+        dtype, …}, no arrays read; `read_extent` reads one."""
+        self._refresh()
+        return list(self._manifest["extents"].get(source_id, {}).get(var, []))
+
+    def read_extent(self, entry):
+        """The array behind an `extents` entry, or None when its file is lost."""
+        return self._read(entry)
+
     def _read(self, entry):
         try:
             return np.load(os.path.join(self.extent_dir, entry["file"]),

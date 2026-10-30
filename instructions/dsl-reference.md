@@ -70,7 +70,14 @@ cells a world box selected).
 A world box costs nothing extra on a uniform grid (origin + spacing are
 metadata). On a curvilinear grid the point positions are bulk data: a local
 run reads them to place the box, and a remote run places it next to the data,
-so the host checks and prices that box as the whole grid (an upper bound).
+so this side checks it against the whole grid. Its **price** follows the box
+when an overview of the same timesteps has cached the positions at a stride
+(the catalog keeps them with every cut): interpolated back to every index,
+they size the block, plus one cell each side — an estimate, said so in the
+estimate's notes; the cut itself is always placed on the file's own points.
+With no cached positions (or a box lying past every sampled point) the box is
+priced as the whole grid, an upper bound. The positions that cross with a
+curvilinear cut (three numbers per point) are priced too.
 
 ### A box placed by its centre: region(node, center=..., size=...)
 Give the box's centre and edge length instead of axis ranges. The box is

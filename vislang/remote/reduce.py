@@ -47,8 +47,10 @@ job name / partition), VISLANG_SRUN_ARGS (extra srun flags, default
 default "~/.vislang/reduce").
 """
 
+import copy
 import dataclasses
 import json
+import math
 import os
 
 import numpy as np
@@ -59,7 +61,7 @@ from vislang.interpreter.approval import Approval
 from vislang.formats.dataset_info import (DatasetInfo, GEOMETRY_KEY, decode_geometry,
                                           encode_geometry, geometry_from_arrays,
                                           geometry_from_descriptor)
-from vislang.remote.catalog import ExtentCatalog, make_source_id
+from vislang.remote.catalog import ExtentCatalog, make_source_id, _grid_ranges_of
 from vislang.remote.download import (establish_connection, transfer, transfer_dir,
                          _parse_remote, remote_stat, remote_header_hash, run_remote,
                          measure_bandwidth, host_reachable, connect_command)
@@ -632,7 +634,8 @@ def _check_before_shipping(src, prefix, schema, steps, label=None):
     return narrowing
 
 
-def _reduce_estimate(src, key, schema, missing, conn, steps, narrowing=None):
+def _reduce_estimate(src, key, schema, missing, conn, steps, narrowing=None,
+                     prefix=None, catalog=None, sid=None, points=False):
     """Estimate a single-file remote reduce's wire transfer and append a readable
     line to `steps`. Returns a CostEstimate; when the reduced size can't be known
     locally the estimate carries read_mb=None (over_budget False), so the caller
@@ -642,7 +645,10 @@ def _reduce_estimate(src, key, schema, missing, conn, steps, narrowing=None):
     local paths use. `narrowing` is the fused plan from the pre-ship static check
     (`_check_before_shipping`), i.e. the SAME lowering the read will perform, so
     the priced shape is the shape that gets read. Without one (no schema to check
-    against) it falls back to the catalog's own form-fuse."""
+    against) it falls back to the catalog's own form-fuse. A world box on a
+    curvilinear grid (`prefix`) is sized on the file's cached strided positions
+    when `catalog` holds some for `sid`; `points` adds the grid positions that
+    cross with the cut."""
     from vislang.interpreter.estimate import estimate_plan_cost, format_plan_estimate
     from vislang.formats.inspect import _dims_from_json
     from vislang.interpreter.narrowing import Narrowing, AxisRange
@@ -686,11 +692,25 @@ def _reduce_estimate(src, key, schema, missing, conn, steps, narrowing=None):
     else:
         note = "particle/unknown modality — reduced size not estimated; not gated."
 
+    sized, dtype = [], None
+    if info is not None and prefix is not None and _unplaced_box(info, prefix):
+        got = _sized_on_sample(info, prefix, None, catalog, sid)
+        if got is not None:
+            narrowing, step, dtype = got
+        sized = _sized_note({step: 1} if got else {}, 0 if got else 1)
+
     # No estimable shape -> a bare stub, so estimate_plan_cost reports read_mb
     # None (modality unknown) rather than pricing the whole grid.
     est = estimate_plan_cost(info=info or DatasetInfo(src.uri, "remote", []),
                              narrowing=narrowing, site="remote",
                              wire_vars=wire_vars, net_bw_bps=net_bw)
+    if points and info is not None and est.read_mb is not None:
+        pts = _points_mb(info, narrowing, dtype)
+        if pts:
+            est = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",
+                                     wire_vars=wire_vars, net_bw_bps=net_bw,
+                                     read_mb_override=est.read_mb + pts)
+    est.notes += sized
     if note:
         est.notes.append(note)
     steps.append(format_plan_estimate(est))
@@ -988,7 +1008,9 @@ def remote_reduce(src, middle, approval=None):
     if want is None or missing:
         with timing.phase("cost_estimate"):
             estimate = _reduce_estimate(src, key, schema, _data_vars(missing), conn,
-                                        steps, narrowing=checked)
+                                        steps, narrowing=checked, prefix=prefix,
+                                        catalog=catalog, sid=sid,
+                                        points=GEOMETRY_KEY in (missing or ()))
         if estimate is not None and estimate.over_budget and not approval.budget:
             raise BudgetHold(estimate, steps)
     else:
@@ -1155,34 +1177,149 @@ def _parse_meta(stdout_text):
 # ---------------------------------------------------------------------------
 # Whole-folder (timeseries) reduce: ONE remote job, ONE bundle pulled back
 # ---------------------------------------------------------------------------
-def _folder_estimate(src, schema, checked, missing, conn, n_timesteps):
+# ---------------------------------------------------------------------------
+# Pricing a world box on a curvilinear grid
+# ---------------------------------------------------------------------------
+# Such a box is placed next to the data, on the file's own point positions
+# (bulk data), so this side cannot say which cells it selects; it used to be
+# priced as the whole grid. An overview of the same file has usually cached
+# those positions at a stride: interpolated, they size the block the box
+# selects (dataset_info._sampled_box_to_cells), so the price follows the box.
+# The cut itself is still placed exactly, where the file is read.
+
+def _cached_sample(catalog, sid, grid):
+    """The finest cached strided copy of a file's point positions that spans
+    its whole grid from index 0, as (points, steps); None when there is none."""
+    best = None
+    for e in catalog.extents(sid, GEOMETRY_KEY):
+        ranges = _grid_ranges_of(e.get("narrow"), grid)
+        if ranges is None or len(ranges) != len(grid):
+            continue
+        steps = []
+        for (a, b, s), n in zip(ranges, grid):
+            s = 1 if s is None else s
+            if (a or 0) != 0 or (b is not None and b < n) \
+                    or not isinstance(s, int) or s < 1:
+                break
+            steps.append(s)
+        else:
+            shape = tuple(-(-n // s) for n, s in zip(grid, steps))
+            if tuple(e.get("shape") or ())[:-1] == shape and \
+                    (best is None or math.prod(steps) < math.prod(best[1])):
+                best = (e, steps)
+    if best is None:
+        return None
+    arr = catalog.read_extent(best[0])
+    geometry = decode_geometry(arr) if arr is not None else None
+    if not geometry or geometry.get("points") is None:
+        return None
+    return geometry["points"], tuple(best[1])
+
+
+def _unplaced_box(info, prefix):
+    """True when `prefix` holds a world box this side cannot place: a region
+    on a curvilinear grid whose points are not read here."""
+    g = getattr(info, "geometry", None) if info is not None else None
+    return bool(g) and g.get("kind") == "structured" and g.get("points") is None \
+        and any(n.kind == "region" and n.coords != "index" for n in prefix)
+
+
+def _sized_on_sample(info, prefix, label, catalog, sid):
+    """(narrowing, points dtype): `prefix` lowered with its world box placed on
+    the file's cached strided points — for the price only, recording nothing.
+    None when no cached points span the grid or the box cannot be placed on
+    them; the box is then priced as the whole grid."""
+    from vislang.formats.dataset_info import sampled_geometry
+    from vislang.interpreter.coords import resolve_regions
+    from vislang.interpreter.planner import _lower
+    grid = tuple(int(v) for v in ((info.dimensions or {}).get("grid") or ()))
+    if catalog is None or sid is None or len(grid) != 3:
+        return None
+    sample = _cached_sample(catalog, sid, grid)
+    if sample is None:
+        return None
+    priced = copy.copy(info)
+    priced.geometry = sampled_geometry(*sample)
+    try:
+        with provenance.paused():
+            placed = resolve_regions(priced, prefix, None, label=label)
+            narrowing, _ = _lower(priced, placed, [], label=label)
+    except Exception:
+        return None
+    return narrowing, sample[1], np.asarray(sample[0]).dtype
+
+
+def _points_mb(info, narrowing, dtype=None):
+    """MB of the point positions a curvilinear cut carries: three numbers per
+    selected point, in the cached positions' dtype (float32 when none is
+    cached). Zero for a grid placed by origin + spacing."""
+    from vislang.interpreter.estimate import _selected_grid_cells, _MB
+    g = getattr(info, "geometry", None)
+    grid = (info.dimensions or {}).get("grid")
+    if not g or g.get("kind") != "structured" or not grid:
+        return 0.0
+    itemsize = np.dtype(dtype).itemsize if dtype is not None else 4
+    return _selected_grid_cells(narrowing, tuple(grid)) * 3 * itemsize / _MB
+
+
+def _sized_note(sampled, whole):
+    """The estimate's notes on how its curvilinear boxes were sized."""
+    notes = []
+    if sampled:
+        steps = "/".join(sorted({"x".join(map(str, s)) for s in sampled}))
+        notes.append(f"{sum(sampled.values())} world box(es) sized on the grid "
+                     f"positions cached at stride {steps}, interpolated (+1 cell "
+                     f"each side) — an estimate; the cut itself is placed exactly "
+                     f"next to the data.")
+    if whole:
+        notes.append(f"{whole} world box(es) priced as the whole grid (an upper "
+                     f"bound): no cached positions span the grid — an overview of "
+                     f"the same timesteps lets the next request size them.")
+    return notes
+
+
+def _folder_estimate(src, schema, checked, missing, conn, n_timesteps,
+                     prefixes=None, catalog=None, per=None):
     """The CostEstimate of a folder delta: every missing (timestep, variable)
     pair priced at what its box selects on `schema` (timestep 0's — the series'
-    shared schema), summed. A box that could not be lowered here (no schema, or
-    a world box placed only next to the data) leaves the size unknown: the
-    estimate then says so and does not gate, as for a single file."""
+    shared schema), plus the grid positions where they cross too, summed. A
+    world box on a curvilinear grid is sized per timestep on that timestep's
+    cached strided positions when there are some (`prefixes`, `catalog`, `per`
+    give the chain, cache and source ids), else priced as the whole grid. A
+    box that could not be lowered here at all (no schema) leaves the size
+    unknown: the estimate then says so and does not gate, as for a single file."""
     from vislang.interpreter.estimate import estimate_plan_cost, _priced
     try:
         net_bw = measure_bandwidth(conn)
     except Exception:
         net_bw = None
     info = _info_from_schema(src.uri, schema) if schema else None
-    per_var, total, notes, unknown = {}, 0.0, [], False
+    total, notes, unknown = 0.0, [], False
+    sampled, whole = {}, 0
     for (label, tag), names in missing.items():
-        for var in _data_vars(names) or []:
-            if (tag, var) not in per_var:
-                narrowing = checked.get(tag)
-                if info is None or narrowing is None:
-                    per_var[(tag, var)] = None
-                else:
-                    per_var[(tag, var)] = estimate_plan_cost(
-                        info=info, narrowing=narrowing, site="remote",
-                        wire_vars=[var]).read_mb
-            mb = per_var[(tag, var)]
+        narrowing, dtype = checked.get(tag), None
+        if info is None or narrowing is None:
+            unknown = True
+            continue
+        if prefixes is not None and _unplaced_box(info, prefixes[tag]):
+            got = _sized_on_sample(info, prefixes[tag], label, catalog,
+                                   (per or {}).get(label, {}).get("sid"))
+            if got is None:
+                whole += 1
+            else:
+                narrowing, steps, dtype = got
+                sampled[steps] = sampled.get(steps, 0) + 1
+        data = _data_vars(names) or []
+        if data:
+            mb = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",
+                                    wire_vars=data).read_mb
             if mb is None:
                 unknown = True
-            else:
-                total += mb
+                continue
+            total += mb
+        if GEOMETRY_KEY in names:
+            total += _points_mb(info, narrowing, dtype)
+    notes += _sized_note(sampled, whole)
     if unknown:
         notes.append("a box could not be sized here (no schema, or placed only "
                      "next to the data) — the folder delta is not priced; not "
@@ -1391,7 +1528,7 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir, approval=None):
         from vislang.interpreter.estimate import format_plan_estimate
         with timing.phase("cost_estimate"):
             estimate = _folder_estimate(src, schema0, checked, missing, conn,
-                                        len(fetch_labels))
+                                        len(fetch_labels), prefixes, catalog, per)
             steps.append(format_plan_estimate(estimate))
         timing.note_estimate(estimate)
         if estimate.over_budget and not approval.budget:

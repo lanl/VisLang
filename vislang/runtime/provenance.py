@@ -290,6 +290,18 @@ def pipeline(terminal):
         _pipe = prev
 
 
+@contextmanager
+def paused():
+    """Record nothing within: work done only to PRICE a request (a box placed
+    on sampled points) must not be noted as what the output was cut from."""
+    global _pipe
+    prev, _pipe = _pipe, None
+    try:
+        yield
+    finally:
+        _pipe = prev
+
+
 def note_source(read_from=None, info=None, fingerprint=None, site=None,
                 columns=None, filetype=None):
     """Report what the planner learned about the source. Never overwrites the

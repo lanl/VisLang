@@ -267,7 +267,8 @@ def _geometry(info, read_points):
     geometry = getattr(info, "geometry", None)
     if not geometry:
         return None                         # not reported: decided where read
-    if geometry.get("kind") != "structured" or geometry.get("points") is not None:
+    if geometry.get("kind") != "structured" or geometry.get("points") is not None \
+            or geometry.get("sample") is not None:      # a sample: pricing only
         return geometry
     from vislang.formats.inspect import is_remote
     if not read_points or is_remote(info.filepath):
