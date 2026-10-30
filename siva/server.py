@@ -4,13 +4,15 @@ import argparse
 import logging
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Optional
 import numpy as np
 from mcp.server.fastmcp import FastMCP, Image
 
-from .renderer import Renderer, RenderMode
+from .renderer import (
+    Renderer, RenderMode, claim_main_thread, run_event_loop, stop_event_loop)
 from . import queries
 
 # Module-level logger (no file handler until main() runs — avoids side effects on import)
@@ -1800,7 +1802,6 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
                 "overview", "top_down", or "side". Defaults to "overview"
                 if not specified.
     """
-    global _views, _current_view
     if name in _views:
         return [f"View '{name}' already exists. Use focus('{name}') to switch to it."]
     cur_renderer = _current_ctx().renderer
@@ -1818,11 +1819,7 @@ def new_view(name: str, camera: str = "") -> list[str | Image]:
         # requires NSWindow creation on the main thread; VTK's Initialize()
         # does this), so marshal construction onto the owner thread.
         renderer = cur_renderer.dispatch(lambda: _renderer_factory(name))
-    ctx = ViewContext(name, renderer)
-    ctx.history_dir.mkdir(parents=True, exist_ok=True)
-    _views[name] = ctx
-    _current_view = name
-    ctx.start_hot_reload()
+    ctx = _register_view(name, renderer)
 
     file = ctx.pipeline_file
     if not os.path.exists(file):
@@ -2625,9 +2622,47 @@ annotate(2, 3, 0, "sphere center", color=(0.2, 1.0, 0.4))
     return "\n".join(lines)
 
 
+def _register_view(name, renderer):
+    """Make *renderer* the view *name*, focus it, and start its hot reload."""
+    global _current_view
+    ctx = ViewContext(name, renderer)
+    ctx.history_dir.mkdir(parents=True, exist_ok=True)
+    _views[name] = ctx
+    _current_view = name
+    ctx.start_hot_reload()
+    return ctx
+
+
+def _start_main_view():
+    """Create the "main" view; in TRAME mode, also publish the view index."""
+    global _view_index
+    ctx = _register_view("main", _renderer_factory("main"))
+    if _render_mode == RenderMode.TRAME:
+        from types import SimpleNamespace
+        from .trame_backend import shared_app
+        logger.info("SIVA trame server ready; main view at %s",
+                    getattr(ctx.renderer, "url", None))
+        app = shared_app()
+        _view_index = SimpleNamespace(
+            url=app.index_url, proxy_url=app.index_proxy_url)
+        logger.info("SIVA view index ready at %s", _view_index.url)
+
+
+def _exit_without_finalizing(code):
+    """Flush logs, then end the process without finalizing Python.
+
+    A build worker may still be inside a VTK algorithm, which runs without
+    the GIL; interpreter finalization would free VTK objects out from under
+    it and segfault. Nothing else the server holds needs finalizers to run:
+    MCP flushes stdout after every message, and the OS closes windows and
+    sockets.
+    """
+    logging.shutdown()
+    os._exit(code)
+
+
 def main():
-    global _args, _views, _current_view, _render_mode, _trame_port, \
-        _trame_host, _view_index
+    global _args, _render_mode, _trame_port, _trame_host
 
     # Parse CLI args (only runs when main() is called, not on import)
     _args = _parse_args()
@@ -2704,18 +2739,17 @@ def main():
     try:
         logger.info("Starting SIVA server (mode=%s)", _render_mode.value)
 
+        # VTK lives on the real main thread, which runs an event loop, while
+        # MCP is served from a background thread. Every mode needs this on
+        # macOS, where VTK's Cocoa backend creates an NSWindow on every
+        # Render() -- even offscreen -- and AppKit allows that only on the
+        # main thread; it's used unconditionally rather than branching on
+        # platform. TRAME's loop is the shared trame/asyncio loop (see
+        # siva/trame_backend.py's module docstring), every other mode's is
+        # the renderer's work-queue loop (see claim_main_thread()).
         if _render_mode == RenderMode.TRAME:
-            # Every trame view shares one event loop that runs on the real
-            # main thread (trame_backend.run_shared_loop()), while view/
-            # index/MCP setup moves to a background thread. Required on
-            # macOS (VTK's Cocoa backend requires render-window operations,
-            # including ones wslink triggers internally in response to
-            # browser interaction, to run on the main thread) and used
-            # unconditionally rather than branching on platform -- see
-            # siva/trame_backend.py's module docstring for the full picture.
-            import threading
-            from types import SimpleNamespace
-            from .trame_backend import configure_shared_app, run_shared_loop
+            from .trame_backend import (
+                configure_shared_app, run_shared_loop, stop_shared_loop)
 
             # One shared trame app serves everything (views, index page,
             # thumbnails) on a single port -- _trame_port pins it, 0
@@ -2730,80 +2764,48 @@ def main():
                 index_snapshot_fn=_view_index_snapshot,
                 session_label=os.getcwd(),
             )
-
-            def _serve():
-                global _main_renderer, _current_view, _view_index
-                try:
-                    _main_renderer = _renderer_factory("main")
-                    main_ctx = ViewContext("main", _main_renderer)
-                    main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
-                    _views["main"] = main_ctx
-                    _current_view = "main"
-                    main_ctx.start_hot_reload()
-
-                    url = getattr(_main_renderer, "url", None)
-                    logger.info("SIVA trame server ready; main view at %s", url)
-                    from .trame_backend import shared_app
-                    app = shared_app()
-                    _view_index = SimpleNamespace(
-                        url=app.index_url, proxy_url=app.index_proxy_url)
-                    logger.info("SIVA view index ready at %s", _view_index.url)
-                except Exception:
-                    logger.critical("Failed to start trame main view", exc_info=True)
-                    os._exit(1)
-
-                try:
-                    mcp.run()
-                finally:
-                    _view_index = None
-                    for ctx in list(_views.values()):
-                        ctx.shutdown()
-                        try:
-                            ctx.renderer.destroy()
-                        except Exception:
-                            pass
-                    # The main thread is blocked in run_shared_loop(); stop
-                    # the loop so it returns and the process can exit.
-                    from .trame_backend import stop_shared_loop
-                    stop_shared_loop()
-
-            threading.Thread(target=_serve, daemon=True).start()
-            run_shared_loop()
-            return
-
-        # Create the default "main" view and renderer.
-        _main_renderer = _renderer_factory("main")
-        main_ctx = ViewContext("main", _main_renderer)
-        main_ctx.history_dir.mkdir(parents=True, exist_ok=True)
-        _views["main"] = main_ctx
-        _current_view = "main"
-        main_ctx.start_hot_reload()
-
-        if _render_mode == RenderMode.OFFSCREEN:
-            # No VTK main-thread event loop needed: offscreen runs inline.
-            # Run the MCP server on the main thread.
-            try:
-                mcp.run()
-            finally:
-                for ctx in list(_views.values()):
-                    ctx.shutdown()
-                    try:
-                        ctx.renderer.destroy()
-                    except Exception:
-                        pass
+            run_loop, stop_loop = run_shared_loop, stop_shared_loop
+            # A TrameRenderer schedules its construction onto the shared
+            # loop, so the main view can only be created once the main
+            # thread is running it: create it from the MCP thread.
+            mcp_thread_setup = _start_main_view
         else:
-            # Both INTERACTIVE and HEADLESS_INTERACTIVE use the event loop.
-            # The renderer's event loop finds interactors from its own live
-            # registry — main() no longer touches interactors.
-            import threading
+            # Claim the main thread before the main view exists so its
+            # first builds already dispatch here.
+            claim_main_thread()
+            _start_main_view()
+            run_loop, stop_loop = run_event_loop, stop_event_loop
+            mcp_thread_setup = None
 
-            server_thread = threading.Thread(target=mcp.run, daemon=True)
-            server_thread.start()
+        mcp_failed = False
+
+        def _mcp_thread():
+            nonlocal mcp_failed
             try:
-                _main_renderer.run_event_loop()
+                if mcp_thread_setup is not None:
+                    mcp_thread_setup()
+                # Returns once the client closes stdin. FastMCP runs sync
+                # tools on its own event loop, so a client that disconnects
+                # mid-call is noticed when that call returns (tool waits are
+                # bounded, e.g. 120s for a build).
+                mcp.run()
+            except BaseException:  # e.g. SystemExit from a logging handler
+                mcp_failed = True
+                logger.critical("Server crashed", exc_info=True)
             finally:
-                for ctx in list(_views.values()):
-                    ctx.shutdown()
+                logger.info("MCP session ended; exiting")
+                stop_loop()
+
+        threading.Thread(target=_mcp_thread, name="mcp", daemon=True).start()
+        try:
+            run_loop()
+            exit_code = 1 if mcp_failed else 0
+        except KeyboardInterrupt:
+            exit_code = 130
+        except BaseException:
+            logger.critical("Server crashed", exc_info=True)
+            exit_code = 1
+        _exit_without_finalizing(exit_code)
     except Exception:
         logger.critical("Server crashed", exc_info=True)
         raise

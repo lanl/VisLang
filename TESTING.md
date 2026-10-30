@@ -71,9 +71,10 @@ build.
 
 ### Testing interactive mode headlessly with Xvfb
 
-Offscreen mode (`--offscreen`) bypasses the threading and windowing code
-paths that interactive mode uses. Bugs like work queue deadlocks and
-multi-window issues only manifest in interactive mode. **If your change
+Offscreen mode (`--offscreen`) bypasses the windowing code paths that
+interactive mode uses (the server still renders on the main thread via the
+work queue, but there are no windows or interactors). Bugs like multi-window
+issues only manifest in interactive mode. **If your change
 touches threading, the Renderer event loop, multi-view, or window
 management, test in interactive mode — not just offscreen.**
 
@@ -133,10 +134,18 @@ Linux without any extra dependencies. Reserve the Xvfb approach for
 when you need to verify actual windowing behavior (multiple windows
 opening, framebuffer contents, mouse input).
 
-The three rendering modes (`RenderMode` enum in `renderer.py`):
-- `OFFSCREEN` — no event loop, inline execution. Fast, no threading.
+The desktop rendering modes (`RenderMode` enum in `renderer.py`; `TRAME`
+is the fourth):
+- `OFFSCREEN` — no window or interactor. Inline execution when used as a
+  library; the server still claims the main thread and dispatches renders
+  there, since on macOS even an offscreen `Render()` creates an `NSWindow`.
 - `INTERACTIVE` — window + event loop + work queue. Production mode.
 - `HEADLESS_INTERACTIVE` — offscreen + event loop + work queue. Test mode.
+
+In every mode the server must exit when its MCP client disconnects (stdin
+EOF) -- once any tool call in progress returns, since FastMCP runs sync
+tools on the loop that reads stdin. `tests/test_server_exit.py` checks this
+per mode, including with a build still computing at exit.
 
 ## Test datasets
 

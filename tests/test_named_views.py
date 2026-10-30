@@ -52,6 +52,28 @@ def _reset_views():
 
 
 # ---------------------------------------------------------------------------
+# Closed views
+# ---------------------------------------------------------------------------
+
+class TestDestroyedRenderer(unittest.TestCase):
+    """A build still in flight when its view is closed can't reopen it.
+
+    close_view() destroys the view's renderer; a build that was already
+    computing then renders into it, which used to rebuild the render window
+    (a new OS window, in INTERACTIVE mode) for a view that no longer exists.
+    """
+
+    def test_no_reinitialization_after_destroy(self):
+        from siva.renderer import Renderer
+        # INTERACTIVE defers VTK creation, so this never builds a window.
+        r = Renderer(mode=RenderMode.INTERACTIVE, view_name="gone")
+        r.destroy()
+        with self.assertRaises(RuntimeError):
+            r.clear()
+        self.assertFalse(r._initialized)
+
+
+# ---------------------------------------------------------------------------
 # ViewContext unit tests
 # ---------------------------------------------------------------------------
 

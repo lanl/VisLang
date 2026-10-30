@@ -163,8 +163,8 @@ def run_shared_loop():
 def stop_shared_loop():
     """Stop the shared loop (threadsafe), letting ``run_shared_loop()`` return.
 
-    Called by server.main()'s MCP thread after the MCP client disconnects and
-    views are torn down; without this the main thread would block in
+    Called by server.main()'s MCP thread after the MCP client disconnects;
+    without this the main thread would block in
     ``run_shared_loop()`` forever and the process would never exit. The
     shared trame server dies with the loop (and the process) — it is never
     stopped individually.

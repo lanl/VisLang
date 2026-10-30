@@ -14,8 +14,10 @@ vtk.vtkObject.GlobalWarningDisplayOff()
 class RenderMode(enum.Enum):
     """How the renderer manages threading and display.
 
-    OFFSCREEN: No window, no event loop. Everything runs inline on the
-        calling thread. Fast and simple — used by headless agents.
+    OFFSCREEN: No window or interactor. Work runs inline on the calling
+        thread unless an event loop has claimed the main thread (see
+        claim_main_thread()), as the MCP server always does -- macOS needs
+        even offscreen renders on the main thread. Used by headless agents.
     INTERACTIVE: Opens a window, runs an event loop on the main thread,
         dispatches work via a shared queue. Production mode for humans.
     HEADLESS_INTERACTIVE: Offscreen rendering but with interactive-mode
@@ -32,11 +34,46 @@ class RenderMode(enum.Enum):
     TRAME = "trame"
 
 
-# Shared work queue for interactive mode: all Renderer instances post here,
-# and the single event-loop thread drains it. Desktop-mode-specific — the
-# offscreen path never touches this queue.
+# Shared work queue: all Renderer instances post here, and the single
+# event-loop thread drains it. INTERACTIVE and HEADLESS_INTERACTIVE always
+# use it; OFFSCREEN uses it only once claim_main_thread() has been called
+# (as server.main() does), and otherwise runs work inline.
 _shared_work_queue = queue.Queue()
-_main_thread_id = threading.get_ident()  # updated by run_event_loop()
+_main_thread_id = threading.get_ident()  # updated by claim_main_thread()
+
+# True once some thread has claimed the event loop via claim_main_thread().
+_loop_claimed = False
+
+# Set by stop_event_loop(); makes run_event_loop() return. One-shot per
+# process: never cleared, so a stop requested before the loop has even
+# started still takes effect.
+_stop_requested = threading.Event()
+
+
+def claim_main_thread():
+    """Make the calling thread the one that owns VTK and runs the event loop.
+
+    From then on every Renderer's dispatch() -- OFFSCREEN included -- hands
+    work to this thread via the shared work queue. On macOS every
+    vtkRenderWindow.Render() creates an NSWindow, which AppKit only allows
+    on the real main thread, even with offscreen rendering; so a server
+    whose builds run on worker threads must route offscreen rendering here
+    too. Call it before any work can be dispatched (run_event_loop() calls
+    it as well).
+    """
+    global _main_thread_id, _loop_claimed
+    _main_thread_id = threading.get_ident()
+    _loop_claimed = True
+
+
+def stop_event_loop():
+    """Make run_event_loop() return (threadsafe).
+
+    server.main() calls it once the MCP client disconnects; without it the
+    main thread would stay in run_event_loop() forever and the process
+    would never exit.
+    """
+    _stop_requested.set()
 
 # Registry of live Renderer instances. Renderers register themselves on
 # initialization and deregister on destroy(). The event loop uses this to
@@ -68,6 +105,38 @@ def _get_any_interactor():
     return None
 
 
+def run_event_loop():
+    """Process VTK events and queued work in a loop (blocks). Call from main thread.
+
+    Serves every Renderer: drains the shared work queue, and pumps OS events
+    through any initialized interactor from the live-renderer registry. On
+    macOS/Cocoa, ProcessEvents() drains the global NSApplication event
+    queue, so any single interactor handles events for all windows.
+
+    Returns once stop_event_loop() is called. Work still queued then is
+    abandoned: the server exits right after.
+    """
+    claim_main_thread()
+    while not _stop_requested.is_set():
+        # Drain shared work queue (serves all Renderer instances)
+        while not _shared_work_queue.empty():
+            try:
+                fn, result_queue = _shared_work_queue.get_nowait()
+                try:
+                    result = fn()
+                    result_queue.put((True, result))
+                except Exception as e:
+                    result_queue.put((False, e))
+            except queue.Empty:
+                break
+        # Pump OS events via any available interactor
+        interactor = _get_any_interactor()
+        if interactor:
+            interactor.ProcessEvents()
+        # Sleep ~one frame (~60 fps), waking early to stop.
+        _stop_requested.wait(0.016)
+
+
 class Renderer:
     def __init__(self, width=640, height=800, mode=RenderMode.INTERACTIVE, view_name=None):
         self._mode = mode
@@ -77,6 +146,7 @@ class Renderer:
         self._renderer = None
         self._light_kit = None
         self._initialized = False
+        self._destroyed = False  # set by destroy(); VTK is never rebuilt after
 
         self._actors = {}  # name -> vtkActor or vtkVolume (3D geometry only)
         self._overlay_actors = []  # list of vtkProp2D (title, etc.) added via AddViewProp
@@ -93,6 +163,10 @@ class Renderer:
         """Lazily create the VTK window and renderer on first use."""
         if self._initialized:
             return
+        if self._destroyed:
+            # E.g. a build still in flight when its view was closed: fail it
+            # rather than open a new window for a view that no longer exists.
+            raise RuntimeError(f"renderer for view {self.view_name!r} was destroyed")
         self._initialized = True
 
         self._render_window = vtk.vtkRenderWindow()
@@ -174,11 +248,11 @@ class Renderer:
     def dispatch(self, fn):
         """Run fn on the thread that owns the renderer / VTK objects.
 
-        If already on that thread (or in OFFSCREEN mode), run directly.
-        Otherwise queue it via the shared work queue (desktop-mode-specific)
-        and block until complete."""
-        global _main_thread_id
-        if self._mode == RenderMode.OFFSCREEN or threading.get_ident() == _main_thread_id:
+        If already on that thread (or in OFFSCREEN mode with no claimed event
+        loop), run directly. Otherwise queue it via the shared work queue and
+        block until complete."""
+        if threading.get_ident() == _main_thread_id or (
+                self._mode == RenderMode.OFFSCREEN and not _loop_claimed):
             return fn()
         logger.debug("Queuing work to main thread")
         result_queue = queue.Queue()
@@ -192,34 +266,8 @@ class Renderer:
             raise result
 
     def run_event_loop(self):
-        """Process VTK events and queued work in a loop (blocks). Call from main thread.
-
-        Finds any initialized interactor from the live-renderer registry for
-        pumping OS events.  On macOS/Cocoa, ProcessEvents() drains the global
-        NSApplication event queue, so any single interactor handles events for
-        all windows.
-        """
-        import time
-
-        global _main_thread_id
-        _main_thread_id = threading.get_ident()
-        while True:
-            # Drain shared work queue (serves all Renderer instances)
-            while not _shared_work_queue.empty():
-                try:
-                    fn, result_queue = _shared_work_queue.get_nowait()
-                    try:
-                        result = fn()
-                        result_queue.put((True, result))
-                    except Exception as e:
-                        result_queue.put((False, e))
-                except queue.Empty:
-                    break
-            # Pump OS events via any available interactor
-            interactor = _get_any_interactor()
-            if interactor:
-                interactor.ProcessEvents()
-            time.sleep(0.016)  # ~60 fps
+        """Run the shared event loop (see module-level run_event_loop())."""
+        run_event_loop()
 
     def clear(self):
         self._ensure_initialized()
@@ -299,6 +347,7 @@ class Renderer:
         After this call the Renderer is unusable. Used by close_view() to
         actually close the OS window rather than leaving it open and dead.
         """
+        self._destroyed = True
         if not self._initialized:
             return
         _deregister_renderer(self)
