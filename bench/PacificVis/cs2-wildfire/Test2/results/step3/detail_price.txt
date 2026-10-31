@@ -1,0 +1,25 @@
+Status: OK
+Spec: spec.py
+
+(estimate — dry run: forms static-checked against the source schema and the run costed; nothing materialized. Run `execute` to materialize.)
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/  (dry run — nothing materialized)
+    spec (as written): source(mountain_headcurve80) → timesteps([4000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000, 17000, 18000, 19000, 20000, 21000, 22000, 23000, 24000, 25000, 26000, 27000, 28000, 29000, 30000, 31000, 32000, 33000, 34000, 35000, 36000, 37000, 38000, 39000, 40000, 41000, 42000, 43000, 44000, 45000]) → fields[u,v,w,theta] → region{x:(-100,200),y:(-120,120),z:(0,350)} → save
+    remote folder timeseries ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/
+    select timesteps #4000, #9000, #10000, #11000, #12000, #13000, #14000, #15000, #16000, #17000, #18000, #19000, #20000, #21000, #22000, #23000, #24000, #25000, #26000, #27000, #28000, #29000, #30000, #31000, #32000, #33000, #34000, #35000, #36000, #37000, #38000, #39000, #40000, #41000, #42000, #43000, #44000, #45000
+    38 timestep(s), 39791 MiB of source
+    remote source ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/
+    plan: reduce on the remote (narrowing prefix next to the data), pull the result, run the sink locally
+    inspect ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/fire#4000.vts → VTK: vars=['u', 'v', 'w', 'theta', 'O2', 'rhowatervapor', 'rhof_1', 'convht_1', 'frhosiesrad_1'], dims={'grid': (600, 500, 61)}
+    project fields=['u', 'v', 'w', 'theta']
+    region {x: (-100, 200), y: (-120, 120), z: (0, 350)} — world coordinates, placed where the file is read; checked against the whole grid
+    fuse -> project=['u', 'v', 'w', 'theta']
+    -> save (would run locally)
+    Cost estimate (remote):
+      timesteps: 38
+      over the wire: ~1091 MB
+      result size: ~436 MB
+      est. time: ~5.3 min–21.2 min (measured)
+      note: 1 world box sized on the grid positions cached at stride 4x4x4, interpolated (+1 cell each side) — an estimate; the cut itself is placed exactly next to the data.
+      note: prices the whole request; extents already cached locally are not deducted.
