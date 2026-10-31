@@ -66,7 +66,7 @@ Provenance of one Detail output: `results/step7/provenance_detail_30000.yaml`.
   Status shows bytes only).
 
 ## Replay (results/step6)
- on the session (results/step6/README.md):
+`bench/replay_session.py --setups cold,warm` on the session (results/step6/README.md):
 - Cold, from an empty cache: the same bytes as the session (146,495,298 + 1,083,152,914 B),
   and both outputs reproduce the session's bit for bit (data_sha256).
 - Warm, a revisit on cold's cache: **0 bytes**, every piece from the catalog (440/440 and
