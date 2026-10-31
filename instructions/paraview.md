@@ -37,8 +37,13 @@ overlay exactly. See `dsl-reference.md` → `region`.
 
 Box Corner and Box Size are the box itself. ParaView's box widget would read
 them against the input's bounds (box = corner + size × bounds) unless told
-otherwise; *Relative To Input* (off by default) is that switch, and when on the
-plugin applies the same transform.
+otherwise; *Use Reference Bounds* under "Reference Bounds" (off by default; the
+property is labelled *Relative To Input* outside the box widget's panel) is that
+switch, and when on the plugin applies the same transform.
+
+A Detail has its **own** Fields and Stride: it takes only its timesteps from the
+Source (the Source's *Timesteps* field), not the Source's fields. Its Fields
+start with every variable checked, so uncheck the ones the box does not need.
 
 ## How it runs
 
