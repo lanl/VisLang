@@ -1,0 +1,24 @@
+Status: OK
+Spec: spec.py
+
+(estimate — dry run: forms static-checked against the source schema and the run costed; nothing materialized. Run `execute` to materialize.)
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/  (dry run — nothing materialized)
+    spec (as written): source(mountain_headcurve80) → timesteps(1000,91000) → fields[u,v,w,theta,rhof_1] → subsample(4) → save
+    remote folder timeseries ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/
+    select timesteps #1000..91000
+    88 timestep(s), 92148 MiB of source
+    remote source ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/
+    plan: reduce on the remote (narrowing prefix next to the data), pull the result, run the sink locally
+    inspect ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/fire#1000.vts → VTK: vars=['u', 'v', 'w', 'theta', 'O2', 'rhowatervapor', 'rhof_1', 'convht_1', 'frhosiesrad_1'], dims={'grid': (600, 500, 61)}
+    project fields=['u', 'v', 'w', 'theta', 'rhof_1']
+    subsample uniform=4 (in-memory slice)
+    fuse -> grid_ranges=[(None, None, 4), (None, None, 4), (None, None, 4)], project=['u', 'v', 'w', 'theta', 'rhof_1']
+    -> save (would run locally)
+    Cost estimate (remote):
+      timesteps: 88
+      over the wire: ~806 MB
+      result size: ~504 MB
+      est. time: ~4.2 min–16.8 min (measured)
+      note: prices the whole request; extents already cached locally are not deducted.
