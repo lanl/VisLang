@@ -1,0 +1,9 @@
+route,step,timesteps_seen_overview,wire_bytes,probe_bytes,server_read_bytes,code_lines_written,data_steps,wire_vs_sieve_total
+Sieve (ParaView),"overview: all timesteps, stride 8, 5 fields",88,146495298,4194304,96624255640,0,1,
+Sieve (ParaView),"Detail: box, full resolution, 38 timesteps, 4 fields",,1083152914,4194304,41724110390,0,1,
+Sieve (ParaView),total,88,1229648212,8388608,138348366030,0,2,
+Two-pass download,pass 1: every 5th file whole (18 files),18,19764052290,0,19764052290,38,2,16.07
+Two-pass download,"pass 2: window files not held (31 files), then cut",,34038090055,0,34038090055,51,2,27.68
+Two-pass download,total (49 files),18,53802142345,0,53802142345,89,4,43.75
+Download everything,"all 88 files whole, then the same scripts",88,96624255640,0,96624255640,73,3,78.58
+Work on the server (mention only),scripts run on gpu-server over all 88 files and the 38 window files; copy back the 38 cuts,88,606297192,0,138348366030,72,3,0.49
