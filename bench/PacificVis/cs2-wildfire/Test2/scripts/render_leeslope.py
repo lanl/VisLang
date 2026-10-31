@@ -85,7 +85,8 @@ if a.view == "side":       # looking along +y: the x-z plane, where a recirculat
     cam.SetParallelScale(105)
 else:                      # oblique, from upwind-south: the box on the ridge
     rv.CameraParallelProjection = 0
-    cam.SetFocalPoint(cx - 20, 0, cz - 40); cam.SetPosition(cx - 560, -520, cz + 320)
+    zc = (b[4] + b[5]) / 2               # the box's middle: frame the whole box
+    cam.SetFocalPoint(cx - 30, 10, zc - 30); cam.SetPosition(cx - 620, -760, zc + 380)
     cam.SetViewUp(0, 0, 1)
 Render(rv)
 SaveScreenshot(a.out, rv, ImageResolution=[1800, 1000])

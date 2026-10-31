@@ -1,0 +1,3 @@
+started,site,route,est_read_mib,wire_mib,err_pct,est_time_lo_s,est_time_hi_s,pull_s,in_band,probe_bw_mibps,est_over_budget
+2026-10-31T02:56:21,remote,remote_folder_reduce,101.513671875,139.71,-27.3,29.4,117.7,7.9094,low,1.725,False
+2026-10-31T03:05:56,remote,remote_folder_reduce,1091.1895751953125,1032.98,5.6,332.7,1330.7,36.2008,low,1.64,False

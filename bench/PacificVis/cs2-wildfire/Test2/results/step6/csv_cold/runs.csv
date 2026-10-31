@@ -1,0 +1,3 @@
+started,site,route,forms,n_timesteps,source_mib,wire_mib,reduction_x,total_s,inspect_s,remote_exec_s,pull_s,fetch_s,transfer_s,materialize_s,sink_s,ssh_exec,remote_jobs,status
+2026-10-31T02:56:21,remote,remote_folder_reduce,fields+subsample,88,92148.07,139.71,659.6,574.6143,,538.1599,7.9094,,7.9089,,1.9541,5,,OK
+2026-10-31T03:05:56,remote,remote_folder_reduce,fields+region,38,39791.21,1032.98,38.5,132.443,,66.5615,36.2008,,36.2002,,12.7639,4,,OK

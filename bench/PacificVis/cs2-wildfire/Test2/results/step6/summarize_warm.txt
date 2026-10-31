@@ -1,0 +1,9 @@
+2 run(s), 2 pipeline(s) from bench/PacificVis/cs2-wildfire/Test2/results/step6/timings_warm.jsonl
+
+Catalog reuse across successive runs
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+started              route                 n_timesteps  reused_pairs  total_pairs  reuse_pct  cached_vars  want_vars  wire_mib  total_s  ssh_exec  remote_jobs
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-31T03:08:09  remote_folder_reduce  88           440           440          100.0                              0.0       8.6882   1                    
+2026-10-31T03:08:18  remote_folder_reduce  38           152           152          100.0                              0.0       19.569   1                    
+

@@ -1,0 +1,19 @@
+replaying 2 step(s) from /Users/agoosh11/Projects/VisLang/.vislang/paraview/20261031-013204-652ebb
+  under ['cold', 'warm'] -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test2/outputs/replay
+           cold step  1 overview ok     574.80 s     139.71 MiB  remote_folder_reduce
+           cold step  2 detail   ok     132.59 s    1032.98 MiB  remote_folder_reduce
+           warm step  1 overview ok       8.84 s       0.00 MiB  remote_folder_reduce
+           warm step  2 detail   ok      19.70 s       0.00 MiB  remote_folder_reduce
+
+        setup | first image s | median s |  p90 s | moved MiB | reproduced
+--------------------------------------------------------------------------
+         cold |        574.80 |   353.69 | 574.80 |   1172.68 |    2/2    
+         warm |          8.85 |    14.27 |  19.70 |      0.00 |    2/2    
+
+bytes moved, cumulative by step (MiB):
+           cold: 139.7 1172.7
+           warm: 0.0 0.0
+
+estimate against actual (cold, remote steps):
+  step  1: predicted 101.51 MiB, moved 139.71 MiB (-27%)
+  step  2: predicted 1091.19 MiB, moved 1032.98 MiB (+6%)

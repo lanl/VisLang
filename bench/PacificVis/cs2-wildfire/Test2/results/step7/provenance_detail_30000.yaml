@@ -1,0 +1,93 @@
+format: sieve-provenance/2
+result_summary: "151x121x39 grid x 4 columns, 11 MB (from a 1.1 GB input)\n  float32  u, v, w, theta\n"
+logical:
+  spec: 'src = source(''ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/'')
+
+    view = timesteps(src, [4000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000, 17000, 18000,
+    19000, 20000, 21000, 22000, 23000, 24000, 25000, 26000, 27000, 28000, 29000, 30000, 31000, 32000,
+    33000, 34000, 35000, 36000, 37000, 38000, 39000, 40000, 41000, 42000, 43000, 44000, 45000])
+
+    view = fields(view, [''u'', ''v'', ''w'', ''theta''])
+
+    view = region(view, x=(-100.0, 200.0), y=(-120.0, 120.0), z=(0.0, 350.0), coords=''world'')
+
+    save(view, ''/Users/agoosh11/Projects/VisLang/.vislang/paraview/20261031-013204-652ebb/005-detail-detail/out.vts'')
+
+    '
+  spec_explanation: "Steps\n  1. timesteps  keep timesteps #4000, #9000, #10000, #11000, #12000, #13000,\
+    \ #14000, #15000, #16000, #17000, #18000, #19000, #20000, #21000, #22000, #23000, #24000, #25000,\
+    \ #26000, #27000, #28000, #29000, #30000, #31000, #32000, #33000, #34000, #35000, #36000, #37000,\
+    \ #38000, #39000, #40000, #41000, #42000, #43000, #44000, #45000\n  2. fields     keep u, v, w, theta;\
+    \ drop O2, rhowatervapor, rhof_1, convht_1, frhosiesrad_1\n  3. region     keep the samples inside\
+    \ the box (world coordinates, bounds inclusive)\n                  x between -100.0 and 200.0\n  \
+    \                y between -120.0 and 120.0\n                  z between 0.0 and 350.0\n         \
+    \         placed on the file's geometry; the cells it selected are under resolved.region_cells\n \
+    \ 4. save       write VTK StructuredGrid:\n                every column as point data\n          \
+    \      each point at its own position from the source\n\nValues: all exact.\n"
+  input:
+    uri: ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/fire#30000.vts
+    format: vtk
+    fields:
+    - u
+    - v
+    - w
+    - theta
+    - O2
+    - rhowatervapor
+    - rhof_1
+    - convht_1
+    - frhosiesrad_1
+    fingerprint:
+      filesize: 1098002905
+      modification_time: '2023-03-22T16:27:28-07:00'
+  output:
+    format: vts
+    fields:
+      u: float32
+      v: float32
+      w: float32
+      theta: float32
+    fingerprint:
+      shape:
+      - 151
+      - 121
+      - 39
+      data_sha256: 1140e9537624627c
+    geometry:
+      points: listed per point
+      bounds:
+        x:
+        - -100.0
+        - 200.0
+        y:
+        - -120.0
+        - 120.0
+        z:
+        - 99.16972796713533
+        - 400.198593203218
+  sieve:
+    version: 0.1.0
+    commit: ff759b9
+  libraries:
+    vtk: 9.7.0
+    numpy: 2.5.2
+    pyvista: 0.49.0
+realization:
+  at: '2026-10-31T02:37:47-07:00'
+  took_s: 329
+  by: agoosh11@Kajis-MacBook-Pro.local
+  columns_from:
+    remote:
+      columns:
+      - theta
+      - u
+      - v
+      - w
+      read:
+        then:
+        - region
+      fetched_bytes: 433241952
+  env:
+    python: 3.12.14
+    platform: macOS-26.0.1
+  run: 0cd7848242ca

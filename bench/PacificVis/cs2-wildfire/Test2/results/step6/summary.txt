@@ -1,0 +1,12 @@
+        setup | first image s | median s |  p90 s | moved MiB | reproduced
+--------------------------------------------------------------------------
+         cold |        574.80 |   353.69 | 574.80 |   1172.68 |    2/2    
+         warm |          8.85 |    14.27 |  19.70 |      0.00 |    2/2    
+
+bytes moved, cumulative by step (MiB):
+           cold: 139.7 1172.7
+           warm: 0.0 0.0
+
+estimate against actual (cold, remote steps):
+  step  1: predicted 101.51 MiB, moved 139.71 MiB (-27%)
+  step  2: predicted 1091.19 MiB, moved 1032.98 MiB (+6%)
