@@ -1,0 +1,11 @@
+timesteps with a front: every timestep 83, every 5th file 17 (of 88 / 18 files)
+every-5th files: #1000, #8000, #13000, #18000, #23000, #28000, #33000, #38000, #43000, #48000, #54000, #59000, #64000, #69000, #74000, #79000, #84000, #89000
+crest crossing (front x = -2 m): every timestep #18020; every 5th #18049
+speed windward (#8000-#17000): every timestep 19.0 m/1000 steps (10 pts); every 5th 19.4 (2 pts)
+speed lee, early (#20000-#45000): every timestep 2.8 m/1000 steps (26 pts); every 5th 3.0 (5 pts)
+speed lee, late (#45000-#91000): every timestep 1.8 m/1000 steps (46 pts); every 5th 2.0 (9 pts)
+u ahead windward (#8000-#17000): 0.75 m level mean +1.28 m/s [+0.71, +2.35], negative at 0/10; next level kept mean +2.10
+u ahead lee (#19000-#45000): 0.75 m level mean -0.30 m/s [-0.61, +0.06], negative at 26/27; next level kept mean -0.05
+u ahead lee late (#45000-#91000): 0.75 m level mean -0.14 m/s [-0.61, +0.88], negative at 38/46; next level kept mean -0.29
+u ahead at 0.75 m first negative after the windward run: every timestep #19000; every 5th #23000
+chosen window #9000-#45000: 37 files, of which 7 are every-5th files
