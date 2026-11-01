@@ -132,8 +132,9 @@ def test_remote_price():
     exact, _ = _structured_box_to_cells(P, shape, {0: box["x"], 1: box["y"],
                                                    2: box["z"]})
     cells = block_size(exact, shape)
-    # Two float32 fields + float64 positions (as written here), three files.
-    actual_mb = 3 * cells * (2 * 4 + 3 * 8) / 1024 ** 2
+    # Two float32 fields per file + float64 positions once (the terrain is the
+    # same in all three files, so its positions cross once), before compression.
+    actual_mb = cells * (3 * 2 * 4 + 3 * 8) / 1024 ** 2
     whole_mb = 3 * np.prod(shape) * 2 * 4 / 1024 ** 2
     detail = lambda o: save(region(fields(timesteps(source(f"u@fakehost:{d}"), 1, 3),
                                           ["w", "theta"]), **box), o)
@@ -155,8 +156,8 @@ def test_remote_price():
         est = res.get("estimate")
         check("after the overview: not held — the box is sized, not the grid",
               res.get("materialized") and est is not None, res["steps"][-6:])
-        check(f"after the overview: the price ({est.read_mb:.3f} MiB) holds what "
-              f"crossed, positions included ({actual_mb:.3f} MiB), well under the "
+        check(f"after the overview: the price ({est.read_mb:.3f} MiB) holds the "
+              f"box's arrays, positions once ({actual_mb:.3f} MiB), well under the "
               f"grid ({whole_mb:.3f} MiB)",
               actual_mb <= est.read_mb < min(1.5 * actual_mb, whole_mb))
         check("after the overview: the estimate says how it was sized",

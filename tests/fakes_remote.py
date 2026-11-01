@@ -70,6 +70,8 @@ def install_fake_remote():
             extra = []
             if "--manifest" in command:
                 extra = ["--manifest", command.split("--manifest", 1)[1].strip().split()[0]]
+            if "--dedupe-geometry" in command:
+                extra.append("--dedupe-geometry")
             EXECS.append(json.loads(stdin_bytes.decode()))
             r = subprocess.run([PY, EXEC, "--stdin", flag, rout, *extra],
                                input=stdin_bytes, capture_output=True, cwd=REPO)

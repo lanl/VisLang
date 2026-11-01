@@ -302,7 +302,7 @@ def _remote_tmp(host=None):
 
 
 def _executor_cmd(rout, plan_path=None, jobid=None, folder=False,
-                  manifest_path=None, host=None):
+                  manifest_path=None, host=None, dedupe_geometry=False):
     """The remote command that runs vislang_exec -> rout.
 
     Direct `python vislang_exec.py` (no container): the deps are assumed present
@@ -329,6 +329,8 @@ def _executor_cmd(rout, plan_path=None, jobid=None, folder=False,
             f"`sieve connect <host>` reports what is missing.")
     flag = "--outdir" if folder else "--out"
     man = f" --manifest {manifest_path}" if manifest_path else ""   # catalog delta
+    if man and dedupe_geometry:
+        man += " --dedupe-geometry"      # a fixed grid's positions cross once
     # The run's sampling seed travels too, so a random subsample drawn next to
     # the data is the one the local record names — not one the remote process
     # picked for itself.
@@ -429,6 +431,9 @@ def _stale_remote_hint(detail):
     """A remote checkout older than named boxes rejects their plan or manifest;
     say how to fix that rather than leaving a validator message to decode."""
     text = str(detail)
+    if "unrecognized arguments: --dedupe-geometry" in text:
+        return (f"{text} — the remote checkout predates sending a fixed grid's "
+                f"positions once; update it: git pull in VISLANG_REMOTE_REPO")
     if "unknown ['coords']" in text:
         return (f"{text} — the remote checkout predates region(coords=…); update "
                 f"it: git pull in VISLANG_REMOTE_REPO")
@@ -696,7 +701,7 @@ def _reduce_estimate(src, key, schema, missing, conn, steps, narrowing=None,
     if info is not None and prefix is not None and _unplaced_box(info, prefix):
         got = _sized_on_sample(info, prefix, None, catalog, sid)
         if got is not None:
-            narrowing, step, dtype = got
+            narrowing, step, dtype, _ = got
         sized = _sized_note({step: 1} if got else {}, 0 if got else 1)
 
     # No estimable shape -> a bare stub, so estimate_plan_cost reports read_mb
@@ -901,10 +906,11 @@ def remote_reduce_tags(src, middle, approval=None):
         prefix = _resolve_on_host(src, prefix, schema, [])
         prefixes = {t: for_tag(prefix, t) for t in tags}
         keys = {t: _narrow_key(prefixes[t]) for t in tags}
+        shared = meta.get("geometry_refs") or {}
         for k, arr in bundle.items():
             _, t, var = split_delta_key(k, True)
             fetched[t][var] = arr
-            total += arr.nbytes
+            total += 0 if k in shared else arr.nbytes  # a shared copy crossed once
             catalog.store(sid, var, keys[t], arr)
         n_geom = sum(1 for k in bundle if k.endswith("/" + GEOMETRY_KEY))
         steps.append(f"pulled {len(bundle) - n_geom} (box,var) array(s)"
@@ -1225,8 +1231,10 @@ def _unplaced_box(info, prefix):
 
 
 def _sized_on_sample(info, prefix, label, catalog, sid):
-    """(narrowing, points dtype): `prefix` lowered with its world box placed on
-    the file's cached strided points — for the price only, recording nothing.
+    """(narrowing, sample steps, points dtype, sample digest): `prefix` lowered
+    with its world box placed on the file's cached strided points — for the
+    price only, recording nothing. Timesteps whose samples share a digest (and
+    box) share positions, which cross once.
     None when no cached points span the grid or the box cannot be placed on
     them; the box is then priced as the whole grid."""
     from vislang.formats.dataset_info import sampled_geometry
@@ -1246,7 +1254,9 @@ def _sized_on_sample(info, prefix, label, catalog, sid):
             narrowing, _ = _lower(priced, placed, [], label=label)
     except Exception:
         return None
-    return narrowing, sample[1], np.asarray(sample[0]).dtype
+    pts = np.ascontiguousarray(sample[0])
+    import hashlib
+    return narrowing, sample[1], pts.dtype, hashlib.sha1(pts.tobytes()).hexdigest()
 
 
 def _points_mb(info, narrowing, dtype=None):
@@ -1295,9 +1305,9 @@ def _folder_estimate(src, schema, checked, missing, conn, n_timesteps,
         net_bw = None
     info = _info_from_schema(src.uri, schema) if schema else None
     total, notes, unknown = 0.0, [], False
-    sampled, whole = {}, 0
+    sampled, whole, priced_pts, shared = {}, 0, set(), 0
     for (label, tag), names in missing.items():
-        narrowing, dtype = checked.get(tag), None
+        narrowing, dtype, digest = checked.get(tag), None, None
         if info is None or narrowing is None:
             unknown = True
             continue
@@ -1307,7 +1317,7 @@ def _folder_estimate(src, schema, checked, missing, conn, n_timesteps,
             if got is None:
                 whole += 1
             else:
-                narrowing, steps, dtype = got
+                narrowing, steps, dtype, digest = got
                 sampled[steps] = sampled.get(steps, 0) + 1
         data = _data_vars(names) or []
         if data:
@@ -1318,8 +1328,21 @@ def _folder_estimate(src, schema, checked, missing, conn, n_timesteps,
                 continue
             total += mb
         if GEOMETRY_KEY in names:
-            total += _points_mb(info, narrowing, dtype)
+            # Positions cross once per distinct geometry (the remote sends a
+            # repeat as a reference). Known-equal only when the cached samples
+            # match; otherwise each timestep is priced its own (an upper bound).
+            same = None if digest is None else (digest, tag, tuple(
+                (r.start, r.stop, r.step) for r in (narrowing.grid_ranges or ())))
+            if same is not None and same in priced_pts:
+                shared += 1
+            else:
+                total += _points_mb(info, narrowing, dtype)
+                if same is not None:
+                    priced_pts.add(same)
     notes += _sized_note(sampled, whole)
+    if shared:
+        notes.append(f"grid positions priced once for {shared + len(priced_pts)} "
+                     f"piece(s) that share them (their cached samples match).")
     if unknown:
         notes.append("a box could not be sized here (no schema, or placed only "
                      "next to the data) — the folder delta is not priced; not "
@@ -1551,10 +1574,11 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir, approval=None):
                     else {None: prefix})
         keys = {(label, t): _narrow_key(prefixes[t], label) for label, t in units}
         total = 0
+        shared = meta.get("geometry_refs") or {}
         for k, arr in bundle.items():                   # keys from delta_key
             label, t, var = split_delta_key(k, tagged is not None)
             fetched[(label, t, var)] = arr
-            total += arr.nbytes
+            total += 0 if k in shared else arr.nbytes  # a shared copy crossed once
             catalog.store(per[label]["sid"], var, keys[(label, t)], arr)  # cache fresh
         for label in fetch_labels:
             catalog.store_schema(per[label]["sid"], schema)
@@ -1693,12 +1717,12 @@ def _run_delta_job(conn, terminal, manifest, steps, what, n_timesteps):
                       n_timesteps=n_timesteps):
         if jobid is None:
             cmd = _executor_cmd(routdir, folder=True, manifest_path=rmanifest,
-                                host=conn.host)
+                                host=conn.host, dedupe_geometry=True)
             rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
         else:
             cmd = _executor_cmd(routdir, plan_path=rplan, jobid=jobid,
                                 folder=True, manifest_path=rmanifest,
-                                host=conn.host)
+                                host=conn.host, dedupe_geometry=True)
             rc, out, err = run_remote(conn, cmd)
 
     meta = _parse_meta(out)
@@ -1718,6 +1742,17 @@ def _run_delta_job(conn, terminal, manifest, steps, what, n_timesteps):
     with np.load(os.path.join(pull_dir, "bundle.npz")) as z:
         bundle = {k: z[k] for k in z.files}
     shutil.rmtree(pull_dir, ignore_errors=True)
+    # A fixed grid's positions crossed once: every piece that shares them gets
+    # the one copy back, so everything downstream sees a full bundle.
+    refs = meta.get("geometry_refs") or {}
+    for key, same in refs.items():
+        if same not in bundle:
+            raise RuntimeError(f"remote delta: {key} names shared positions {same} "
+                               f"that the bundle does not carry")
+        bundle[key] = bundle[same]
+    if refs:
+        steps.append(f"grid positions: {len(refs)} piece(s) share positions already "
+                     f"in the bundle — sent once")
     return meta, bundle, jobid
 
 

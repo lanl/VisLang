@@ -670,7 +670,7 @@ def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=
             from vislang.runtime.paths import cache_root
             got = _sized_on_sample(info, middle, None, ExtentCatalog(cache_root()), sid)
             if got is not None:
-                narrowing, step, dtype = got
+                narrowing, step, dtype, _ = got
             sized = _sized_note({step: 1} if got else {}, 0 if got else 1)
         bw = _probe_bandwidth(src.uri, steps)
         estimate = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",

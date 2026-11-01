@@ -272,7 +272,7 @@ def _unit_middle(narrowing_nodes, keep, tag=None):
     return nodes
 
 
-def _run_folder_delta(text, manifest_path, outdir):
+def _run_folder_delta(text, manifest_path, outdir, dedupe_geometry=False):
     """Catalog DELTA reduce: fetch ONLY the pieces the caller's catalog is
     missing. The plan carries the source plus its narrowing (region/subsample/
     threshold — no fields); the manifest names exactly what each piece still
@@ -287,7 +287,17 @@ def _run_folder_delta(text, manifest_path, outdir):
     origin + spacing, or every point's position), returned as one array under
     that name. A piece that needs only that still cuts one column to carry it,
     but does not send the column back. A null vars list (every variable) also
-    gets the geometry of a grid."""
+    gets the geometry of a grid.
+
+    `dedupe_geometry` (the caller asks for it with --dedupe-geometry): a grid
+    whose points do not move -- terrain under a fire, a mesh fixed for the whole
+    run -- has the same positions in every timestep's cut. Each distinct
+    geometry is then sent once; a piece whose geometry matches one already in
+    the bundle (same bytes, by sha256) is listed in meta["geometry_refs"] as
+    {its delta_key: the delta_key that carries it} instead of being sent again.
+    Matching is by content, never assumed, so a moving grid still sends every
+    timestep's own positions."""
+    import hashlib
     import json as _json
     import numpy as np
     from vislang.dsl.nodes import upstream_of
@@ -333,6 +343,7 @@ def _run_folder_delta(text, manifest_path, outdir):
 
     os.makedirs(outdir, exist_ok=True)
     bundle, schema, fetched = {}, None, []
+    carried, refs = {}, {}            # geometry digest -> delta_key that carries it
     try:
         for label, pieces in by_label.items():
             path = files.get(label)
@@ -362,17 +373,29 @@ def _run_folder_delta(text, manifest_path, outdir):
                     for var, arr in loaded.data.items():
                         bundle[delta_key(label, tag, var)] = np.asarray(arr)
                 if geom:
-                    bundle[delta_key(label, tag, GEOMETRY_KEY)] = \
-                        encode_geometry(loaded.geometry)
+                    key = delta_key(label, tag, GEOMETRY_KEY)
+                    arr = np.ascontiguousarray(encode_geometry(loaded.geometry))
+                    if dedupe_geometry:
+                        h = hashlib.sha256(f"{arr.dtype.str}{arr.shape}".encode())
+                        h.update(arr.tobytes())
+                        same = carried.setdefault(h.hexdigest(), key)
+                        if same != key:
+                            refs[key] = same
+                            arr = None
+                    if arr is not None:
+                        bundle[key] = arr
                 fetched.append({"label": label, "tag": tag, "vars": keep})
     except Exception as e:
         where = f"timestep #{label}: " if label is not None else ""
         return _fail(f"{where}{type(e).__name__}: {e}")
 
-    np.savez(os.path.join(outdir, "bundle.npz"), **bundle)
+    # Compressed: what crosses the wire is this file. np.load reads either kind.
+    np.savez_compressed(os.path.join(outdir, "bundle.npz"), **bundle)
     meta = {"vislang_exec": PLAN_VERSION, "ok": True,
             "outdir": outdir, "bundle": "bundle.npz",
             "fetched": fetched, "schema": schema}
+    if dedupe_geometry:
+        meta["geometry_refs"] = refs
     print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
     return 0
 
@@ -448,6 +471,9 @@ def main(argv=None):
     ap.add_argument("--manifest", help="catalog delta manifest — {label: [vars]}, or "
                                        "[{label, tag, vars}] for named boxes (with "
                                        "--outdir: fetch only these pieces)")
+    ap.add_argument("--dedupe-geometry", action="store_true",
+                    help="with --outdir: send each distinct grid geometry once and "
+                         "list the pieces that share it (meta geometry_refs)")
     ap.add_argument("--inspect", metavar="PATH",
                     help="metadata-only inspect: print schema meta and exit "
                          "(no --plan/--out needed)")
@@ -473,7 +499,8 @@ def main(argv=None):
         if not args.manifest:
             return _fail("--outdir needs --manifest (the remote no longer writes "
                          "output files itself; update the caller's checkout)")
-        return _run_folder_delta(text, args.manifest, args.outdir)
+        return _run_folder_delta(text, args.manifest, args.outdir,
+                                 dedupe_geometry=args.dedupe_geometry)
     return _run_single(text, args.out)
 
 
