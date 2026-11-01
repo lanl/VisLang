@@ -597,12 +597,18 @@ class SieveSource(_Sieve):
     def SetSource(self, v):
         v = (v or "").strip()
         if v != self._uri:
+            # Another dataset: its fields are not this one's. The first Source
+            # (a new object, or a state being loaded) keeps any selection already
+            # restored -- a state sets Fields before Source, and wiping it here
+            # left the panel showing the saved choice while every field was fetched.
+            first = not self._uri
             self._uri, self._desc = v, None
             self._armed = False
             self._shown = self._shown_key = None
-            self._filling = True
-            self._fields.RemoveAllArrays()
-            self._filling = False
+            if not first:
+                self._filling = True
+                self._fields.RemoveAllArrays()
+                self._filling = False
             self.Modified()
 
     @smproperty.xml('<StringVectorProperty name="Positions" command="SetPositions" '
