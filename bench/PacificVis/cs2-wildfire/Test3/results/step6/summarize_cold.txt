@@ -1,0 +1,17 @@
+2 run(s), 2 pipeline(s) from bench/PacificVis/cs2-wildfire/Test3/results/step6/timings_cold.jsonl
+
+Catalog reuse across successive runs
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+started              route                 n_timesteps  reused_pairs  total_pairs  reuse_pct  cached_vars  want_vars  wire_mib  total_s   ssh_exec  remote_jobs
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-31T18:21:21  remote_folder_reduce  88           0             440          0.0                                44.96     154.2943  5                    
+2026-10-31T18:23:56  remote_folder_reduce  38           0             152          0.0                                348.03    123.2872  4                    
+
+
+Cost estimate — predicted vs actual
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+started              site    route                 est_read_mib        wire_mib  err_pct  est_time_lo_s  est_time_hi_s  pull_s   in_band  probe_bw_mibps  est_over_budget
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-31T18:21:21  remote  remote_folder_reduce  101.513671875       44.96     125.8    28.3           113.1          4.0203   low      1.795           False          
+2026-10-31T18:23:56  remote  remote_folder_reduce  453.70513916015625  348.03    30.4     137.8          551.3          13.1121  low      1.646           False          
+

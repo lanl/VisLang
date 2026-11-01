@@ -37,6 +37,11 @@ Overview alone: 0.047 GB for 88 timesteps = 1/23 of one 1.1 GB file; the two-pas
 costs 19.76 GB for 18 timesteps (419× the bytes). Still true and said plainly: Sieve reads
 138 GB on gpu-server (whole files), more than the two-pass route's 54 GB.
 
+## Replay (results/step6)
+Cold, from an empty cache: the same bytes as the session (47,138,910 + 364,936,204 B), both
+outputs bit-identical to the session's — and to Test2's (same data_sha256). Warm, a revisit:
+0 bytes, every piece from the catalog (440/440, 152/152), no remote job.
+
 ## On the way (session folders kept as records; not part of the numbers)
 - `20261031-173133-ee0d88`, `-174133-504952`, `-174233-b1828a`, `-174820-a08d04`: Test3 starts
   stopped before data moved. Two fetched all nine fields: loading a state wiped the Source's
