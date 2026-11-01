@@ -337,8 +337,14 @@ def _mb(v):
     return f"{v:,.1f} MB" if v < 1024 else f"{v / 1024:,.2f} GB"
 
 
+def _show_times():
+    """False when VISLANG_STATUS_TIMES=0: Status then reports bytes only (wall
+    times over a VPN or a busy host are not worth showing, or capturing)."""
+    return os.environ.get("VISLANG_STATUS_TIMES", "1") != "0"
+
+
 def _secs(lo, hi):
-    if lo is None:
+    if lo is None or not _show_times():
         return ""
     def f(s):
         return f"{s:.0f} s" if s < 90 else f"{s / 60:.1f} min"
@@ -361,15 +367,14 @@ def status_text(job, result=None, showing=None):
     st = r.get("status")
     est = r.get("estimate") or {}
     if st == "ok":
-        size = est.get("output_mb")
-        if size is None:                 # a cache hit is not priced: weigh the files
-            try:
-                size = sum(os.path.getsize(f["path"]) for f in r.get("files") or []) \
-                    / 1024 ** 2 or None
-            except (OSError, KeyError, TypeError):
-                size = None
+        try:                             # what was written, weighed: never the estimate
+            size = sum(os.path.getsize(f["path"]) for f in r.get("files") or []) \
+                / 1024 ** 2 or None
+        except (OSError, KeyError, TypeError):
+            size = None
         lines = [f"Fetched: result {_mb(size)}"
-                 + (f" in {r['total_s']:.1f} s" if r.get("total_s") else "")]
+                 + (f" in {r['total_s']:.1f} s" if r.get("total_s") and _show_times()
+                    else "")]
         if r.get("route") == "catalog_full_hit":
             lines.append("Served from the cache: nothing crossed the network.")
         if r.get("wire_bytes"):

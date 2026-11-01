@@ -159,6 +159,24 @@ def test_status():
                                 "reuse": {"reused_pairs": 2, "total_pairs": 3}})
     check("fetched: bytes against the prediction, and cache reuse",
           "Over the wire: 50.0 MB (predicted 2.00 GB" in t and "reused 2/3" in t, t)
+    import tempfile
+    f = tempfile.NamedTemporaryFile(suffix=".vts", delete=False)
+    f.write(b"x" * (3 * 1024 ** 2)); f.close()
+    ok = {"status": "ok", "estimate": est, "total_s": 12.5, "wire_bytes": 50 * 1024 ** 2,
+          "files": [{"path": f.name}]}
+    t = core.status_text(None, ok)
+    check("fetched: the result is what was written, not the estimate",
+          "Fetched: result 3.0 MB in 12.5 s" in t, t)
+    os.environ["VISLANG_STATUS_TIMES"] = "0"
+    try:
+        t = core.status_text(None, ok)
+        t2 = core.status_text(None, {"status": "held", "holds": {"budget": {"estimate": est}}})
+    finally:
+        os.environ.pop("VISLANG_STATUS_TIMES")
+    check("VISLANG_STATUS_TIMES=0: bytes only, no time anywhere",
+          t == "Fetched: result 3.0 MB\nOver the wire: 50.0 MB (predicted 2.00 GB)"
+          and "min" not in t2 and "Over the size budget: 2.00 GB." in t2, (t, t2))
+    os.remove(f.name)
     check("failed: the reason", "Failed: no such field" in
           core.status_text(None, {"status": "error", "error": "no such field"}))
 
