@@ -176,6 +176,9 @@ def test_status():
     check("VISLANG_STATUS_TIMES=0: bytes only, no time anywhere",
           t == "Fetched: result 3.0 MB\nOver the wire: 50.0 MB (predicted 2.00 GB)"
           and "min" not in t2 and "Over the size budget: 2.00 GB." in t2, (t, t2))
+    t = core.status_text(None, {**ok, "result_bytes": 40 * 1024 ** 2})
+    check("a timestep shown from a series fetch: the whole request's size",
+          "Fetched: result 40.0 MB" in t, t)
     os.remove(f.name)
     check("failed: the reason", "Failed: no such field" in
           core.status_text(None, {"status": "error", "error": "no such field"}))

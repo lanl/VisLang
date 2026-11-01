@@ -337,6 +337,14 @@ def _mb(v):
     return f"{v:,.1f} MB" if v < 1024 else f"{v / 1024:,.2f} GB"
 
 
+def files_bytes(files):
+    """Bytes on disk of a result's files ([{path, …}]); None when unreadable."""
+    try:
+        return sum(os.path.getsize(f["path"]) for f in files) or None
+    except (OSError, KeyError, TypeError):
+        return None
+
+
 def _show_times():
     """False when VISLANG_STATUS_TIMES=0: Status then reports bytes only (wall
     times over a VPN or a busy host are not worth showing, or capturing)."""
@@ -367,11 +375,12 @@ def status_text(job, result=None, showing=None):
     st = r.get("status")
     est = r.get("estimate") or {}
     if st == "ok":
-        try:                             # what was written, weighed: never the estimate
-            size = sum(os.path.getsize(f["path"]) for f in r.get("files") or []) \
-                / 1024 ** 2 or None
-        except (OSError, KeyError, TypeError):
-            size = None
+        # What the request wrote, weighed (never the estimate); a timestep shown
+        # from a series fetch carries the whole request's size.
+        nbytes = r.get("result_bytes")
+        if nbytes is None:
+            nbytes = files_bytes(r.get("files") or [])
+        size = nbytes / 1024 ** 2 if nbytes else None
         lines = [f"Fetched: result {_mb(size)}"
                  + (f" in {r['total_s']:.1f} s" if r.get("total_s") and _show_times()
                     else "")]

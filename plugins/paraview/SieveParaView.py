@@ -317,7 +317,11 @@ class _Sieve(VTKPythonAlgorithmBase):
         labelled = [f for f in r.get("files") or [] if f.get("label") is not None]
         if r.get("status") == "ok" and labelled:
             # One request fetched the selected timesteps: remember each as if
-            # it had been asked for alone, so the slider shows it at once.
+            # it had been asked for alone, so the slider shows it at once. Each
+            # keeps the whole request's written size, so Status describes the
+            # request, not the one timestep on screen.
+            r = {**r, "result_bytes": core.files_bytes(labelled)}
+            job.result = r
             _memo().put(job.key, r)
             for f in labelled:
                 _memo().put(self._key({**job.base, "timestep": f["label"]}),
