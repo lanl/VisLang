@@ -1,0 +1,14 @@
+% Case Study 2 (wildfire), Test3 -- values from cost_table.csv (scripts/cost_table.py). Bytes only.
+% \usepackage{booktabs,makecell}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+ & \multicolumn{2}{c}{\makecell{Pass 1: look over\\the time series}} & \makecell{Pass 2: the\\window, full res.} & \multicolumn{2}{c}{Total} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-4}\cmidrule(lr){5-6}
+Route & \makecell[r]{timesteps\\seen} & \makecell[r]{GB\\moved} & \makecell[r]{GB\\moved} & \makecell[r]{GB\\moved} & \makecell[r]{$\times$ Sieve's\\bytes} & \makecell[r]{lines of\\code} \\
+\midrule
+\textbf{Sieve} (ParaView)        & \textbf{88} & 0.05  & 0.36  & \textbf{0.41}  & \textbf{1$\times$} & \textbf{0} \\
+Two-pass download$^a$            & 18          & 19.76 & 34.04 & 53.80          & 130.6$\times$      & 89 \\
+Download everything$^b$          & 88          & 96.62 & 0     & 96.62          & 234.5$\times$      & 73 \\
+Work on the server$^c$           & 88          & 0     & 0.61  & 0.61           & 1.5$\times$        & 72 \\
+\bottomrule
+\end{tabular}
