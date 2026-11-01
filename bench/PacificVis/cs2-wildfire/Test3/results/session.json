@@ -1,0 +1,11 @@
+{
+ "session": "20261031-175301-ba2a2a",
+ "started": "2026-10-31T17:53:01",
+ "sieve_cmd": "/Users/agoosh11/Projects/VisLang/sieve",
+ "plugin_python": "3.12.7",
+ "settings": {
+  "VISLANG_CACHE": "/Users/agoosh11/Projects/VisLang/.vislang/cache-test3",
+  "VISLANG_STATUS_TIMES": "0"
+ },
+ "paraview": "paraview version 6.1.0-RC2"
+}
