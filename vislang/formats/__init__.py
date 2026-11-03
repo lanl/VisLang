@@ -5,7 +5,7 @@ reads `DatasetInfo` and is format-blind.
 
 Readers are chosen by a trust ladder, never by guessing at bytes:
 
-    1. an installed, trusted library (yt, h5py, astropy, GenericIO)
+    1. an installed, trusted library (yt, h5py, netCDF4, astropy, GenericIO)
     2. a verified, frozen adapter in `generated_adapters/`
     3. headerless raw, and only via a size-checked filename convention
     4. otherwise raise `NeedsAdapterError` — do not improvise

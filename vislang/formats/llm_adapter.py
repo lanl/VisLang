@@ -1,6 +1,6 @@
 """Tier-1 fallback: derive a reader for a file no registered adapter claims.
 
-Reached only after the built-in readers (yt / HDF5 / FITS / GenericIO) and any
+Reached only after the built-in readers (yt / VTK / HDF5 / netCDF-3 / FITS / GenericIO) and any
 previously-frozen generated adapters all decline. Generation is a HANDSHAKE with
 the session model — the LLM already driving this MCP session — so there is no
 second API/model and no API key:

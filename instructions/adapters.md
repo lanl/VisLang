@@ -12,12 +12,20 @@ downstream is format-blind.
 ## The trust ladder
 - **Tier 0 — installed, hand-written readers (full trust).** `yt` first (it
   auto-detects most simulation formats with proper fields/units), then magic-byte
-  fallbacks: VTK (pyvista), HDF5 (h5py), FITS (astropy), GenericIO/HACC (pygio).
-  Registry order is `[yt, VTK, HDF5, FITS, GenericIO]`; first `can_handle` wins.
+  fallbacks: VTK (pyvista), HDF5 (h5py), netCDF-3 (netCDF4), FITS (astropy),
+  GenericIO/HACC (pygio). Registry order is `[yt, VTK, HDF5, netCDF, FITS,
+  GenericIO, npz]`; first `can_handle` wins.
   VTK precedes HDF5 because `.vtkhdf` *is* HDF5 underneath and `HDF5Adapter`
   matches that magic regardless of extension — `VTKAdapter` only claims an
   HDF5-magic file that actually has a `/VTKHDF` root group, so plain HDF5 is
-  unaffected.
+  unaffected. netCDF-4 is HDF5 underneath and stays with `HDF5Adapter`; the
+  netCDF reader claims only the classic `CDF` signature (CDF-1, the 64-bit
+  offset CDF-2, CDF-5). It lists coordinate variables (1-D, named after their
+  dimension) as axes, not fields, and states a uniform geometry from them only
+  when every grid axis is evenly spaced and increasing; otherwise the grid is
+  placed in its cell indices. There is no netCDF-3 writer: a netCDF-3 source
+  saved with no extension falls back to npz (with a note); `.nc` writes
+  netCDF-4 when asked for.
 - **Tier 1 — no built-in reader, but a trusted library exists.** `get_adapter`
   raises `NeedsAdapterError` and the `inspect` tool returns a `NEEDS_ADAPTER`
   handshake. The **session model** (not a separate API) identifies the format and

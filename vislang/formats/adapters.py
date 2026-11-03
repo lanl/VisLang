@@ -323,6 +323,114 @@ class HDF5Adapter(FormatAdapter):
 
 
 # ---------------------------------------------------------------------------
+# netCDF classic (netCDF-3: CDF-1, CDF-2 64-bit offset, CDF-5)
+# ---------------------------------------------------------------------------
+class NetCDFAdapter(FormatAdapter):
+    """netCDF-3 files, read with the netCDF4 library (netcdf-c underneath).
+
+    netCDF-4 is HDF5 underneath and stays with HDF5Adapter; this adapter claims
+    only the classic `CDF` signature, so the two never compete. Each variable is
+    one contiguous block in a classic file, so a field or a box is read without
+    touching the rest.
+
+    Coordinate variables (1-D, named after their own dimension, the netCDF
+    convention) are axes, not fields: inspect lists them as attributes and, when
+    every grid axis is evenly spaced and increasing, states the grid's geometry
+    from them. Otherwise the grid has no stated geometry and is placed in its
+    own cell indices, as any grid that states none. Values are returned as
+    stored (no fill masking, no CF scale/offset), as the HDF5 reader does.
+    """
+
+    name = "netCDF"
+    supports_strided_read = True      # slicing goes to netcdf-c's hyperslab read
+    supports_column_pushdown = True   # each variable is read on its own
+
+    _MAGIC = (b'CDF\x01', b'CDF\x02', b'CDF\x05')
+    _COORD_MAX = 1_000_000            # a coordinate axis longer than this is data
+
+    @classmethod
+    def can_handle(cls, filepath):
+        try:
+            with open(filepath, 'rb') as f:
+                return f.read(4) in cls._MAGIC
+        except OSError:
+            return False
+
+    @staticmethod
+    def _coordinate(ds, dim):
+        """The coordinate variable of `dim`, or None."""
+        v = ds.variables.get(dim)
+        if v is not None and v.dimensions == (dim,):
+            return v
+        return None
+
+    def inspect(self, filepath):
+        from netCDF4 import Dataset
+
+        variables, itemsizes, attributes, dimensions = [], {}, {}, {}
+        with Dataset(filepath, 'r') as ds:
+            coords = {d for d in ds.dimensions if self._coordinate(ds, d) is not None}
+            shapes = {}
+            for name, v in ds.variables.items():
+                if name in coords:
+                    continue
+                variables.append(name)
+                shapes[name] = tuple(int(n) for n in v.shape)
+                itemsizes[name] = v.dtype.itemsize        # header metadata
+                attributes[f"{name}_shape"] = shapes[name]
+                attributes[f"{name}_dims"] = ", ".join(v.dimensions)
+            for key in ds.ncattrs():
+                if key == "sieve_provenance":
+                    continue
+                val = ds.getncattr(key)
+                attributes[key] = val.item() if hasattr(val, 'item') else val
+            attributes["netcdf_format"] = ds.file_format
+
+            grid_dims = None
+            nd = {(shapes[v], ds.variables[v].dimensions)
+                  for v in variables if len(shapes[v]) >= 3}
+            if len(nd) == 1:
+                shape, grid_dims = nd.pop()
+                dimensions['grid'] = shape
+
+            axes = {}
+            for d in sorted(coords):
+                cv = ds.variables[d]
+                if cv.size > self._COORD_MAX:
+                    continue
+                cv.set_auto_maskandscale(False)
+                a = np.asarray(cv[:], dtype=float)       # a 1-D axis, not bulk data
+                units = getattr(cv, 'units', '')
+                step = np.diff(a)
+                even = a.size > 1 and np.allclose(step, step[0], rtol=1e-6, atol=0)
+                attributes[f"axis_{d}"] = (
+                    f"{a.size} values, {a[0]:g} to {a[-1]:g}"
+                    + (f" {units}" if units else "")
+                    + ("" if a.size < 2 else
+                       f", every {step[0]:g}" if even else ", uneven spacing"))
+                axes[d] = (a, even)
+
+        info = DatasetInfo(filepath, self.name, variables, dimensions=dimensions,
+                           attributes=attributes, itemsizes=itemsizes)
+        if grid_dims is not None and len(grid_dims) == 3 and all(d in axes for d in grid_dims):
+            got = [axes[d] for d in grid_dims]
+            if all(even and a.size > 1 and a[1] > a[0] for a, even in got):
+                info.geometry = uniform_geometry([a[0] for a, _ in got],
+                                                 [a[1] - a[0] for a, _ in got])
+        return info
+
+    def read_array(self, filepath, location, selection):
+        from netCDF4 import Dataset
+
+        with Dataset(filepath, 'r') as ds:
+            v = ds.variables[location]
+            v.set_auto_maskandscale(False)
+            if v.ndim == 3:
+                return np.asarray(v[selection.indexer(3, v.shape[0])])
+            return apply_selection(np.asarray(v[:]), selection)
+
+
+# ---------------------------------------------------------------------------
 # GenericIO (HACC)
 # ---------------------------------------------------------------------------
 class GenericIOAdapter(FormatAdapter):
@@ -948,8 +1056,8 @@ class NpzAdapter(FormatAdapter):
 # other order every .vtkhdf would be read as an anonymous HDF5 tree. VTKAdapter
 # only claims an HDF5-magic file when it actually has a /VTKHDF root group, so
 # putting it first costs plain HDF5 files nothing.
-REGISTRY = [YTAdapter, VTKAdapter, HDF5Adapter, AstropyAdapter, GenericIOAdapter,
-            NpzAdapter]
+REGISTRY = [YTAdapter, VTKAdapter, HDF5Adapter, NetCDFAdapter, AstropyAdapter,
+            GenericIOAdapter, NpzAdapter]
 
 _BY_NAME = {a.name: a for a in REGISTRY}
 
@@ -996,7 +1104,7 @@ def _ensure_generated_loaded():
 def get_adapter(filepath):
     """Return an adapter for filepath.
 
-    Tier 0: registered readers (yt, VTK, HDF5, FITS, GenericIO, npz).
+    Tier 0: registered readers (yt, VTK, HDF5, netCDF-3, FITS, GenericIO, npz).
     Tier 1: a previously-frozen LLM-generated adapter, else one generated now.
     Raises UnsupportedFormatError if nothing can read it.
     """

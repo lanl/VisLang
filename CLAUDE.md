@@ -159,7 +159,7 @@ the rule that layer owns — read those first when working inside a folder.
   `adapters.get_adapter` (the trust ladder) → `DatasetInfo` in
   `dataset_info.py` (the format boundary; everything downstream is
   format-blind — it also owns `geometry` and its narrowing algebra).
-  `adapters.py` holds the Tier-0 readers (yt, VTK, HDF5, FITS,
+  `adapters.py` holds the Tier-0 readers (yt, VTK, HDF5, netCDF-3, FITS,
   GenericIO) and `NeedsAdapterError`; `llm_adapter.py` the Tier-1 session-model
   handshake (`gather_adapter_evidence`, `conform_and_freeze`);
   `generated_adapters/` the frozen modules; `schema_binding.py` HDF5 semantics.

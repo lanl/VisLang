@@ -164,7 +164,7 @@ def _libraries(names):
 
 
 _READER_LIB = {"HDF5": "h5py", "GenericIO": "pygio", "VTK": "vtk",
-               "FITS": "astropy", "yt": "yt"}
+               "FITS": "astropy", "yt": "yt", "netCDF": "netCDF4"}
 _WRITER_LIBS = {"hdf5": ("h5py",), "genericio": ("pygio",),
                 "vtk": ("vtk", "pyvista"), "netcdf4": ("netCDF4",), "npz": ()}
 
