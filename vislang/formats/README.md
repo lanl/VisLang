@@ -7,7 +7,7 @@ format is; everything downstream is format-blind.
 |---|---|
 | `inspect.py` | `inspect_file` / `inspect_source` — schema only, no bulk read |
 | `series.py` | `describe_series` — a timeseries' `#N` labels in a few words (runs, steps, gaps); standard library only, shared with the ParaView panel |
-| `adapters.py` | the Tier-0 trusted readers (yt, VTK, HDF5, netCDF-3, FITS, GenericIO) and `NeedsAdapterError` |
+| `adapters.py` | the Tier-0 trusted readers (yt, VTK, HDF5, netCDF-3, FITS, GenericIO, npz, size-checked raw) and `NeedsAdapterError` |
 | `dataset_info.py` | `DatasetInfo`, the format-neutral schema every layer above reads, plus `geometry` and its narrowing algebra |
 | `llm_adapter.py` | the Tier-1 handshake: gather evidence, conform a proposed reader, freeze it |
 | `schema_binding.py` | semantic bindings for HDF5 files that only expose a generic tree |

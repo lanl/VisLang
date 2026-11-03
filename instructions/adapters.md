@@ -13,8 +13,9 @@ downstream is format-blind.
 - **Tier 0 — installed, hand-written readers (full trust).** `yt` first (it
   auto-detects most simulation formats with proper fields/units), then magic-byte
   fallbacks: VTK (pyvista), HDF5 (h5py), netCDF-3 (netCDF4), FITS (astropy),
-  GenericIO/HACC (pygio). Registry order is `[yt, VTK, HDF5, netCDF, FITS,
-  GenericIO, npz]`; first `can_handle` wins.
+  GenericIO/HACC (pygio), and size-checked raw volumes (numpy memmap). Registry
+  order is `[yt, VTK, HDF5, netCDF, FITS, GenericIO, npz, raw]`; first
+  `can_handle` wins.
   VTK precedes HDF5 because `.vtkhdf` *is* HDF5 underneath and `HDF5Adapter`
   matches that magic regardless of extension — `VTKAdapter` only claims an
   HDF5-magic file that actually has a `/VTKHDF` root group, so plain HDF5 is
@@ -36,10 +37,12 @@ downstream is format-blind.
   (no model at all). Guide: `vislang://instructions/writing-adapters`.
 - **Tier 2 — headerless / handmade raw bytes with no library.** Generally NOT
   supported; raise `UnsupportedFormatError` rather than guess a byte layout. The
-  one sanctioned exception is a **declared, verifiable convention** — e.g.
-  `generated_adapters/raw.py` parses `<name>_<nx>x<ny>x<nz>_<dtype>.raw` and
-  **checks the file's byte count equals nx·ny·nz·itemsize** before trusting it.
-  The filename + size check is the deterministic oracle.
+  one sanctioned exception is a **declared, verifiable convention**: the
+  built-in `RawAdapter` parses `<name>_<nx>x<ny>x<nz>_<dtype>.raw` (the Open
+  SciVis Datasets' naming: x fastest, little-endian) and **checks the file's byte
+  count equals nx·ny·nz·itemsize** before reading anything; a mismatch raises.
+  The filename + size check is the deterministic oracle. The file is
+  memory-mapped, so a box or stride reads only the pages it touches.
 
 ## The binding path (custom HDF5) — `schema_binding.py`
 For HDF5 the *container* is known (h5py reads any HDF5) but the *semantics* are

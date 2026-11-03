@@ -88,7 +88,7 @@ def main():
                                                 value=0.0).kind == "threshold")
 
     print("== grid: crop+stride fusion is byte-correct ==")
-    full = np.fromfile(RAW, dtype=np.uint8).reshape(302, 302, 302)
+    full = np.fromfile(RAW, dtype=np.uint8).reshape(302, 302, 302, order="F")   # x fastest, as the Open SciVis files are
     d = source(RAW)
     got = run(subsample(region(d, x=(0, 200), y=(10, 110)), 2))
     (var, arr), = got.items()

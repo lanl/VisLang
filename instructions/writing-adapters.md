@@ -71,8 +71,11 @@ violation + traceback: fix the module and call `submit_adapter` again.
 
 ## Worked examples
 
-A frozen adapter shows the shape end-to-end (`.npz` once had one too; it is
-now the Tier-0 `NpzAdapter`, since numpy itself is the trusted reader):
-- `generated_adapters/raw.py` — headerless `<name>_<nx>x<ny>x<nz>_<dtype>.raw`,
-  parses shape/dtype from the filename and **verifies the byte count** before
-  trusting it (the sanctioned raw-bytes exception: a declared, checkable convention).
+No frozen adapter ships with the repo today. Two formats once had one and are
+now built-in readers, which is where a format belongs once it is common: `.npz`
+(`NpzAdapter`, numpy itself is the trusted reader) and headerless
+`<name>_<nx>x<ny>x<nz>_<dtype>.raw` (`RawAdapter`: shape and type from the name,
+the byte count verified before anything is read — the sanctioned raw-bytes
+exception, a declared, checkable convention). The generated `raw.py` it replaced
+read the whole file into memory and took the last axis as the fastest; the
+Open SciVis convention is x fastest.

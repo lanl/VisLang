@@ -10,6 +10,7 @@ formats raise UnsupportedFormatError — we do not guess at raw byte layouts.
 """
 
 import os
+import re
 import copy
 import numpy as np
 
@@ -428,6 +429,71 @@ class NetCDFAdapter(FormatAdapter):
             if v.ndim == 3:
                 return np.asarray(v[selection.indexer(3, v.shape[0])])
             return apply_selection(np.asarray(v[:]), selection)
+
+
+# ---------------------------------------------------------------------------
+# Headerless raw volumes: <name>_<nx>x<ny>x<nz>_<dtype>.raw
+# ---------------------------------------------------------------------------
+class RawAdapter(FormatAdapter):
+    """A headerless volume whose name states its shape and type, the convention
+    of the Open SciVis Datasets: `<name>_<nx>x<ny>x<nz>_<dtype>.raw`, x varying
+    fastest (array[z][y][x] in C), little-endian.
+
+    The bytes carry nothing to check against, so the declaration is checked
+    against the file instead: the size must be exactly nx·ny·nz·itemsize, or
+    the file is not claimed. It is the one sanctioned raw-bytes reader (the
+    trust ladder's last rung), not a parser of an unknown layout.
+
+    The file is memory-mapped, never loaded: a box or stride reads only the
+    pages it touches, so a volume larger than memory can still be cut.
+    """
+
+    name = "raw"
+    supports_strided_read = True      # memmap slicing reads only what it touches
+    supports_column_pushdown = True   # one variable per file
+
+    _NAME = re.compile(r'^(?P<var>.+?)_(?P<nx>\d+)x(?P<ny>\d+)x(?P<nz>\d+)_(?P<dtype>[a-z]+\d*)\.raw$')
+
+    @classmethod
+    def _declared(cls, filepath):
+        """(var, shape, dtype) the name declares, checked against the file.
+        Raises when the name parses but the type or the size disagrees."""
+        base = os.path.basename(filepath)
+        m = cls._NAME.match(base)
+        if m is None:
+            raise ValueError(f"{base!r} does not follow <name>_<nx>x<ny>x<nz>_<dtype>.raw")
+        try:
+            dtype = np.dtype(m["dtype"]).newbyteorder('<')
+        except TypeError:
+            dtype = None
+        if dtype is None or dtype.kind not in "uif":
+            raise ValueError(f"{base!r}: {m['dtype']!r} is not an integer or float type")
+        shape = (int(m["nx"]), int(m["ny"]), int(m["nz"]))
+        want = int(np.prod(shape)) * dtype.itemsize
+        size = os.path.getsize(filepath)
+        if size != want:
+            raise ValueError(
+                f"{base!r} declares {shape[0]}x{shape[1]}x{shape[2]} {dtype.name} = "
+                f"{want:,} bytes, but the file is {size:,} bytes — not read")
+        return m["var"], shape, dtype
+
+    @classmethod
+    def can_handle(cls, filepath):
+        """Any .raw named by the convention; inspect then checks the size."""
+        return cls._NAME.match(os.path.basename(filepath)) is not None
+
+    def inspect(self, filepath):
+        var, shape, dtype = self._declared(filepath)
+        attributes = {"dtype": dtype.name, "byte_order": "little-endian",
+                      "layout": "x fastest (array[z][y][x] in C)",
+                      f"{var}_shape": shape}
+        return DatasetInfo(filepath, self.name, [var], dimensions={'grid': shape},
+                           attributes=attributes, itemsizes={var: dtype.itemsize})
+
+    def read_array(self, filepath, location, selection):
+        _, shape, dtype = self._declared(filepath)
+        mm = np.memmap(filepath, dtype=dtype, mode='r', shape=shape, order='F')
+        return np.array(mm[selection.indexer(3, shape[0])])
 
 
 # ---------------------------------------------------------------------------
@@ -1057,7 +1123,7 @@ class NpzAdapter(FormatAdapter):
 # only claims an HDF5-magic file when it actually has a /VTKHDF root group, so
 # putting it first costs plain HDF5 files nothing.
 REGISTRY = [YTAdapter, VTKAdapter, HDF5Adapter, NetCDFAdapter, AstropyAdapter,
-            GenericIOAdapter, NpzAdapter]
+            GenericIOAdapter, NpzAdapter, RawAdapter]
 
 _BY_NAME = {a.name: a for a in REGISTRY}
 
@@ -1104,7 +1170,8 @@ def _ensure_generated_loaded():
 def get_adapter(filepath):
     """Return an adapter for filepath.
 
-    Tier 0: registered readers (yt, VTK, HDF5, netCDF-3, FITS, GenericIO, npz).
+    Tier 0: registered readers (yt, VTK, HDF5, netCDF-3, FITS, GenericIO, npz,
+    and size-checked raw volumes).
     Tier 1: a previously-frozen LLM-generated adapter, else one generated now.
     Raises UnsupportedFormatError if nothing can read it.
     """
