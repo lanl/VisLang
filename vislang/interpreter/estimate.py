@@ -252,6 +252,27 @@ def _selected_grid_cells(narrowing, grid):
     return prod
 
 
+def _coarsened_cells(narrowing, grid):
+    """Cells a narrowing's result holds after its coarsens (None = no coarsen):
+    per axis ceil(count / f), each coarsen in turn. A coarsen reads every cell
+    of the region; only the result is smaller."""
+    try:
+        from vislang.interpreter.narrowing import Coarsen
+    except Exception:
+        return None
+    ops = [op for op in (getattr(narrowing, 'post_ops', ()) or ()) if isinstance(op, Coarsen)]
+    if not ops:
+        return None
+    ranges = narrowing.grid_ranges or [None] * len(grid)
+    counts = [(_grid_axis_count(r, d) if r is not None else d) for r, d in zip(ranges, grid)]
+    for op in ops:
+        counts = [_ceil_div(n, int(f)) if n else 0 for n, f in zip(counts, op.factors)]
+    prod = 1
+    for n in counts:
+        prod *= n
+    return prod
+
+
 def _selected_particles(narrowing, total):
     if narrowing is None or narrowing.particle_index is None:
         return total
@@ -318,6 +339,7 @@ def estimate_plan_cost(*, info, narrowing, site, n_timesteps=1, sink_kind=None,
         modality = 'volume'
         selected = _selected_grid_cells(narrowing, grid)
         full = grid[0] * grid[1] * grid[2]
+        kept = _coarsened_cells(narrowing, grid)
     elif 'particles' in dims:
         modality = 'points'
         full = dims['particles']
@@ -336,15 +358,22 @@ def estimate_plan_cost(*, info, narrowing, site, n_timesteps=1, sink_kind=None,
 
     output_mb = read_mb = None
     if selected is not None:
-        output_mb = _bytes_mb(info, read_set, selected)
+        if modality != 'volume':
+            kept = None
+        out_cells = selected if kept is None else kept
+        output_mb = _bytes_mb(info, read_set, out_cells)
+        if kept is not None:
+            notes.append(f"coarsen reads all {selected:,} cells of the region per "
+                         f"timestep and keeps {kept:,} (one per block).")
         if site == 'remote':
             if read_mb_override is not None:
                 read_mb = read_mb_override
             else:
                 read_mb = _bytes_mb(info, wire_vars if wire_vars is not None
-                                    else read_set, selected)
+                                    else read_set, out_cells)
         elif strided:
-            read_mb = output_mb                      # stride pushed into the read
+            # stride pushed into the read; a coarsen still reads every cell
+            read_mb = output_mb if kept is None else _bytes_mb(info, read_set, selected)
         elif col_pushdown:
             read_mb = _bytes_mb(info, read_set, full)
             notes.append(f"{info.filetype} reads full columns then slices — disk "

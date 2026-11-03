@@ -93,6 +93,33 @@ def sampled_geometry(points, steps):
             "sample_steps": tuple(int(s) for s in steps)}
 
 
+def coarsened_geometry(geometry, factors):
+    """`geometry` after a block reduction of `factors` cells per axis: one point
+    per block, at the block's centre. Uniform: spacing × f, origin moved by
+    (f − 1)/2 cells — so a block cut short by the grid's edge is placed where a
+    whole block would sit. Listed points: each block's mean position. Cell
+    placement stays cell placement (fractional cells: a block's centre)."""
+    if not geometry:
+        return geometry
+    f = tuple(int(k) for k in factors)
+    if geometry.get("kind") == "uniform":
+        o = np.asarray(geometry["origin"], dtype=float)
+        s = np.asarray(geometry["spacing"], dtype=float)
+        k = np.asarray((f + (1,) * len(o))[:len(o)], dtype=float)
+        out = dict(geometry)
+        out["origin"] = tuple(float(v) for v in o + (k - 1) / 2 * s)
+        out["spacing"] = tuple(float(v) for v in s * k)
+        return out
+    if geometry.get("kind") == "structured" and geometry.get("points") is not None:
+        from vislang.interpreter.narrowing import block_reduce
+        pts = np.asarray(geometry["points"], dtype=float)
+        out = dict(geometry)
+        out["points"] = np.stack([block_reduce(pts[..., c], f, "mean")
+                                  for c in range(pts.shape[-1])], axis=-1)
+        return out
+    return geometry
+
+
 def narrowed_geometry(geometry, grid_ranges):
     """`geometry` as it applies to a block cut out by `grid_ranges`.
 

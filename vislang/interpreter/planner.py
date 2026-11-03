@@ -22,8 +22,18 @@ axes:
   subsample is pushed into the read ONLY if no computed cut precedes it in the
   spec; otherwise it is demoted to a post-read op at its written position.
   Grid subsample composes with grid crops into one [a:b:k] per axis, and grid
-  `threshold` NaN-masks in place (shape-preserving), so on grids everything
-  commutes and full pushdown is always safe.
+  `threshold` NaN-masks in place (shape-preserving), so on grids the crops,
+  strides and masks commute and full pushdown is safe.
+
+  `coarsen` (grids only) is COMPUTED and not shape-preserving: one value per
+  block of cells, so it runs after the read at its written position among the
+  post-read ops, and does not commute with `threshold` (masking cells before
+  averaging is a different answer than masking the averages). Its crop still
+  folds into the read — a `region` is a box in the source's own coordinates,
+  written before or after — but a `subsample` after a `coarsen` is refused
+  (every Nth block is not a stride of the source). A coarsen that follows only
+  masks is streamed in slabs (load.materialize), so a region larger than
+  memory can be reduced.
 
 The lowered plan is one Narrowing: the pushdown layer (project + grid_ranges /
 particle_index) plus `post_ops`, the computed cuts in written order, applied by
@@ -43,7 +53,7 @@ from vislang.interpreter.compress import compress as _compress
 from vislang.output.render import render as _render
 from vislang.formats.adapters import adapter_capabilities
 from vislang.interpreter.narrowing import (Narrowing, AxisRange, Predicate, BBox,
-                       RowMask, RowSample, VoxelMask,
+                       RowMask, RowSample, VoxelMask, Coarsen,
                        narrowing_from_dimensions, validate_narrowing)
 
 _REMOTE = re.compile(r"^[a-z][a-z0-9+.-]*://|^[^/\s]+@[^/\s]+:")   # scheme:// or user@host:
@@ -91,6 +101,9 @@ def _describe_ast(chain):
         elif k == "subsample":
             parts.append(f"subsample({n.uniform})" if n.uniform is not None
                          else f"subsample({dict(n.per_axis)})")
+        elif k == "coarsen":
+            parts.append(f"coarsen({n.uniform},{n.how})" if n.uniform is not None
+                         else f"coarsen({dict(n.per_axis)},{n.how})")
         elif k == "threshold":
             parts.append(f"threshold({n.var}{n.op}{n.value})")
         elif k == "timesteps":
@@ -486,7 +499,7 @@ def _plan_remote(src, middle, sink, terminal, dry_run, approval=None):
     instead of falling back (surfacing what broke)."""
     steps = []
     mode = os.environ.get("VISLANG_REMOTE", "auto")
-    has_narrowing = any(n.kind in ("fields", "region", "subsample", "threshold")
+    has_narrowing = any(n.kind in ("fields", "region", "subsample", "coarsen", "threshold")
                         for n in middle)
 
     # No sink: there is no action to plan, so preview the shape of the chain and
@@ -913,11 +926,12 @@ def _lower(info, middle, steps, label=None):
     pushdown_subsample = None      # a particle subsample safe to push into the read
     seen_computed = False          # "have we hit an order-sensitive filter yet?"
     pending_compress = []          # compress form queued for the very end
+    coarsened = False              # a coarsen has run: no stride may follow it
 
     for node in middle:
         if pending_compress and node.kind != "compress":
             raise NotImplementedError("narrowing after compress is not supported; "
-                                      "put fields/region/subsample/threshold before compress")
+                                      "put fields/region/subsample/coarsen/threshold before compress")
         if node.kind == "fields":
             base = keep if keep is not None else list(info.variables)
             invalid = set(node.keep) - set(base)
@@ -947,6 +961,11 @@ def _lower(info, middle, steps, label=None):
                 steps.append(f"region {dict((a, (lo, hi)) for a, lo, hi in node.ranges)} "
                              f"(bbox mask, post-read)")
         elif node.kind == "subsample":
+            if coarsened:
+                raise NotImplementedError(
+                    "subsample after coarsen is not supported: every Nth block is "
+                    "not a stride of the source. Put subsample before coarsen (it "
+                    "then thins the cells the blocks are made of).")
             if modality == "grid":
                 grid_subsample_nodes.append(node)  # structural stride
                 what = (f"uniform={node.uniform}" if node.uniform is not None
@@ -966,6 +985,25 @@ def _lower(info, middle, steps, label=None):
                     post_ops.append(RowSample(factor=node.uniform))
                     steps.append(f"subsample uniform={node.uniform} "
                                  f"(post-read: follows a computed cut)")
+        elif node.kind == "coarsen":
+            if modality != "grid":
+                raise ValueError("coarsen applies to grids (blocks of cells); this "
+                                 "dataset is point data — use subsample")
+            grid = (info.dimensions or {}).get("grid") or ()
+            factors = [1] * len(grid)
+            if node.uniform is not None:
+                factors = [int(node.uniform)] * len(grid)
+            else:
+                for axis, f in node.per_axis:
+                    i = _AXIS_INDEX.get(axis)
+                    if i is None or i >= len(grid):
+                        raise ValueError(f"coarsen: unknown axis {axis!r}; this grid "
+                                         f"has {len(grid)} axes (x, y, z)")
+                    factors[i] = int(f)
+            post_ops.append(Coarsen(factors=tuple(factors), how=node.how))
+            coarsened = True
+            steps.append(f"coarsen {'x'.join(map(str, factors))} blocks, {node.how} "
+                         f"(post-read: reads every cell of the region)")
         elif node.kind == "threshold":
             pred = Predicate(node.var, node.op, node.value)
             if modality == "grid":
@@ -1506,7 +1544,7 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, approval
             "with timesteps(node, N, N), or use save() to write the range.")
 
     mode = os.environ.get("VISLANG_REMOTE", "auto")
-    has_narrowing = any(n.kind in ("fields", "region", "subsample", "threshold",
+    has_narrowing = any(n.kind in ("fields", "region", "subsample", "coarsen", "threshold",
                                    "compress") for n in middle)
 
     # No sink: nothing to plan, so touch nothing (see _plan_remote).

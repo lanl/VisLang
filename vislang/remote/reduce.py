@@ -67,9 +67,9 @@ from vislang.remote.download import (establish_connection, transfer, transfer_di
                          measure_bandwidth, host_reachable, connect_command)
 from vislang.dsl.ast_serialize import to_plan_json
 from vislang.dsl.nodes import (SourceNode, FieldsNode, RegionNode, SubsampleNode,
-                             ThresholdNode)
+                             CoarsenNode, ThresholdNode)
 
-_NARROWING = ("fields", "region", "subsample", "threshold")
+_NARROWING = ("fields", "region", "subsample", "coarsen", "threshold")
 
 # How much remote stderr to keep when a remote step fails. Generous on purpose:
 # the executor's own traceback lands at the END of the stream, so a tight tail
@@ -392,8 +392,16 @@ def _narrow_key(middle, label=None):
         elif n.kind == "subsample":
             forms.append(["subsample", n.uniform,
                           [[a, f] for a, f in (n.per_axis or ())]])
+        elif n.kind == "coarsen":
+            # Not a crop or stride: the catalog reuses it on an exact match only.
+            forms.append(["coarsen", n.uniform,
+                          [[a, f] for a, f in (n.per_axis or ())], n.how])
         elif n.kind == "threshold":
             forms.append(["threshold", n.var, n.op, n.value])
+        elif n.kind != "fields":
+            # A form left out of the key would let a cached extent answer a
+            # request it does not hold.
+            raise ValueError(f"no catalog key for form {n.kind!r}")
     return {"forms": forms}
 
 
@@ -434,6 +442,9 @@ def _stale_remote_hint(detail):
     if "unrecognized arguments: --dedupe-geometry" in text:
         return (f"{text} — the remote checkout predates sending a fixed grid's "
                 f"positions once; update it: git pull in VISLANG_REMOTE_REPO")
+    if "unknown kind 'coarsen'" in text:
+        return (f"{text} — the remote checkout predates coarsen(); update it: "
+                f"git pull in VISLANG_REMOTE_REPO")
     if "unknown ['coords']" in text:
         return (f"{text} — the remote checkout predates region(coords=…); update "
                 f"it: git pull in VISLANG_REMOTE_REPO")
@@ -459,7 +470,7 @@ def _split_middle(middle):
         elif n.kind in _NARROWING:
             if compresses:
                 raise ValueError("narrowing after compress is not supported; "
-                                 "put fields/region/subsample/threshold before compress")
+                                 "put fields/region/subsample/coarsen/threshold before compress")
             prefix.append(n)
         else:
             raise ValueError(f"unknown form {n.kind!r} in pipeline")
@@ -481,8 +492,12 @@ def _rebuild_prefix(remote_path, positions, prefix, project):
             node = dataclasses.replace(n, upstream=node)
         elif n.kind == "subsample":
             node = SubsampleNode(upstream=node, uniform=n.uniform, per_axis=n.per_axis)
+        elif n.kind == "coarsen":
+            node = dataclasses.replace(n, upstream=node)
         elif n.kind == "threshold":
             node = ThresholdNode(upstream=node, var=n.var, op=n.op, value=n.value)
+        else:
+            raise ValueError(f"cannot ship form {n.kind!r} to the remote")
     return node
 
 
@@ -1757,7 +1772,7 @@ def _run_delta_job(conn, terminal, manifest, steps, what, n_timesteps):
 
 
 def _rebuild_delta_source(remote_dir, positions, narrow_prefix):
-    """source(remote-local DIR) -> region/subsample/threshold (NO fields, NO
+    """source(remote-local DIR) -> region/subsample/coarsen/threshold (NO fields, NO
     timesteps): the shared narrowing the delta manifest re-roots onto each listed
     timestep file (per-file projection comes from the manifest)."""
     node = SourceNode(uri=remote_dir,
@@ -1767,6 +1782,10 @@ def _rebuild_delta_source(remote_dir, positions, narrow_prefix):
             node = dataclasses.replace(nn, upstream=node)
         elif nn.kind == "subsample":
             node = SubsampleNode(upstream=node, uniform=nn.uniform, per_axis=nn.per_axis)
+        elif nn.kind == "coarsen":
+            node = dataclasses.replace(nn, upstream=node)
         elif nn.kind == "threshold":
             node = ThresholdNode(upstream=node, var=nn.var, op=nn.op, value=nn.value)
+        else:
+            raise ValueError(f"cannot ship form {nn.kind!r} to the remote")
     return node

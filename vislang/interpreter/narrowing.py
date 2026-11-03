@@ -111,6 +111,67 @@ class VoxelMask:
     predicates: tuple = ()
 
 
+# coarsen
+@dataclass(frozen=True)
+class Coarsen:
+    """Grid block reduction: one value per block of `factors` cells (per axis),
+    the block's mean/min/max. NOT shape-preserving and not commutative with a
+    threshold (masking before averaging is a different answer than after), so
+    it runs at its written position among the post-read ops. NaN cells (a
+    threshold's mask) are left out of a block; a block of only NaN stays NaN."""
+    factors: tuple = (1, 1, 1)
+    how: str = "mean"
+
+
+_REDUCE = {"mean": np.nanmean, "min": np.nanmin, "max": np.nanmax}
+
+
+def block_reduce(arr, factors, how):
+    """`arr` (any ndim) reduced over blocks of `factors` cells. A block cut short
+    by the edge is reduced over the cells it holds, so the result has
+    ceil(n / f) cells per axis — the shape a stride of f keeps. The mean of an
+    integer field is float64; min and max keep the dtype."""
+    import warnings
+    a = np.asarray(arr)
+    f = tuple(int(k) for k in factors)[:a.ndim]
+    f = f + (1,) * (a.ndim - len(f))
+    if all(k == 1 for k in f):
+        return a.copy()
+    floaty = np.issubdtype(a.dtype, np.floating)
+    if how == "mean" and not floaty:
+        a, floaty = a.astype(np.float64), True
+    pad = [(0, (-n) % k) for n, k in zip(a.shape, f)]
+    if any(p for _, p in pad):
+        if floaty:
+            fill = np.nan
+        else:
+            info = np.iinfo(a.dtype)
+            fill = info.max if how == "min" else info.min
+        a = np.pad(a, pad, constant_values=fill)
+    # Each block's cells laid out contiguously, in one fixed order, and reduced
+    # along that last axis: the arithmetic (a mean's summation order) is then
+    # the same however the array arrived — whole, or in slabs, or remote — so
+    # the same request gives the same bits.
+    split, out = [], []
+    for n, k in zip(a.shape, f):
+        split += [n // k, k]
+        out.append(n // k)
+    nd = a.ndim
+    b = np.ascontiguousarray(a).reshape(split)
+    b = b.transpose(tuple(range(0, 2 * nd, 2)) + tuple(range(1, 2 * nd, 2)))
+    b = np.ascontiguousarray(b).reshape(out + [-1])
+    if not floaty:
+        return (np.min if how == "min" else np.max)(b, axis=-1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)   # an all-NaN block -> NaN
+        return _REDUCE[how](b, axis=-1)
+
+
+def coarsened_count(n, factor):
+    """Cells a block factor keeps along an axis of `n` cells."""
+    return -(-int(n) // int(factor)) if n else 0
+
+
 # ---------------------------------------------------------------------------
 # Random row selection — seeded, so a spec is reproducible
 # ---------------------------------------------------------------------------
@@ -382,6 +443,12 @@ def validate_narrowing(info, n):
             _check_predicates(op.predicates, "threshold")
         elif isinstance(op, VoxelMask):
             _check_predicates(op.predicates, "threshold")
+        elif isinstance(op, Coarsen):
+            if op.how not in _REDUCE:
+                raise ValueError(f"coarsen: how must be one of {list(_REDUCE)}, got {op.how!r}")
+            if any(isinstance(k, bool) or not isinstance(k, int) or k < 1 for k in op.factors):
+                raise ValueError(f"coarsen: block factors must be whole numbers >= 1, "
+                                 f"got {op.factors}")
         elif isinstance(op, RowSample):
             f = op.factor
             if isinstance(f, bool) or not isinstance(f, (int, float)):

@@ -807,6 +807,14 @@ def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
                 head = f"keep every {_ordinal(u)} row: rows 0, {u}, {2 * u}, …"
             else:
                 head = "keep every row"
+        elif kind == "coarsen":
+            u, per, how = step.get("uniform"), step.get("per_axis") or [], step.get("how")
+            what = {"mean": "mean", "min": "minimum", "max": "maximum"}.get(how, how)
+            block = (f"{u}×{u}×{u}" if u is not None
+                     else ", ".join(f"{f} along {a}" for a, f in per))
+            head = f"one value per block of {block} cells: the block's {what}"
+            more.append("(a block cut short by the edge: over the cells it holds; "
+                        "NaN cells left out; placed at the block's centre)")
         elif kind == "timesteps":
             head = ("keep timesteps " + ", ".join(f"#{v}" for v in step["labels"])
                     if step.get("labels") else
@@ -849,7 +857,14 @@ def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
         prefix = f"  {i}. {kind:<11}"
         lines.append(prefix + head)
         lines.extend(" " * len(prefix) + m for m in more)
-    lines += ["", "Values: " + _values_line(output_columns, lossy, cast)]
+    reduced = [s.get("how") for s in chain[1:] if s.get("kind") == "coarsen"]
+    values = _values_line(output_columns, lossy, cast)
+    if reduced:
+        what = " then ".join({"mean": "means", "min": "minima", "max": "maxima"}.get(h, h)
+                             for h in reduced)
+        values = (f"block {what} of the source cells (computed, not source values); "
+                  + (values if values != "all exact." else "no other change."))
+    lines += ["", "Values: " + values]
     return "\n".join(lines) + "\n"
 
 

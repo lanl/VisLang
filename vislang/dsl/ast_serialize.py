@@ -34,7 +34,7 @@ import json
 
 from vislang.dsl.forms import valid_tag
 from vislang.dsl.nodes import (
-    SourceNode, FieldsNode, RegionNode, SubsampleNode,
+    SourceNode, FieldsNode, RegionNode, SubsampleNode, CoarsenNode,
     ThresholdNode, CompressNode, SaveNode, RenderNode, TimestepsNode, upstream_of,
 )
 
@@ -132,6 +132,11 @@ def _ser_subsample(n):
             "per_axis": [_as_list(p) for p in n.per_axis]}
 
 
+def _ser_coarsen(n):
+    return {"kind": "coarsen", "uniform": n.uniform,
+            "per_axis": [_as_list(p) for p in n.per_axis], "how": n.how}
+
+
 def _ser_threshold(n):
     return {"kind": "threshold", "var": n.var, "op": n.op, "value": n.value}
 
@@ -159,7 +164,7 @@ def _ser_timesteps(n):
 
 _SERIALIZERS = {
     "source": _ser_source, "fields": _ser_fields, "region": _ser_region,
-    "subsample": _ser_subsample, "threshold": _ser_threshold,
+    "subsample": _ser_subsample, "coarsen": _ser_coarsen, "threshold": _ser_threshold,
     "compress": _ser_compress, "save": _ser_save, "render": _ser_render,
     "timesteps": _ser_timesteps,
 }
@@ -170,6 +175,7 @@ _STEP_KEYS = {
     "fields":    frozenset(("kind", "keep")),
     "region":    frozenset(("kind", "ranges")),
     "subsample": frozenset(("kind", "uniform", "per_axis")),
+    "coarsen":   frozenset(("kind", "uniform", "per_axis", "how")),
     "threshold": frozenset(("kind", "var", "op", "value")),
     "compress":  frozenset(("kind", "variables", "error_bound", "mode")),
     "save":      frozenset(("kind", "path")),
@@ -492,6 +498,31 @@ def _val_subsample(s, where):
         _check_factor(f, where, f"per_axis[{axis!r}] factor")
 
 
+def _val_coarsen(s, where):
+    uniform, per_axis, how = s["uniform"], s["per_axis"], s["how"]
+    if how not in ("mean", "min", "max"):
+        _fail(where, f"'how' must be one of ['mean', 'min', 'max'], got {how!r}")
+    if not _is_seq(per_axis):
+        _fail(where, f"'per_axis' must be a list, got {per_axis!r}")
+    if uniform is not None and per_axis:
+        _fail(where, "give a uniform factor OR per-axis factors, not both")
+    if uniform is None and not per_axis:
+        _fail(where, "needs a uniform factor or per-axis factors")
+
+    def whole(f, what):
+        if isinstance(f, bool) or not isinstance(f, int) or f < 1:
+            _fail(where, f"{what} must be a whole number >= 1, got {f!r}")
+    if uniform is not None:
+        whole(uniform, "'uniform'")
+    for p in per_axis:
+        if not _is_seq(p) or len(p) != 2:
+            _fail(where, f"each per_axis entry must be [axis, factor], got {p!r}")
+        axis, f = p
+        if not isinstance(axis, str) or not axis:
+            _fail(where, f"per_axis axis must be a non-empty string, got {axis!r}")
+        whole(f, f"per_axis[{axis!r}] factor")
+
+
 def _val_threshold(s, where):
     var, op, value = s["var"], s["op"], s["value"]
     if not isinstance(var, str) or not var:
@@ -552,7 +583,7 @@ def _val_timesteps(s, where):
 
 _VALIDATORS = {
     "source": _val_source, "fields": _val_fields, "region": _val_region,
-    "subsample": _val_subsample, "threshold": _val_threshold,
+    "subsample": _val_subsample, "coarsen": _val_coarsen, "threshold": _val_threshold,
     "compress": _val_compress, "save": _val_save, "render": _val_render,
     "timesteps": _val_timesteps,
 }
@@ -646,6 +677,11 @@ def _build_subsample(s, up):
                          per_axis=tuple(tuple(p) for p in s["per_axis"]))
 
 
+def _build_coarsen(s, up):
+    return CoarsenNode(upstream=up, uniform=s["uniform"],
+                       per_axis=tuple(tuple(p) for p in s["per_axis"]), how=s["how"])
+
+
 def _build_threshold(s, up):
     return ThresholdNode(upstream=up, var=s["var"], op=s["op"],
                          value=float(s["value"]))
@@ -674,7 +710,7 @@ def _build_timesteps(s, up):
 
 _BUILDERS = {
     "source": _build_source, "fields": _build_fields, "region": _build_region,
-    "subsample": _build_subsample, "threshold": _build_threshold,
+    "subsample": _build_subsample, "coarsen": _build_coarsen, "threshold": _build_threshold,
     "compress": _build_compress, "save": _build_save, "render": _build_render,
     "timesteps": _build_timesteps,
 }
@@ -779,6 +815,11 @@ def describe_plan(plan):
             per = step.get("per_axis") or []
             parts.append(f"subsample({step.get('uniform')})" if not per else
                          "subsample{" + ",".join(f"{a}:{f}" for a, f in per) + "}")
+        elif kind == "coarsen":
+            per = step.get("per_axis") or []
+            how = step.get("how")
+            parts.append(f"coarsen({step.get('uniform')},{how})" if not per else
+                         "coarsen{" + ",".join(f"{a}:{f}" for a, f in per) + f",{how}}}")
         elif kind == "threshold":
             parts.append(f"threshold({step.get('var')}"
                          f"{step.get('op')}{step.get('value')})")

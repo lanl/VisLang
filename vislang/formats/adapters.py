@@ -76,6 +76,7 @@ class FormatAdapter:
     name = None  # short format identifier, e.g. "HDF5"
     supports_strided_read = False
     supports_column_pushdown = False
+    slab_axis = 0       # slowest-varying array axis: a streamed read cuts slabs along it
 
     @classmethod
     def can_handle(cls, filepath):
@@ -451,6 +452,7 @@ class RawAdapter(FormatAdapter):
     name = "raw"
     supports_strided_read = True      # memmap slicing reads only what it touches
     supports_column_pushdown = True   # one variable per file
+    slab_axis = 2                     # x fastest: z planes are the contiguous slabs
 
     _NAME = re.compile(r'^(?P<var>.+?)_(?P<nx>\d+)x(?P<ny>\d+)x(?P<nz>\d+)_(?P<dtype>[a-z]+\d*)\.raw$')
 
@@ -475,7 +477,10 @@ class RawAdapter(FormatAdapter):
             raise ValueError(
                 f"{base!r} declares {shape[0]}x{shape[1]}x{shape[2]} {dtype.name} = "
                 f"{want:,} bytes, but the file is {size:,} bytes — not read")
-        return m["var"], shape, dtype
+        # In a series the name carries the timestep (`p#12_…raw`); the field
+        # is the same in every file, so the label is not part of its name.
+        var = re.sub(r"#\d+$", "", m["var"]) or m["var"]
+        return var, shape, dtype
 
     @classmethod
     def can_handle(cls, filepath):

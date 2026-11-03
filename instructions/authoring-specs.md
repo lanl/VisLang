@@ -13,7 +13,7 @@ render(subsample(fields(source("/abs/path/data.ext"), ["density"]), 2), cmap=...
 ```
 For a first look at an unfamiliar dataset, skip the narrowing and just
 `render(source(path))` to see the whole thing, then refine on the next turn.
-- **It reads left-to-right as intent.** source → (fields/region/subsample/threshold)
+- **It reads left-to-right as intent.** source → (fields/region/subsample/coarsen/threshold)
   → render/save. Nothing runs until the sink. Order is honored where it matters:
   `threshold` then `subsample` samples the survivors; the reverse thresholds a sample.
 - **Absolute paths.** Specs are exec'd by a long-running server with its own cwd.

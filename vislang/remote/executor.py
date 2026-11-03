@@ -319,7 +319,7 @@ def _run_folder_delta(text, manifest_path, outdir, dedupe_geometry=False):
     chain.reverse()
     src_node = chain[0]
     narrowing = [n for n in chain[1:]
-                 if n.kind in ("region", "subsample", "threshold")]
+                 if n.kind in ("region", "subsample", "coarsen", "threshold")]
 
     try:
         entries = _manifest_entries(_json.loads(open(manifest_path).read()))

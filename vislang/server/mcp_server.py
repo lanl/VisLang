@@ -214,6 +214,8 @@ def run_pipeline(spec_path: str, confirm: bool = False, without_allocation: bool
       region(node, x=(a,b), ...)         spatial crop (grid: index ranges;
                                          points: world-coordinate bounding box)
       subsample(node, f) | (node, x=..)  reduce resolution (stride / fraction)
+      coarsen(node, f, how="mean")       grids: one value per block of cells
+                                         (mean / min / max)
       threshold(node, "var > value")     keep where the predicate holds
                                          (points: drop rows; grids: NaN-mask voxels)
       compress(node, variables, error_bound[, mode])

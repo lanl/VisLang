@@ -11,7 +11,7 @@ from .nodes import (
 )
 
 # The forms the spec may call (no imports needed in the spec itself).
-_FORM_NAMES = ("source", "fields", "region", "subsample",
+_FORM_NAMES = ("source", "fields", "region", "subsample", "coarsen",
                "threshold", "timesteps", "compress", "save", "render")
 
 

@@ -251,6 +251,38 @@ samples the survivors, while the reverse samples first and thresholds the
 sample. The interpreter is faithful to the written order (a subsample written
 after a threshold/bbox runs post-read instead of being pushed into the read).
 
+## coarsen(node, f, how="mean") | coarsen(node, x=…, y=…, z=…, how=…) -> node
+Reduce a **grid's** resolution by **summarizing blocks**: one value per block
+of `f` cells along each axis (or `x=/y=/z=` per axis; an axis left out keeps
+every cell), the block's `"mean"`, `"min"` or `"max"`. Where `subsample` keeps
+some cells, `coarsen` computes one value from all of them — so a sharp feature
+narrower than a block survives a `min`/`max` (it is averaged away by a `mean`,
+and hit or missed by a stride).
+```python
+coarsen(region(fields(src, ["pressure"]), x=(0, 4096)), 8, how="min")
+```
+- Factors are whole numbers of cells. Blocks start at the first cell the read
+  keeps; a block cut short by the grid's edge is reduced over the cells it
+  holds, so the result has ceil(n/f) cells per axis — the shape a stride of `f`
+  keeps.
+- Each value is placed at its **block's centre** (origin moved by (f−1)/2
+  cells, spacing × f; an edge block cut short sits where a whole one would).
+  The provenance record says the values are block means/minima/maxima, not
+  source values.
+- **Order:** a `region` is a box of the source, written before or after (the
+  same result). A `subsample` must come **before** a coarsen (it thins the cells
+  the blocks are made of); after one it is refused. A `threshold` before masks
+  cells, which the blocks then leave out (a block of only masked cells is NaN);
+  after, it masks the block values — two different answers, both honored.
+- **Cost:** every cell of the region is read (no stride is pushed into the
+  read); only the result is smaller. The estimate prices it that way. A region
+  larger than `VISLANG_SLAB_MB` (default 1024) is read and reduced slab by slab,
+  so it never sits in memory whole; the result is the same bits either way.
+- Grids only: on point data it raises (use `subsample`). The mean of an integer
+  field is float64; min and max keep the type.
+- Over a remote source the reduction runs next to the data, like the other
+  forms; the extent catalog reuses a coarsened extent on an exact match only.
+
 ## threshold(node, "var op value") -> node
 Keep elements where the predicate holds, e.g. `"density > 0.5"`. Operators:
 `< <= > >= == !=`; the right-hand side is a scalar. Works on both modalities:

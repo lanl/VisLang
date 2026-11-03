@@ -41,9 +41,9 @@ Form binding
 The wrapped forms are registered under their REAL names directly in Monty's
 ``external_functions``, so the spec calls them with no header and no imports --
 matching how the forms were injected into the old ``exec`` namespace. This
-works because none of the 8 form names (``source``, ``fields``, ``region``,
-``subsample``, ``threshold``, ``compress``, ``save``, ``render``) is a Monty
-builtin. Monty resolves its own builtins at compile time and that resolution
+works because none of the form names (``source``, ``fields``, ``region``,
+``subsample``, ``coarsen``, ``threshold``, ``timesteps``, ``compress``,
+``save``, ``render``) is a Monty builtin. Monty resolves its own builtins at compile time and that resolution
 would shadow an identically-named ``external_functions`` entry; a form whose
 name collided with a future Monty builtin would therefore need to be bound
 another way (e.g. registered under a non-colliding alias and rebound to its

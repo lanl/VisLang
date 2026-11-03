@@ -15,7 +15,7 @@ import math
 import re
 
 from .nodes import (
-    SourceNode, FieldsNode, RegionNode, SubsampleNode,
+    SourceNode, FieldsNode, RegionNode, SubsampleNode, CoarsenNode,
     ThresholdNode, TimestepsNode, CompressNode, SaveNode, RenderNode, Node,
 )
 
@@ -607,6 +607,40 @@ def subsample(node, factor=None, **axes):
         _check_factor(f, f"subsample({axis}=...)")
         per_axis.append((axis, f))
     return SubsampleNode(upstream=node, uniform=None, per_axis=tuple(per_axis))
+
+
+COARSEN_HOW = ("mean", "min", "max")
+
+
+def _check_block(value, where):
+    """A coarsen factor: a whole number of cells per block, >= 1."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{where}: block factor must be a whole number of cells, got {value!r}")
+    if value < 1:
+        raise ValueError(f"{where}: block factor must be >= 1, got {value}")
+
+
+def coarsen(node, factor=None, *, how="mean", **axes):
+    """One value per block of `factor` cells along each axis — the block's mean,
+    min or max — on a grid. `coarsen(d, 8, how="min")`, or per axis:
+    `coarsen(d, x=8, y=8, z=2)`. Blocks start at the first cell the read keeps;
+    a block cut short by the edge is reduced over the cells it holds."""
+    _require_node(node, "coarsen")
+    if how not in COARSEN_HOW:
+        raise ValueError(f"coarsen(how={how!r}): one of {list(COARSEN_HOW)}")
+    if factor is not None and axes:
+        raise ValueError("coarsen(): give a single factor OR per-axis factors, not both")
+    if factor is None and not axes:
+        raise ValueError("coarsen() needs a block factor, e.g. coarsen(d, 4) or "
+                         "coarsen(d, x=4, y=4, z=2)")
+    if factor is not None:
+        _check_block(factor, "coarsen")
+        return CoarsenNode(upstream=node, uniform=factor, per_axis=(), how=how)
+    per_axis = []
+    for axis, f in axes.items():
+        _check_block(f, f"coarsen({axis}=...)")
+        per_axis.append((axis, f))
+    return CoarsenNode(upstream=node, uniform=None, per_axis=tuple(per_axis), how=how)
 
 
 def threshold(node, expr):

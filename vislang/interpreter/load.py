@@ -8,7 +8,10 @@ Three entry points share one read core:
     planner-built Narrowing: the structural cuts (projection, grid crop+stride,
     particle subsample) are pushed into the read; the computed cuts arrive as
     `narrowing.post_ops` and are applied AFTER the read in the exact order the
-    spec wrote them (RowMask / RowSample / VoxelMask).
+    spec wrote them (RowMask / RowSample / VoxelMask / Coarsen). A coarsen that
+    only masks precede, over a read larger than VISLANG_SLAB_MB, is read and
+    reduced slab by slab (_read_coarsened), so the region never sits in memory
+    whole.
   - `materialize_boxes(info, narrowings)` — several boxes of ONE file (named
     boxes). Where the format would read the whole file per box anyway (point
     data, whose box is a post-read mask; a grid reader without strided reads),
@@ -22,15 +25,17 @@ in adapters.py; this module copies metadata and routes to the adapter.
 """
 
 import copy
+import os
 
 import numpy as np
 
 from vislang.formats.adapters import (get_adapter_for_info, _resolve_variables,
                                      build_selection_info, adapter_capabilities)
-from vislang.formats.dataset_info import cell_placement, narrowed_geometry
-from vislang.interpreter.narrowing import (Narrowing, narrowing_from_dimensions, build_row_mask,
-                       row_mask_from, voxel_mask_from, post_op_read_vars, sampling_rng,
-                       RowMask, RowSample, VoxelMask)
+from vislang.formats.dataset_info import (cell_placement, narrowed_geometry,
+                                          coarsened_geometry)
+from vislang.interpreter.narrowing import (Narrowing, AxisRange, narrowing_from_dimensions,
+                       build_row_mask, row_mask_from, voxel_mask_from, post_op_read_vars,
+                       sampling_rng, block_reduce, RowMask, RowSample, VoxelMask, Coarsen)
 
 
 def load(dataset_info):
@@ -47,9 +52,69 @@ def materialize(dataset_info, narrowing):
     """Read `dataset_info` under a (planner-built) Narrowing."""
     loaded = copy.deepcopy(dataset_info)
     variables, extra = _read_set(loaded, narrowing)
-    loaded.data.update(_read(loaded, variables + extra, narrowing))
+    streamed = _read_coarsened(loaded, variables + extra, narrowing)
+    if streamed is None:
+        loaded.data.update(_read(loaded, variables + extra, narrowing))
+        done = 0
+    else:
+        data, done = streamed
+        loaded.data.update(data)
     loaded.geometry = _source_geometry(dataset_info)
-    return _settle(loaded, narrowing, variables, extra)
+    return _settle(loaded, narrowing, variables, extra, done=done)
+
+
+def _slab_mb():
+    try:
+        return float(os.environ.get("VISLANG_SLAB_MB", 1024))
+    except ValueError:
+        return 1024.0
+
+
+def _read_coarsened(info, read_vars, narrowing):
+    """({var: array}, ops applied) when the read can be reduced slab by slab,
+    else None (read whole, then the post-ops).
+
+    It can when the post-ops up to the first Coarsen are only masks (each cell
+    on its own, so a slab can be masked alone) and the reader cuts a box from
+    the file (else every slab would read the whole file). The slab runs along
+    the reader's slowest axis, a whole number of blocks thick; masks and that
+    coarsen run per slab and the reduced slabs are joined. Smaller reads take
+    the plain path — the result is the same either way."""
+    ops = tuple(getattr(narrowing, 'post_ops', ()) or ())
+    first = next((i for i, op in enumerate(ops) if isinstance(op, Coarsen)), None)
+    grid = (info.dimensions or {}).get('grid')
+    if first is None or not (isinstance(grid, (tuple, list)) and len(grid) == 3):
+        return None
+    if not all(isinstance(op, VoxelMask) for op in ops[:first]):
+        return None
+    adapter = get_adapter_for_info(info)
+    if not adapter_capabilities(info)['strided_read'] or getattr(adapter, 'read_all', None):
+        return None
+    ranges = list(narrowing.grid_ranges or [AxisRange(None, None, 1)] * 3)
+    bounds = [(r.start or 0, n if r.stop is None else min(r.stop, n), r.step or 1)
+              for r, n in zip(ranges, grid)]
+    counts = [max(0, -(-(b - a) // s)) for a, b, s in bounds]
+    item = max([info.itemsizes.get(v, 8) for v in read_vars] + [8])
+    total_mb = int(np.prod(counts)) * item * len(read_vars) / 2 ** 20
+    if total_mb <= _slab_mb():
+        return None
+    axis = int(getattr(adapter, 'slab_axis', 0))
+    f = int(ops[first].factors[axis])
+    plane_mb = total_mb / max(counts[axis], 1)
+    per = max(f, int(_slab_mb() // max(plane_mb * f, 1e-9)) * f)   # whole blocks per slab
+    a, b, s = bounds[axis]
+    parts = {v: [] for v in read_vars}
+    prefix = ops[:first + 1]
+    for j in range(0, counts[axis], per):
+        cut = list(ranges)
+        cut[axis] = AxisRange(a + j * s, min(b, a + (j + per) * s), s)
+        sub = copy.copy(narrowing)
+        sub.grid_ranges = cut
+        data = _read(info, read_vars, sub)
+        _apply_post_ops(data, prefix, getattr(info, 'positions', None) or ())
+        for v in read_vars:
+            parts[v].append(data[v])
+    return {v: np.concatenate(p, axis=axis) for v, p in parts.items()}, first + 1
 
 
 def _source_geometry(info):
@@ -180,13 +245,14 @@ def _read(info, read_vars, narrowing):
             for var in read_vars}
 
 
-def _settle(loaded, narrowing, variables, extra):
-    """Apply the computed cuts and finish the result's metadata."""
+def _settle(loaded, narrowing, variables, extra, done=0):
+    """Apply the computed cuts (all but the first `done`, which a slab read
+    already applied) and finish the result's metadata."""
     positions = getattr(loaded, 'positions', None) or ()
     # Computed cuts, in the order the spec wrote them.
     post_ops = getattr(narrowing, 'post_ops', ())
     if post_ops:
-        _apply_post_ops(loaded.data, post_ops, positions)
+        _apply_post_ops(loaded.data, post_ops[done:], positions)
     elif narrowing.has_row_mask:
         # Legacy row mask (bbox + value predicates set directly on the Narrowing).
         mask = build_row_mask(narrowing, loaded.data, positions or None)
@@ -205,6 +271,9 @@ def _settle(loaded, narrowing, variables, extra):
     # wrong place in world space — and two timesteps' ROIs would not align.
     loaded.geometry = narrowed_geometry(getattr(loaded, 'geometry', None),
                                         getattr(narrowing, 'grid_ranges', None))
+    for op in post_ops:                   # a block's value sits at the block's centre
+        if isinstance(op, Coarsen):
+            loaded.geometry = coarsened_geometry(loaded.geometry, op.factors)
     return loaded
 
 
@@ -243,6 +312,12 @@ def _apply_post_ops(data, post_ops, positions):
                         provenance.note_cast(var)      # the record says so
                     arr[~mask] = np.nan
                     data[var] = arr
+        elif isinstance(op, Coarsen):
+            shape = next((np.shape(a) for a in data.values() if np.ndim(a) == 3), None)
+            for var in list(data):
+                arr = data[var]
+                if np.ndim(arr) == 3 and np.shape(arr) == shape:
+                    data[var] = block_reduce(arr, op.factors, op.how)
         else:
             raise ValueError(f"unknown post-read op {op!r}")
 

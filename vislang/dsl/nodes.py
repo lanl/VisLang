@@ -128,6 +128,17 @@ class SubsampleNode(Node):
 
 
 @dataclass(frozen=True)
+class CoarsenNode(Node):
+    """One value per block of cells: the block's mean, min or max (grids only).
+    `uniform` is one factor for every axis, else `per_axis` ((axis, f), ...)."""
+    upstream: Node
+    uniform: object = None
+    per_axis: tuple = ()
+    how: str = "mean"
+    kind = "coarsen"
+
+
+@dataclass(frozen=True)
 class ThresholdNode(Node):
     upstream: Node
     var: str
