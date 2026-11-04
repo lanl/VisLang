@@ -210,6 +210,65 @@ def test_run_id_shared_with_provenance(tmp):
           rec["realization"]["run"] == run_id, (rec["realization"].get("run"), run_id))
 
 
+def test_server_clock(tmp):
+    """The reducer times itself and the caller keeps it on `remote_exec`: the
+    work next to the data (server_s) apart from ssh/srun/startup (launch_s) —
+    single file and folder alike, through the real executor."""
+    path = os.path.join(tmp, "t7.jsonl")
+    os.environ["VISLANG_TIMINGS_FILE"] = path
+    import h5py
+    import numpy as np
+    import vislang.runtime.timing as timing
+    from fakes_remote import install_fake_remote
+    from vislang.dsl import reset_sinks
+    from vislang.dsl.forms import source, fields, subsample, timesteps, save
+    from vislang.interpreter.planner import plan_pipeline
+
+    for k, v in (("VISLANG_CACHE", "scache"), ("VISLANG_REMOTE_TMP", "stmp")):
+        os.environ[k] = os.path.join(tmp, v)
+        os.makedirs(os.environ[k], exist_ok=True)
+    os.environ["VISLANG_REMOTE"] = "force"
+    install_fake_remote()
+    one = os.path.join(tmp, "s_cube.h5")
+    with h5py.File(one, "w") as f:
+        f["t"] = np.arange(32 ** 3, dtype=np.float32).reshape(32, 32, 32)
+    d = os.path.join(tmp, "s_series")
+    os.makedirs(d, exist_ok=True)
+    for t in (0, 1, 2):
+        with h5py.File(os.path.join(d, f"cube#{t}.h5"), "w") as f:
+            f["t"] = np.full((16, 16, 16), t, dtype=np.float32)
+    try:
+        for label, sink, server_leaf in (
+                ("single", save(subsample(fields(source(f"u@fakehost:{one}"), ["t"]), 2),
+                                os.path.join(tmp, "s_out.h5")), "sink_save"),
+                ("folder", save(subsample(fields(timesteps(source(f"u@fakehost:{d}"), 0, 2),
+                                                 ["t"]), 2),
+                                os.path.join(tmp, "s_out_dir")), "cut")):
+            reset_sinks()
+            with timing.run("spec.py"):
+                plan_pipeline(sink, confirm=True)
+            r = _records(path)[-1]
+            rx = [p for p in r["phases"] if p["name"].endswith("remote_exec")]
+            check(f"{label}: one remote_exec", len(rx) == 1, [p["name"] for p in r["phases"]])
+            rx = rx[0]
+            check(f"{label}: server clock carried back",
+                  isinstance(rx.get("server_s"), float) and 0 < rx["server_s"] <= rx["s"], rx)
+            check(f"{label}: launch is the rest of the caller's wall clock",
+                  rx.get("launch_s") is not None
+                  and abs(rx["launch_s"] + rx["server_s"] + rx.get("startup_s", 0)
+                          - rx["s"]) < 1e-3, rx)
+            names = [p["name"] for p in rx.get("server_phases") or ()]
+            check(f"{label}: the server's own phases ride along",
+                  "import" in names and server_leaf in names, names)
+            check(f"{label}: server phases stay off the summed list",
+                  not any(p["name"].split("/")[-1] in ("import", "cut", "write_bundle")
+                          for p in r["phases"]), [p["name"] for p in r["phases"]])
+    finally:
+        for k in ("VISLANG_CACHE", "VISLANG_REMOTE", "VISLANG_REMOTE_TMP"):
+            os.environ.pop(k, None)
+        reset_sinks()
+
+
 if __name__ == "__main__":
     saved = {k: os.environ.get(k) for k in ("VISLANG_TIMINGS_FILE", "VISLANG_TIMING")}
     os.environ["VISLANG_TIMING"] = "1"     # this suite owns the switch it tests
@@ -218,7 +277,7 @@ if __name__ == "__main__":
             for fn in (test_run_record, test_estimate_flattened,
                        test_error_recorded_and_reraised, test_detached_and_disabled,
                        test_flush_failure_is_survivable, test_end_to_end_local,
-                       test_run_id_shared_with_provenance):
+                       test_run_id_shared_with_provenance, test_server_clock):
                 print(f"\n{fn.__name__}:")
                 fn(tmp)
         finally:

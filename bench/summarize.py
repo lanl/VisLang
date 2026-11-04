@@ -61,6 +61,16 @@ def _phase_s(rec, leaf):
     return total
 
 
+def _phase_field(rec, leaf, field):
+    """`field` summed over phases whose last path component is `leaf` — the
+    server's own clock rides on each `remote_exec` record (timing.note_server)."""
+    total = None
+    for p in rec.get("phases") or ():
+        if (p.get("name") or "").split("/")[-1] == leaf and p.get(field) is not None:
+            total = (total or 0) + p[field]
+    return total
+
+
 def _phase_bytes(rec, leaf, pipe):
     """Bytes summed over phases of ONE pipeline whose last path component is
     `leaf`. Keyed on the pipeline index because a multi-sink spec records a
@@ -175,6 +185,10 @@ def rows(recs):
                 "lower_s": _phase_s(r, "lower") if first else None,
                 "estimate_s": _phase_s(r, "cost_estimate") if first else None,
                 "remote_exec_s": _phase_s(r, "remote_exec") if first else None,
+                # remote_exec split by the server's own clock: the work next to
+                # the data vs ssh + srun + interpreter start around it.
+                "server_s": _phase_field(r, "remote_exec", "server_s") if first else None,
+                "launch_s": _phase_field(r, "remote_exec", "launch_s") if first else None,
                 "pull_s": _phase_s(r, "pull") if first else None,
                 # The whole-file/whole-folder FETCH route (VISLANG_REMOTE=off, or
                 # a fallback) spends nearly all its wall clock in these two, and
@@ -219,7 +233,7 @@ def rows(recs):
 # ---------------------------------------------------------------------------
 RUNS_COLS = ["started", "site", "route", "forms", "n_timesteps", "source_mib",
              "wire_mib", "reduction_x", "total_s", "inspect_s", "remote_exec_s",
-             "pull_s", "fetch_s", "transfer_s", "materialize_s", "sink_s",
+             "server_s", "launch_s", "pull_s", "fetch_s", "transfer_s", "materialize_s", "sink_s",
              "ssh_exec", "remote_jobs", "status"]
 
 EST_COLS = ["started", "site", "route", "est_read_mib", "wire_mib", "err_pct",

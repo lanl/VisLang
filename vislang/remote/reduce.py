@@ -1135,7 +1135,7 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
     timing.note(plan_bytes=len(plan), srun=bool(jobid))
     if jobid is None:
         cmd = _executor_cmd(rout, host=conn.host)                       # plan piped via stdin
-        with timing.phase("remote_exec", srun=False):
+        with timing.phase("remote_exec", srun=False) as rx:
             rc, out, err = run_remote(conn, cmd, stdin_bytes=plan.encode())
         rplan = None
     else:
@@ -1150,10 +1150,11 @@ def _run_remote_prefix(conn, remote_path, src, prefix, missing, steps):
         if stc != 0:
             raise RuntimeError(f"staging plan to {rplan} failed: {ste.strip()[-300:]}")
         cmd = _executor_cmd(rout, plan_path=rplan, jobid=jobid, host=conn.host)
-        with timing.phase("remote_exec", srun=True, jobid=jobid):
+        with timing.phase("remote_exec", srun=True, jobid=jobid) as rx:
             rc, out, err = run_remote(conn, cmd)
 
     meta = _parse_meta(out)
+    timing.note_server(rx, (meta or {}).get("timing"))
     if meta is None or not meta.get("ok", False):
         detail = (meta or {}).get("error") or err.strip()[-_ERR_TAIL:] or f"rc={rc}"
         raise RuntimeError(f"remote reduce failed: {_stale_remote_hint(detail)}")
@@ -1729,7 +1730,7 @@ def _run_delta_job(conn, terminal, manifest, steps, what, n_timesteps):
     # ONE remote job for the whole delta, however many timesteps (and boxes) it
     # spans — `remote_jobs` in the counters stays 1 as N grows.
     with timing.phase("remote_exec", srun=bool(jobid), jobid=jobid,
-                      n_timesteps=n_timesteps):
+                      n_timesteps=n_timesteps) as rx:
         if jobid is None:
             cmd = _executor_cmd(routdir, folder=True, manifest_path=rmanifest,
                                 host=conn.host, dedupe_geometry=True)
@@ -1741,6 +1742,7 @@ def _run_delta_job(conn, terminal, manifest, steps, what, n_timesteps):
             rc, out, err = run_remote(conn, cmd)
 
     meta = _parse_meta(out)
+    timing.note_server(rx, (meta or {}).get("timing"))
     if meta is None or not meta.get("ok", False):
         detail = (meta or {}).get("error") or err.strip()[-_ERR_TAIL:] or f"rc={rc}"
         raise RuntimeError(f"remote delta failed: {_stale_remote_hint(detail)}")

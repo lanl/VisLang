@@ -203,6 +203,51 @@ def phase(name, **fields):
         _run["phases"].append(rec)
 
 
+@contextmanager
+def capture():
+    """Open a run record that is handed back instead of written — for the remote
+    executor, whose own phases (the same planner call sites) travel to the
+    caller inside its meta. The caller's record is the one that lands in the
+    JSONL; nothing is appended on the remote. With a run already open (an
+    in-process test) the phases simply join that run."""
+    global _run, _pipe, _stack
+    if not enabled() or _run is not None:
+        yield {"phases": []}
+        return
+    rec = {"pipelines": [], "phases": [], "counters": {}}
+    _run, _pipe, _stack = rec, None, []
+    try:
+        yield rec
+    finally:
+        _run, _pipe, _stack = None, None, []
+
+
+def note_server(rec, server):
+    """Fold the remote executor's own clock (`meta["timing"]`) into the caller's
+    `remote_exec` phase record, after that phase has closed.
+
+    The phase's `s` is the caller's wall clock: ssh round trip + srun step launch
+    + interpreter start + the work + the reply. The server splits that:
+      server_s   executor entry -> result written (imports, read, cut, write)
+      startup_s  process start -> executor entry (Linux only, else absent)
+      launch_s   what is left: ssh, srun and the trip back
+    `server_phases` is the remote planner's own breakdown, kept off the run's
+    `phases` list so a leaf like `inspect` is not summed twice."""
+    if not rec or not isinstance(server, dict):
+        return
+    try:
+        rec["server_s"] = server.get("server_s")
+        if server.get("startup_s") is not None:
+            rec["startup_s"] = server["startup_s"]
+        if rec.get("s") is not None and rec["server_s"] is not None:
+            rec["launch_s"] = round(max(0.0, rec["s"] - rec["server_s"]
+                                        - (server.get("startup_s") or 0.0)), 4)
+        if server.get("phases"):
+            rec["server_phases"] = server["phases"]
+    except (TypeError, ValueError):
+        pass                                # measurement must never break a run
+
+
 def note(**fields):
     """Attach measured facts to the current pipeline (or the run when no pipeline
     is open) — the estimate, the catalog delta, the site actually chosen."""

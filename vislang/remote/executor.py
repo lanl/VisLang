@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 # Run from anywhere. This file may be launched as a plain script over ssh
 # (`python .../executor.py`), which puts only its OWN directory on sys.path — so
@@ -47,9 +48,42 @@ META_END = "===VISLANG_META_END==="
 PLAN_VERSION = 1
 
 
+_clock = {"t0": None, "rec": None}    # executor entry, and its captured phases
+
+
+def _process_age():
+    """Seconds since this process started — interpreter launch + imports before
+    main() ran. Linux only (/proc); None elsewhere."""
+    try:
+        with open("/proc/self/stat") as f:
+            start = float(f.read().rsplit(")", 1)[1].split()[19])   # field 22
+        with open("/proc/uptime") as f:
+            up = float(f.read().split()[0])
+        return round(max(0.0, up - start / os.sysconf("SC_CLK_TCK")), 3)
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _server_timing():
+    """The server's own clock, for the caller's `remote_exec` record: entry ->
+    now (the meta is printed last, after the result is written)."""
+    t = {"startup_s": _clock.get("startup_s")}
+    if _clock["t0"] is not None:
+        t["server_s"] = round(time.perf_counter() - _clock["t0"], 4)
+    rec = _clock["rec"] or {}
+    t["phases"] = [{k: p[k] for k in ("name", "s", "bytes") if p.get(k) is not None}
+                   for p in rec.get("phases") or ()]
+    return t
+
+
+def _emit(meta):
+    meta["timing"] = _server_timing()
+    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
+
+
 def _fail(msg):
     meta = {"vislang_exec": PLAN_VERSION, "ok": False, "error": msg}
-    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
+    _emit(meta)
     return 1
 
 
@@ -94,7 +128,7 @@ def _inspect_report(path):
     except adapters.NeedsAdapterError as e:
         meta = {"vislang_exec": PLAN_VERSION, "ok": True, "needs_adapter": True,
                 "evidence": e.evidence}
-        print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
+        _emit(meta)
         return 0
     except Exception as e:
         return _fail(f"{type(e).__name__}: {e}")
@@ -125,7 +159,7 @@ def _inspect_report(path):
         },
         "schema_tree": schema_tree,
     }
-    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
+    _emit(meta)
     return 0
 
 
@@ -177,9 +211,11 @@ def _held_reason(result):
 def _run_single(text, out):
     """SINGLE-file reduce (unchanged behavior): save the narrowed arrays to an
     .npz and report the reduced file + schema + saved variables to the caller."""
-    from vislang.dsl.forms import save
-    from vislang.formats.inspect import inspect_file
-    from vislang.interpreter.planner import plan_pipeline
+    from vislang.runtime import timing
+    with timing.phase("import"):
+        from vislang.dsl.forms import save
+        from vislang.formats.inspect import inspect_file
+        from vislang.interpreter.planner import plan_pipeline
 
     terminal, err = _rebuild(text)
     if err is not None:
@@ -224,7 +260,7 @@ def _run_single(text, out):
         "steps": result["steps"],
         "saved_variables": saved,
     }
-    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
+    _emit(meta)
     return 0
 
 
@@ -299,13 +335,15 @@ def _run_folder_delta(text, manifest_path, outdir, dedupe_geometry=False):
     timestep's own positions."""
     import hashlib
     import json as _json
-    import numpy as np
-    from vislang.dsl.nodes import upstream_of
-    from vislang.formats.dataset_info import GEOMETRY_KEY, encode_geometry
-    from vislang.formats.inspect import timestep_files, inspect_file
-    from vislang.interpreter.planner import _materialize_units
-    from vislang.interpreter.track import tagged_region
-    from vislang.remote.reduce import delta_key
+    from vislang.runtime import timing
+    with timing.phase("import"):
+        import numpy as np
+        from vislang.dsl.nodes import upstream_of
+        from vislang.formats.dataset_info import GEOMETRY_KEY, encode_geometry
+        from vislang.formats.inspect import timestep_files, inspect_file
+        from vislang.interpreter.planner import _materialize_units
+        from vislang.interpreter.track import tagged_region
+        from vislang.remote.reduce import delta_key
 
     terminal, err = _rebuild(text)
     if err is not None:
@@ -344,59 +382,62 @@ def _run_folder_delta(text, manifest_path, outdir, dedupe_geometry=False):
     os.makedirs(outdir, exist_ok=True)
     bundle, schema, fetched = {}, None, []
     carried, refs = {}, {}            # geometry digest -> delta_key that carries it
-    try:
-        for label, pieces in by_label.items():
-            path = files.get(label)
-            if path is None:
-                where = "a single file" if None in files else src_node.uri
-                return _fail(f"manifest names timestep #{label} not present in {where}")
-            info = inspect_file(path, positions=src_node.positions)
-            if schema is None:
-                schema = {"variables": list(info.variables),
-                          "dimensions": dict(info.dimensions or {}),
-                          "positions": list(info.positions) if info.positions else None,
-                          "filetype": info.filetype,
-                          "attributes": _jsonable_attrs(info.attributes),
-                          "geometry": _geometry_desc(info)}
-            grid = "grid" in (info.dimensions or {})
-            units = []                       # (tag, keep, columns to read, send geometry)
-            for tag, keep in pieces:
-                cols = None if keep is None else [v for v in keep if v != GEOMETRY_KEY]
-                geom = grid and (keep is None or GEOMETRY_KEY in keep)
-                read = cols if cols != [] else list(info.variables[:1])
-                units.append((tag, keep, cols, read, geom))
-            cut = _materialize_units(info, [_unit_middle(narrowing, read, tag)
-                                            for tag, _, _, read, _ in units],
-                                     label, tags=[u[0] for u in units])
-            for (tag, keep, cols, _, geom), (loaded, _) in zip(units, cut):
-                if cols != []:
-                    for var, arr in loaded.data.items():
-                        bundle[delta_key(label, tag, var)] = np.asarray(arr)
-                if geom:
-                    key = delta_key(label, tag, GEOMETRY_KEY)
-                    arr = np.ascontiguousarray(encode_geometry(loaded.geometry))
-                    if dedupe_geometry:
-                        h = hashlib.sha256(f"{arr.dtype.str}{arr.shape}".encode())
-                        h.update(arr.tobytes())
-                        same = carried.setdefault(h.hexdigest(), key)
-                        if same != key:
-                            refs[key] = same
-                            arr = None
-                    if arr is not None:
-                        bundle[key] = arr
-                fetched.append({"label": label, "tag": tag, "vars": keep})
-    except Exception as e:
-        where = f"timestep #{label}: " if label is not None else ""
-        return _fail(f"{where}{type(e).__name__}: {e}")
+    with timing.phase("cut", n=len(by_label)):
+        try:
+            for label, pieces in by_label.items():
+                path = files.get(label)
+                if path is None:
+                    where = "a single file" if None in files else src_node.uri
+                    return _fail(f"manifest names timestep #{label} not present in {where}")
+                info = inspect_file(path, positions=src_node.positions)
+                if schema is None:
+                    schema = {"variables": list(info.variables),
+                              "dimensions": dict(info.dimensions or {}),
+                              "positions": list(info.positions) if info.positions else None,
+                              "filetype": info.filetype,
+                              "attributes": _jsonable_attrs(info.attributes),
+                              "geometry": _geometry_desc(info)}
+                grid = "grid" in (info.dimensions or {})
+                units = []                       # (tag, keep, columns to read, send geometry)
+                for tag, keep in pieces:
+                    cols = None if keep is None else [v for v in keep if v != GEOMETRY_KEY]
+                    geom = grid and (keep is None or GEOMETRY_KEY in keep)
+                    read = cols if cols != [] else list(info.variables[:1])
+                    units.append((tag, keep, cols, read, geom))
+                cut = _materialize_units(info, [_unit_middle(narrowing, read, tag)
+                                                for tag, _, _, read, _ in units],
+                                         label, tags=[u[0] for u in units])
+                for (tag, keep, cols, _, geom), (loaded, _) in zip(units, cut):
+                    if cols != []:
+                        for var, arr in loaded.data.items():
+                            bundle[delta_key(label, tag, var)] = np.asarray(arr)
+                    if geom:
+                        key = delta_key(label, tag, GEOMETRY_KEY)
+                        arr = np.ascontiguousarray(encode_geometry(loaded.geometry))
+                        if dedupe_geometry:
+                            h = hashlib.sha256(f"{arr.dtype.str}{arr.shape}".encode())
+                            h.update(arr.tobytes())
+                            same = carried.setdefault(h.hexdigest(), key)
+                            if same != key:
+                                refs[key] = same
+                                arr = None
+                        if arr is not None:
+                            bundle[key] = arr
+                    fetched.append({"label": label, "tag": tag, "vars": keep})
+        except Exception as e:
+            where = f"timestep #{label}: " if label is not None else ""
+            return _fail(f"{where}{type(e).__name__}: {e}")
 
     # Compressed: what crosses the wire is this file. np.load reads either kind.
-    np.savez_compressed(os.path.join(outdir, "bundle.npz"), **bundle)
+    with timing.phase("write_bundle") as w:
+        np.savez_compressed(os.path.join(outdir, "bundle.npz"), **bundle)
+        w["bytes"] = timing.dir_bytes(os.path.join(outdir, "bundle.npz"))
     meta = {"vislang_exec": PLAN_VERSION, "ok": True,
             "outdir": outdir, "bundle": "bundle.npz",
             "fetched": fetched, "schema": schema}
     if dedupe_geometry:
         meta["geometry_refs"] = refs
-    print(f"{META_BEGIN}\n{json.dumps(meta, default=str)}\n{META_END}")
+    _emit(meta)
     return 0
 
 
@@ -460,6 +501,17 @@ def _exit_with_caller(out):
 
 
 def main(argv=None):
+    # The server's clock starts here: what the caller's `remote_exec` wall clock
+    # holds beyond this (ssh, srun, the trip back) is launch, not work.
+    _clock["t0"] = time.perf_counter()
+    _clock["startup_s"] = _process_age()
+    from vislang.runtime import timing
+    with timing.capture() as rec:
+        _clock["rec"] = rec
+        return _main(argv)
+
+
+def _main(argv=None):
     ap = argparse.ArgumentParser(description="VisLang remote reducer / inspector")
     src = ap.add_mutually_exclusive_group(required=False)
     src.add_argument("--plan", help="path to plan.json")
