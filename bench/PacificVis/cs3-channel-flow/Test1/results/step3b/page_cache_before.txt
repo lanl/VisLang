@@ -1,0 +1,3 @@
+Thu Nov  5 01:15:38 AM PST 2026
+        RES   PAGES         SIZE FILE
+27512225792 6716852 966367641600 /mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/dns_10240x7680x1536_float64.raw

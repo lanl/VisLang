@@ -1,0 +1,6 @@
+type: vtkImageData dims: (640, 480, 1) extent: (0, 639, 0, 479, 0, 0)
+origin: (7.5, 7.5, 81.0) spacing: (16.0, 16.0, 1.0) bounds: (7.5, 10231.5, 7.5, 7671.5, 81.0, 81.0)
+point array 'u': double x307200, range (0.37471219081107, 1.0092526931736712)
+type: vtkImageData dims: (640, 480, 1) extent: (0, 639, 0, 479, 0, 0)
+origin: (7.5, 7.5, 1454.0) spacing: (16.0, 16.0, 1.0) bounds: (7.5, 10231.5, 7.5, 7671.5, 1454.0, 1454.0)
+point array 'u': double x307200, range (0.38572049760861954, 1.0137816086617002)

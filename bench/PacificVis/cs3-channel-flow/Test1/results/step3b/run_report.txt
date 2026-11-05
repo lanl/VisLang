@@ -1,0 +1,80 @@
+Status: OK
+Spec: spec.py
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw
+    spec (as written): source(u_10240x7680x1536_float64.raw) → region{z:(81,82)} → coarsen({'x': 16, 'y': 16},mean) → save
+    remote source gpu-server://mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw (966367.6 MB, id=f86ac04e)
+    static check: request valid against the cached schema (1 vars, dims={'grid': (10240, 7680, 1536)})
+    Cost estimate (remote):
+      read on the server: ~600 MB
+      over the wire: ~2 MB
+      result size: ~2 MB
+      est. transfer time: ~1 s–2 s (measured)
+      note: coarsen reads all 78,643,200 cells of the region per timestep and keeps 307,200 (one per block).
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw", "positions": null}, {"kind": "fields", "keep": ["u"]}, {"kind": "region", "ranges": [["z", 81, 82]], "coords": "index"}, {"kind": "coarsen", "uniform": null, "per_axis": [["x", 16], ["y", 16]], "how": "mean"}]}
+    remote exec: narrowing prefix -> /tmp/vislang_reduce_ac83c454.npz (vars ['u'])
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(u_10240x7680x1536_float64.raw) → fields[u] → region{z:(81,82),index} → coarsen({'x': 16, 'y': 16},mean) → save
+    remote:  inspect //mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw → raw: vars=['u'], dims={'grid': (10240, 7680, 1536)}
+    remote:  project fields=['u']
+    remote:  region {'z': (81, 82)} (pushdown)
+    remote:  coarsen 16x16x1 blocks, mean (post-read: reads every cell of the region)
+    remote:  fuse -> grid_ranges=[(None, None, 1), (None, None, 1), (81, 82, 1)], project=['u'], post_ops=['Coarsen']
+    remote:  -> save -> /tmp/vislang_reduce_ac83c454.npz
+    remote:  Cost estimate (local):
+      read from disk: ~600 MB
+      result size: ~2 MB
+      note: coarsen reads all 78,643,200 cells of the region per timestep and keeps 307,200 (one per block).
+    pulled 1 var(s) + the grid's positions, 2.5 MB over the wire
+    assembled 1 var(s), 2.5 MB (0 cached, 1 fetched)
+    -> save (local)
+  output: /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s3b_lower_yp100.vti
+
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw
+    spec (as written): source(u_10240x7680x1536_float64.raw) → region{z:(1454,1455)} → coarsen({'x': 16, 'y': 16},mean) → save
+    remote source gpu-server://mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw (966367.6 MB, id=f86ac04e)
+    static check: request valid against the cached schema (1 vars, dims={'grid': (10240, 7680, 1536)})
+    Cost estimate (remote):
+      read on the server: ~600 MB
+      over the wire: ~2 MB
+      result size: ~2 MB
+      est. transfer time: ~1 s–2 s (measured)
+      note: coarsen reads all 78,643,200 cells of the region per timestep and keeps 307,200 (one per block).
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw", "positions": null}, {"kind": "fields", "keep": ["u"]}, {"kind": "region", "ranges": [["z", 1454, 1455]], "coords": "index"}, {"kind": "coarsen", "uniform": null, "per_axis": [["x", 16], ["y", 16]], "how": "mean"}]}
+    remote exec: narrowing prefix -> /tmp/vislang_reduce_8332df40.npz (vars ['u'])
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(u_10240x7680x1536_float64.raw) → fields[u] → region{z:(1454,1455),index} → coarsen({'x': 16, 'y': 16},mean) → save
+    remote:  inspect //mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw → raw: vars=['u'], dims={'grid': (10240, 7680, 1536)}
+    remote:  project fields=['u']
+    remote:  region {'z': (1454, 1455)} (pushdown)
+    remote:  coarsen 16x16x1 blocks, mean (post-read: reads every cell of the region)
+    remote:  fuse -> grid_ranges=[(None, None, 1), (None, None, 1), (1454, 1455, 1)], project=['u'], post_ops=['Coarsen']
+    remote:  -> save -> /tmp/vislang_reduce_8332df40.npz
+    remote:  Cost estimate (local):
+      read from disk: ~600 MB
+      result size: ~2 MB
+      note: coarsen reads all 78,643,200 cells of the region per timestep and keeps 307,200 (one per block).
+    pulled 1 var(s) + the grid's positions, 2.5 MB over the wire
+    assembled 1 var(s), 2.5 MB (0 cached, 1 fetched)
+    -> save (local)
+  output: /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s3b_upper_yp100.vti
+
+--- Output ---
+Downloading from gpu-server:
+  remote: /tmp/vislang_reduce_ac83c454.npz
+  local:  /Users/agoosh11/Projects/VisLang/.vislang/cache/pull_ac83c454.npz
+  pull_ac83c454.npz
+          2458686 100%   10.12MB/s   00:00:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 2.5 MB to /Users/agoosh11/Projects/VisLang/.vislang/cache/pull_ac83c454.npz
+[save] wrote 1 array(s) as vtk -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s3b_lower_yp100.vti; provenance in-file
+Downloading from gpu-server:
+  remote: /tmp/vislang_reduce_8332df40.npz
+  local:  /Users/agoosh11/Projects/VisLang/.vislang/cache/pull_8332df40.npz
+  pull_8332df40.npz
+          2458686 100%   10.35MB/s   00:00:00 (xfer#1, to-check=0/1)
+
+✓ Downloaded 2.5 MB to /Users/agoosh11/Projects/VisLang/.vislang/cache/pull_8332df40.npz
+[save] wrote 1 array(s) as vtk -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s3b_upper_yp100.vti; provenance in-file
+exit=0

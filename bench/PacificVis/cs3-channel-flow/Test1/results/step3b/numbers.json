@@ -1,0 +1,86 @@
+{
+ "run_id": "5a6344f10d25",
+ "status": "OK",
+ "commit": "2aa3b92",
+ "counters": {
+  "ssh_query": 4,
+  "bandwidth_probes": 2,
+  "probe_bytes": 8388608,
+  "ssh_exec": 4,
+  "transfers": 2,
+  "wire_bytes": 4917372,
+  "wire_bytes_file": 4917372
+ },
+ "per_request": [
+  {
+   "est_server_read_bytes": 629145600,
+   "est_wire_bytes": 2457600,
+   "route": "remote_reduce",
+   "result_bytes": 2457600
+  },
+  {
+   "est_server_read_bytes": 629145600,
+   "est_wire_bytes": 2457600,
+   "route": "remote_reduce",
+   "result_bytes": 2457600
+  }
+ ],
+ "remote_exec": [
+  {
+   "name": "remote_reduce/remote_exec",
+   "server_s": 9.1672,
+   "server_read_bytes": 440668160,
+   "server_phases": [
+    {
+     "name": "import",
+     "s": 0.1391
+    },
+    {
+     "name": "inspect",
+     "s": 0.002
+    },
+    {
+     "name": "lower",
+     "s": 0.0008
+    },
+    {
+     "name": "materialize",
+     "s": 8.9846,
+     "bytes": 2457600
+    },
+    {
+     "name": "sink_save",
+     "s": 0.0098
+    }
+   ]
+  },
+  {
+   "name": "remote_reduce/remote_exec",
+   "server_s": 6.2119,
+   "server_read_bytes": 629407744,
+   "server_phases": [
+    {
+     "name": "import",
+     "s": 0.1397
+    },
+    {
+     "name": "inspect",
+     "s": 0.0115
+    },
+    {
+     "name": "lower",
+     "s": 0.0007
+    },
+    {
+     "name": "materialize",
+     "s": 6.0193,
+     "bytes": 2457600
+    },
+    {
+     "name": "sink_save",
+     "s": 0.009
+    }
+   ]
+  }
+ ]
+}
