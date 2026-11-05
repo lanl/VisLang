@@ -1,0 +1,353 @@
+{
+ "definition": "POST HOC (written after largescale.py's result was seen, 2026-11-05): how sensitive is the\n\"reverse flow beneath u'_L > 0\" fraction to the height of the large-scale plane and to the filter?",
+ "results": [
+  {
+   "height": "y+100",
+   "cut": "outer",
+   "shape": "sharp",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 149,
+    "fraction": 0.5016835016835017,
+    "chance": 0.5025520833333333
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 716,
+    "fraction": 0.5399698340874811,
+    "chance": 0.5025520833333333
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 7742,
+    "fraction": 0.5528420451299628,
+    "chance": 0.5025520833333333
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 7661,
+    "fraction": 0.5439505822209599,
+    "chance": 0.4954915364583333
+   }
+  },
+  {
+   "height": "y+100",
+   "cut": "outer",
+   "shape": "gaussian",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 143,
+    "fraction": 0.48148148148148145,
+    "chance": 0.502861328125
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 754,
+    "fraction": 0.5686274509803921,
+    "chance": 0.502861328125
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 7749,
+    "fraction": 0.5533419023136247,
+    "chance": 0.502861328125
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 7654,
+    "fraction": 0.5434535643283158,
+    "chance": 0.4963248697916667
+   }
+  },
+  {
+   "height": "y+100",
+   "cut": "viscous",
+   "shape": "sharp",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 175,
+    "fraction": 0.5892255892255892,
+    "chance": 0.49441731770833336
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 915,
+    "fraction": 0.6900452488687783,
+    "chance": 0.49441731770833336
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 8955,
+    "fraction": 0.6394601542416453,
+    "chance": 0.49441731770833336
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 8855,
+    "fraction": 0.628727634194831,
+    "chance": 0.4905501302083333
+   }
+  },
+  {
+   "height": "y+100",
+   "cut": "viscous",
+   "shape": "gaussian",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 170,
+    "fraction": 0.5723905723905723,
+    "chance": 0.49609049479166667
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 923,
+    "fraction": 0.696078431372549,
+    "chance": 0.49609049479166667
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 8801,
+    "fraction": 0.6284632962010854,
+    "chance": 0.49609049479166667
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 8697,
+    "fraction": 0.617509230332292,
+    "chance": 0.4915592447916667
+   }
+  },
+  {
+   "height": "y+281",
+   "cut": "outer",
+   "shape": "sharp",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 157,
+    "fraction": 0.5286195286195287,
+    "chance": 0.502451171875
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 813,
+    "fraction": 0.6131221719457014,
+    "chance": 0.502451171875
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 8397,
+    "fraction": 0.5996143958868895,
+    "chance": 0.502451171875
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 8448,
+    "fraction": 0.5998295938653792,
+    "chance": 0.5005501302083334
+   }
+  },
+  {
+   "height": "y+281",
+   "cut": "outer",
+   "shape": "gaussian",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 153,
+    "fraction": 0.5151515151515151,
+    "chance": 0.501044921875
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 809,
+    "fraction": 0.610105580693816,
+    "chance": 0.501044921875
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 8379,
+    "fraction": 0.5983290488431876,
+    "chance": 0.501044921875
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 8387,
+    "fraction": 0.595498437943766,
+    "chance": 0.5004557291666667
+   }
+  },
+  {
+   "height": "y+281",
+   "cut": "viscous",
+   "shape": "sharp",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 177,
+    "fraction": 0.5959595959595959,
+    "chance": 0.5040299479166667
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 888,
+    "fraction": 0.669683257918552,
+    "chance": 0.5040299479166667
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 8869,
+    "fraction": 0.6333190516995144,
+    "chance": 0.5040299479166667
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 8852,
+    "fraction": 0.628514626526555,
+    "chance": 0.5030891927083333
+   }
+  },
+  {
+   "height": "y+281",
+   "cut": "viscous",
+   "shape": "gaussian",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 174,
+    "fraction": 0.5858585858585859,
+    "chance": 0.5034342447916667
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 931,
+    "fraction": 0.7021116138763197,
+    "chance": 0.5034342447916667
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 8882,
+    "fraction": 0.6342473578977434,
+    "chance": 0.5034342447916667
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 8868,
+    "fraction": 0.6296506674240273,
+    "chance": 0.5020084635416666
+   }
+  },
+  {
+   "height": "y+519",
+   "cut": "outer",
+   "shape": "sharp",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 161,
+    "fraction": 0.5420875420875421,
+    "chance": 0.5067154947916667
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 897,
+    "fraction": 0.6764705882352942,
+    "chance": 0.5067154947916667
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 8501,
+    "fraction": 0.6070408454727221,
+    "chance": 0.5067154947916667
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 8678,
+    "fraction": 0.6161601817665436,
+    "chance": 0.5095345052083333
+   }
+  },
+  {
+   "height": "y+519",
+   "cut": "outer",
+   "shape": "gaussian",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 158,
+    "fraction": 0.531986531986532,
+    "chance": 0.50427734375
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 866,
+    "fraction": 0.6530920060331825,
+    "chance": 0.50427734375
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 8382,
+    "fraction": 0.5985432733504713,
+    "chance": 0.50427734375
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 8534,
+    "fraction": 0.6059358136892928,
+    "chance": 0.5082486979166667
+   }
+  },
+  {
+   "height": "y+519",
+   "cut": "viscous",
+   "shape": "sharp",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 165,
+    "fraction": 0.5555555555555556,
+    "chance": 0.5128157552083333
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 895,
+    "fraction": 0.6749622926093515,
+    "chance": 0.5128157552083333
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 8548,
+    "fraction": 0.6103970294201657,
+    "chance": 0.5128157552083333
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 8601,
+    "fraction": 0.6106929849474582,
+    "chance": 0.512861328125
+   }
+  },
+  {
+   "height": "y+519",
+   "cut": "viscous",
+   "shape": "gaussian",
+   "a_stride_points_lower": {
+    "n": 297,
+    "beneath_positive": 162,
+    "fraction": 0.5454545454545454,
+    "chance": 0.5119205729166667
+   },
+   "b_area_points_lower": {
+    "n": 1326,
+    "beneath_positive": 914,
+    "fraction": 0.6892911010558069,
+    "chance": 0.5119205729166667
+   },
+   "c_blocks_lower": {
+    "n": 14004,
+    "beneath_positive": 8548,
+    "fraction": 0.6103970294201657,
+    "chance": 0.5119205729166667
+   },
+   "c_blocks_upper": {
+    "n": 14084,
+    "beneath_positive": 8660,
+    "fraction": 0.6148821357568872,
+    "chance": 0.5124055989583334
+   }
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+ "run_id": "c5316d0c139c",
+ "commit": "d7b8612",
+ "note": "per request, in spec order; copied from timing_record.json (pipelines[i] and the i-th remote_reduce/remote_exec phase)",
+ "per_request": [
+  {
+   "plane": "lower_yp281 (z 147)",
+   "est_server_read_bytes": 629145600,
+   "est_wire_bytes": 2457600,
+   "server_read_bytes": 631234560,
+   "server_s": 5.8822
+  },
+  {
+   "plane": "upper_yp281 (z 1388)",
+   "est_server_read_bytes": 629145600,
+   "est_wire_bytes": 2457600,
+   "server_read_bytes": 0,
+   "server_s": 1.3293
+  },
+  {
+   "plane": "lower_yp519 (z 207)",
+   "est_server_read_bytes": 629145600,
+   "est_wire_bytes": 2457600,
+   "server_read_bytes": 629407744,
+   "server_s": 5.5717
+  },
+  {
+   "plane": "upper_yp519 (z 1328)",
+   "est_server_read_bytes": 629145600,
+   "est_wire_bytes": 2457600,
+   "server_read_bytes": 0,
+   "server_s": 1.2765
+  }
+ ],
+ "wire_bytes_total": 9834744
+}

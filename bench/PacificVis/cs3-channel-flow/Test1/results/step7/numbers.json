@@ -1,0 +1,113 @@
+{
+ "run_id": "c5316d0c139c",
+ "status": "OK",
+ "started": "2026-11-05T07:24:21",
+ "commit": "d7b8612",
+ "est_server_read_bytes": 629145600,
+ "est_wire_bytes": 2457600,
+ "est_result_bytes": 2457600,
+ "est_over_budget": false,
+ "server_read_bytes": 1260642304,
+ "wire_bytes": 9834744,
+ "probe_bytes": 16777216,
+ "server_s": 14.0597,
+ "server_phases": [
+  [
+   {
+    "name": "import",
+    "s": 0.1888
+   },
+   {
+    "name": "inspect",
+    "s": 0.0019
+   },
+   {
+    "name": "lower",
+    "s": 0.0008
+   },
+   {
+    "name": "materialize",
+    "s": 5.6425,
+    "bytes": 2457600
+   },
+   {
+    "name": "sink_save",
+    "s": 0.0109
+   }
+  ],
+  [
+   {
+    "name": "import",
+    "s": 0.1347
+   },
+   {
+    "name": "inspect",
+    "s": 0.0114
+   },
+   {
+    "name": "lower",
+    "s": 0.0006
+   },
+   {
+    "name": "materialize",
+    "s": 1.1445,
+    "bytes": 2457600
+   },
+   {
+    "name": "sink_save",
+    "s": 0.0086
+   }
+  ],
+  [
+   {
+    "name": "import",
+    "s": 0.126
+   },
+   {
+    "name": "inspect",
+    "s": 0.0113
+   },
+   {
+    "name": "lower",
+    "s": 0.0006
+   },
+   {
+    "name": "materialize",
+    "s": 5.3966,
+    "bytes": 2457600
+   },
+   {
+    "name": "sink_save",
+    "s": 0.0094
+   }
+  ],
+  [
+   {
+    "name": "import",
+    "s": 0.1407
+   },
+   {
+    "name": "inspect",
+    "s": 0.0117
+   },
+   {
+    "name": "lower",
+    "s": 0.0006
+   },
+   {
+    "name": "materialize",
+    "s": 1.0857,
+    "bytes": 2457600
+   },
+   {
+    "name": "sink_save",
+    "s": 0.0086
+   }
+  ]
+ ],
+ "remote_jobs": null,
+ "route": "remote_reduce",
+ "cached_bytes": 0,
+ "result_bytes": 2457600,
+ "source_bytes": 966367641600
+}

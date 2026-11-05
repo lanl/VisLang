@@ -1,0 +1,14 @@
+fraction of backflow beneath u'_L > 0 (chance = share of the wall with u'_L > 0)
+height filter               a_stride_points_lower      b_area_points_lower           c_blocks_lower           c_blocks_upper
+y+100  outer, sharp       50.2 % (ch 50.3) n=297    54.0 % (ch 50.3) n=1326   55.3 % (ch 50.3) n=14004  54.4 % (ch 49.5) n=14084
+y+100  outer, gaussian    48.1 % (ch 50.3) n=297    56.9 % (ch 50.3) n=1326   55.3 % (ch 50.3) n=14004  54.3 % (ch 49.6) n=14084
+y+100  viscous, sharp     58.9 % (ch 49.4) n=297    69.0 % (ch 49.4) n=1326   63.9 % (ch 49.4) n=14004  62.9 % (ch 49.1) n=14084
+y+100  viscous, gaussian  57.2 % (ch 49.6) n=297    69.6 % (ch 49.6) n=1326   62.8 % (ch 49.6) n=14004  61.8 % (ch 49.2) n=14084
+y+281  outer, sharp       52.9 % (ch 50.2) n=297    61.3 % (ch 50.2) n=1326   60.0 % (ch 50.2) n=14004  60.0 % (ch 50.1) n=14084
+y+281  outer, gaussian    51.5 % (ch 50.1) n=297    61.0 % (ch 50.1) n=1326   59.8 % (ch 50.1) n=14004  59.5 % (ch 50.0) n=14084
+y+281  viscous, sharp     59.6 % (ch 50.4) n=297    67.0 % (ch 50.4) n=1326   63.3 % (ch 50.4) n=14004  62.9 % (ch 50.3) n=14084
+y+281  viscous, gaussian  58.6 % (ch 50.3) n=297    70.2 % (ch 50.3) n=1326   63.4 % (ch 50.3) n=14004  63.0 % (ch 50.2) n=14084
+y+519  outer, sharp       54.2 % (ch 50.7) n=297    67.6 % (ch 50.7) n=1326   60.7 % (ch 50.7) n=14004  61.6 % (ch 51.0) n=14084
+y+519  outer, gaussian    53.2 % (ch 50.4) n=297    65.3 % (ch 50.4) n=1326   59.9 % (ch 50.4) n=14004  60.6 % (ch 50.8) n=14084
+y+519  viscous, sharp     55.6 % (ch 51.3) n=297    67.5 % (ch 51.3) n=1326   61.0 % (ch 51.3) n=14004  61.1 % (ch 51.3) n=14084
+y+519  viscous, gaussian  54.5 % (ch 51.2) n=297    68.9 % (ch 51.2) n=1326   61.0 % (ch 51.2) n=14004  61.5 % (ch 51.2) n=14084
