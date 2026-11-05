@@ -541,8 +541,18 @@ Cross-checks:
   first attempt (2026-11-05 03:29) was killed after ~12 min when the session that started it ended.
   The remote job stopped with it, by design. Its partial record is in
   `Test1/results/step4/attempt1_interrupted/`.
+- **Approved after step 4 (2026-11-05):**
+  - **Baseline (b), the full pass.** Both scripts run on the server, detached, each from a cold
+    page cache for the file (`posix_fadvise(DONTNEED)`, checked with `fincore`).
+  - **netCDF coordinate variables.** Sieve's netCDF-4 writer gives a placement in source cells as
+    coordinate variables (commits `2171fdd`, `13cf804`), and the step 6 copy is rewritten from the
+    cache.
+  - **A post-hoc large-scale check (step 7).** Planes at y⁺ 281 (Mathis' outer site, already
+    listed above as a second reference height) and y⁺ 519 (0.1δ), with a filter cut-off in viscous
+    units (λx⁺ > 1000, λz⁺ > 250) and Gaussian variants. Labelled post hoc everywhere.
+- **Results:** recorded in `CASE_STUDY_BRIEF.md`; the step READMEs hold the details.
 
-## Decisions pending (as of revision 3)
+## Decisions pending (as of revision 3; all settled on 2026-11-05, see above)
 1. **Request 3b** (proposed): the block-mean plane at y⁺ ≈ 100 for each wall, ~600 MiB read and
    ~2.3 MiB back per plane (optionally y⁺ ≈ 281 too).
 2. **Baseline (b):** the equality check on a subset (~40 GB read) or the full pass (~2 h).

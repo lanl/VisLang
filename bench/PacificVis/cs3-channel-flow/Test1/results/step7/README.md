@@ -54,10 +54,10 @@ All twelve rows, including the stride's points (n = 297, closest to chance), are
 - Backflow lies beneath positive large-scale u at every height and with every filter: 54-64 % of
   wall blocks against about 50 % chance.
 - **The association is strongest when the filter keeps motions down to about 1000 viscous units**
-  (the viscous cut-off). There it reaches 62-64 % of blocks, and 67-70 % of area points, close to
-  Lenaers' 69 %.
+  (the viscous cut-off). There it reaches 61.0-63.9 % of blocks, and 67.0-70.2 % of area points,
+  close to Lenaers' 69 %.
 - With the filter fixed in outer units (lambda_x > delta = 5186 viscous units), the association
-  appears at y+ 281 and 519 (60-62 % of blocks), but is weak at y+ 100 (54-55 %).
+  appears at y+ 281 and 519 (59.5-61.6 % of blocks), but is weak at y+ 100 (54.3-55.3 %).
 - So the scales that carry the association at Re_tau 1000 are, in viscous units, sub-delta motions
   at Re_tau 5186.
 - **Caveats:**
