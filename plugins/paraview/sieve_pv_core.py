@@ -301,6 +301,8 @@ def trace_record(owner_name, action, job, key=None, memo_hit=False):
            "route": r.get("route"), "wire_bytes": r.get("wire_bytes"),
            "probe_bytes": r.get("probe_bytes"), "reuse": r.get("reuse"),
            "est_read_mb": est.get("read_mb"), "est_time_lo_s": est.get("time_lo_s"),
+           "est_server_read_mb": est.get("server_read_mb"),
+           "server_s": r.get("server_s"), "server_read_bytes": r.get("server_read_bytes"),
            "est_time_hi_s": est.get("time_hi_s"), "sieve_s": r.get("total_s"),
            "files": [f["path"] for f in r.get("files") or []],
            "error": r.get("error"), "key": key}
@@ -359,6 +361,50 @@ def _secs(lo, hi):
     return f", ~{f(lo)}–{f(hi)}"
 
 
+def _dur(s):
+    return f"{s:.1f} s" if s < 90 else f"{s / 60:.1f} min" if s < 5400 else f"{s / 3600:.2f} h"
+
+
+def estimate_text(job, result=None):
+    """The panel's status for an Estimate: what the request would read on the
+    server and move, before anything is read or fetched."""
+    if job is not None and job.state in ("queued", "running"):
+        return "Estimating… (metadata only: nothing is read or fetched)"
+    if job is not None and job.state == "cancelled":
+        return "Estimate cancelled."
+    r = result or (job.result if job is not None else None) or {}
+    holds = r.get("holds") or {}
+    if "session" in holds or r.get("status") == "error":
+        return "Could not estimate.\n" + status_text(None, r)
+    est = r.get("estimate") or {}
+    if not est:
+        return "Could not estimate: no price came back." + (
+            f"\n{r['error']}" if r.get("error") else "")
+    lines = ["Estimate (nothing was read or fetched):"]
+    if est.get("server_read_mb") is not None:
+        lines.append(f"  read on the server: ~{_mb(est['server_read_mb'])}")
+    if est.get("read_mb") is not None:
+        label = "over the wire" if est.get("site") == "remote" else "read from disk"
+        lines.append(f"  {label}: ~{_mb(est['read_mb'])}"
+                     + _secs(est.get("time_lo_s"), est.get("time_hi_s")))
+    if est.get("output_mb") is not None:
+        lines.append(f"  result: ~{_mb(est['output_mb'])}")
+    if (est.get("n_timesteps") or 1) > 1:
+        lines.append(f"  timesteps: {est['n_timesteps']}")
+    for note in est.get("notes") or ():
+        if not note.startswith("network speed unavailable"):
+            lines.append(f"  {note}")
+    if est.get("over_budget"):
+        parts = (est.get("budget_reason") or "").split("+")
+        why = " and ".join({"size": "size", "time": "time",
+                            "read": "server-read"}.get(x, x) for x in parts if x) or "budget"
+        lines.append(f"Over the {why} budget: a fetch would be held until you press "
+                     f"Fetch Anyway.")
+    else:
+        lines.append("Within budget: a fetch would run without asking.")
+    return "\n".join(lines)
+
+
 def status_text(job, result=None, showing=None):
     """The panel's status for a job (running, finished, held, failed)."""
     if job is None and result is None:
@@ -386,6 +432,18 @@ def status_text(job, result=None, showing=None):
                     else "")]
         if r.get("route") == "catalog_full_hit":
             lines.append("Served from the cache: nothing crossed the network.")
+        elif r.get("route") == "catalog_derived":
+            lines.append("Served from the cache (computed here from a cached result): "
+                         "nothing was read on the server, nothing crossed the network.")
+        if r.get("server_s") is not None:
+            # The server's own clock: entry to result written, next to the data.
+            # Not a link time, so it is shown whatever VISLANG_STATUS_TIMES says.
+            read = r.get("server_read_bytes")
+            lines.append(f"Remote reduce: {_dur(r['server_s'])} on the server"
+                         + (f", reading {_mb(read / 1024 ** 2)} there" if read is not None
+                            else "")
+                         + (f" (predicted {_mb(est.get('server_read_mb'))})"
+                            if est.get("server_read_mb") is not None else ""))
         if r.get("wire_bytes"):
             lines.append(f"Over the wire: {_mb(r['wire_bytes'] / 1024 ** 2)}"
                          + (f" (predicted {_mb(est.get('read_mb'))}"

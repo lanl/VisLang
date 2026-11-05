@@ -210,6 +210,7 @@ class _Sieve(VTKPythonAlgorithmBase):
         self._kick = False           # a button asked for a pipeline pass
         self._cancelled = None       # the request Cancel stopped: not asked again
         self._shown_text = None      # the (status, spec) the panel last read
+        self._est_job = None         # the Estimate in flight (its own job: never shown data)
         _objects().add(self)
 
     def _key(self, params):
@@ -235,6 +236,7 @@ class _Sieve(VTKPythonAlgorithmBase):
         """One tick of this object: hand over a finished request, refresh the
         running status and the panel. True when its output must update."""
         changed = self._poll()
+        self._poll_estimate()                  # status only: the data stays as it is
         import time
         if not changed and self._job is not None and self._job.state == "running" \
                 and time.time() - self._last_refresh > 2.0:
@@ -293,12 +295,8 @@ class _Sieve(VTKPythonAlgorithmBase):
 
     # -- submitting -------------------------------------------------------------
     def _submit(self, request, key, action):
-        sess = _session()
-        step, workdir = sess.next_dir(f"{self.NAME}-{action}")
-        request = {**request, "workdir": workdir,
-                   "client": {"name": "paraview", "session": sess.id, "step": step},
-                   "budget_bytes": int(self._budget_gb * 1024 ** 3),
-                   "budget_seconds": self._budget_min * 60.0}
+        step, workdir = _session().next_dir(f"{self.NAME}-{action}")
+        request = self._request_env(request, workdir, step)
         if self._approve:
             request["approval"] = dict(self._approve)
             self._approve = {}
@@ -310,6 +308,55 @@ class _Sieve(VTKPythonAlgorithmBase):
         if _sync():
             _runner().wait(job)
             self._poll()
+
+    def _request_env(self, request, workdir, step):
+        """What every request this object sends carries: its folder, who asked,
+        and the panel's budgets."""
+        sess = _session()
+        return {**request, "workdir": workdir,
+                "client": {"name": "paraview", "session": sess.id, "step": step},
+                "budget_bytes": int(self._budget_gb * 1024 ** 3),
+                "budget_seconds": self._budget_min * 60.0}
+
+    def _estimate_request(self):
+        """(the request the panel stands for, None) or (None, why not yet).
+        Subclasses build it from the settings last Applied."""
+        return None, "Nothing to estimate yet: press Apply first."
+
+    @smproperty.xml('<Property name="Estimate" command="Estimate" '
+                    'panel_widget="command_button"><Documentation>Price the request '
+                    'as last Applied: what it would read on the server and move over '
+                    'the network, and whether it would be held — without reading or '
+                    'fetching anything. Served-from-cache requests are priced at '
+                    'nothing.</Documentation></Property>')
+    def Estimate(self):
+        request, why = self._estimate_request()
+        if request is None:
+            self._status = why
+            self._refresh_panel()
+            self.Modified()
+            return
+        step, workdir = _session().next_dir(f"{self.NAME}-estimate")
+        job = core.Job("run", {**self._request_env(request, workdir, step),
+                               "mode": "estimate"}, workdir, label="estimate")
+        self._est_job = job
+        _runner().submit(("estimate", id(self)), job)
+        self._status = core.estimate_text(job)
+        if _sync():
+            _runner().wait(job)
+            self._poll_estimate()
+        self._refresh_panel()
+
+    def _poll_estimate(self):
+        """Show a finished Estimate's price in Status. True when one arrived."""
+        job = self._est_job
+        if job is None or job.state != "done" or getattr(job, "_handled", False):
+            return False
+        job._handled = True
+        self._status = core.estimate_text(job)
+        self._spec = (job.result or {}).get("spec_text") or self._spec
+        _session().trace(core.trace_record(self.NAME, "estimate", job))
+        return True
 
     def _finished(self, job):
         r = job.result or {}
@@ -510,6 +557,7 @@ class _Sieve(VTKPythonAlgorithmBase):
         # and stops too (executor._exit_with_caller).
         self._cancelled = self._job_key
         _runner().cancel(id(self))
+        _runner().cancel(("estimate", id(self)))
         self._status = ("Cancelled. Change a setting and Apply to ask for "
                         "something else" + (", or press Fetch Overview to ask again."
                                             if self.KIND == "source" else "."))
@@ -574,7 +622,7 @@ class SieveSource(_Sieve):
     KIND = "source"
     PANEL = ("SetSource", "SetPositions", "GetFieldSelection", "SetStride",
              "SetValueFilter", "SetBudgetGB", "SetBudgetMinutes", "SetTimesteps",
-             "GetStatus", "GetSpec", "FetchOverview", "ShowMetadata",
+             "GetStatus", "GetSpec", "FetchOverview", "Estimate", "ShowMetadata",
              "FetchAnyway", "Cancel", "Connect", "PromoteToSpec")
     # Outputs: the data, then what the source is, as three tables. ParaView
     # opens a SpreadSheet on the Summary once (on the first Apply); its
@@ -648,6 +696,19 @@ class SieveSource(_Sieve):
             self._kick = True
             self._cancelled = None
         self.Modified()
+
+    def _estimate_request(self):
+        if not self._uri:
+            return None, "Set Source and press Apply first."
+        if self._desc is None:
+            return None, ("Press Apply first: the source's metadata is read before "
+                          "anything is priced.")
+        desc = self._series_desc()
+        if self._ts_problem:
+            return None, f"Timesteps: {self._ts_problem}. Nothing estimated."
+        base = self._params(desc, None)
+        params = {**base, **_selection(desc)} if desc.get("timesteps") else base
+        return {"descriptor": desc, "params": params}, None
 
     @smproperty.xml('<Property name="Connect" command="Connect" '
                     'panel_widget="command_button"><Documentation>Open a session '
@@ -926,7 +987,7 @@ class SieveDetail(_Sieve):
     KIND = "detail"
     PANEL = ("SetBoxPosition", "SetBoxLength", "SetUseReferenceBounds", "SetReferenceBounds", "_region_group", "GetFieldSelection",
              "SetStride", "SetValueFilter", "SetBudgetGB", "SetBudgetMinutes",
-             "GetStatus", "GetSpec", "FetchAnyway", "Cancel", "PromoteToSpec")
+             "GetStatus", "GetSpec", "Estimate", "FetchAnyway", "Cancel", "PromoteToSpec")
 
     def __init__(self):
         _Sieve.__init__(self, 1)
@@ -1058,6 +1119,20 @@ class SieveDetail(_Sieve):
             t = source.GetInformation().Get(vtkDataObject.DATA_TIME_STEP()) \
                 if source.GetInformation().Has(vtkDataObject.DATA_TIME_STEP()) else None
             label = _snap(desc["timesteps"], t)
+        params = self._detail_params(desc, box)
+        self._base = dict(params)
+        if label is not None:
+            self._serve_series(label, self._base, desc, "detail", outInfo)
+        else:
+            self._serve(self._key(params), {"descriptor": desc, "params": params},
+                        "detail", outInfo)
+        if label is not None:
+            vtkDataObject.GetData(outInfo).GetInformation().Set(
+                vtkDataObject.DATA_TIME_STEP(), float(label))
+        return 1
+
+    def _detail_params(self, desc, box):
+        """The request's params from the panel: the box, stride, fields, filter."""
         params = {"box": box, "stride": max(1, self._stride)}
         n = self._fields.GetNumberOfArrays()
         if n == 0:
@@ -1073,16 +1148,26 @@ class SieveDetail(_Sieve):
             params["threshold"] = self._filter
         if desc.get("positions_given"):
             params["positions"] = [s.strip() for s in desc["positions_given"].split(",")]
-        self._base = dict(params)
-        if label is not None:
-            self._serve_series(label, self._base, desc, "detail", outInfo)
-        else:
-            self._serve(self._key(params), {"descriptor": desc, "params": params},
-                        "detail", outInfo)
-        if label is not None:
-            vtkDataObject.GetData(outInfo).GetInformation().Set(
-                vtkDataObject.DATA_TIME_STEP(), float(label))
-        return 1
+        return params
+
+    def _estimate_request(self):
+        # The data the box is drawn on: as the last pass saw it, else the input
+        # as it stands (so a box can be priced before this filter has run).
+        desc, source = self._desc, None
+        if desc is None:
+            try:
+                source = self.GetInputDataObject(0, 0)
+            except Exception:                                   # noqa: BLE001
+                source = None
+            desc = _descriptor_of(source) if source is not None else None
+        if desc is None:
+            return None, ("Nothing to price yet: put this under a Sieve Source (or "
+                          "Detail) whose data has arrived.")
+        if self._ref is None and source is not None and hasattr(source, "GetBounds"):
+            self._ref = source.GetBounds()
+        base = self._detail_params(desc, self._box())
+        params = {**base, **_selection(desc)} if desc.get("timesteps") else base
+        return {"descriptor": desc, "params": params}, None
 
     def _decorate(self, data):
         _tag(data, self._desc or {})
@@ -1206,7 +1291,7 @@ class SieveSpec(_Sieve):
     NAME = "spec"
     KIND = "spec"
     PANEL = ("SetSpecText", "SetBudgetGB", "SetBudgetMinutes", "GetStatus", "GetSpec",
-             "FetchAnyway", "Cancel")
+             "Estimate", "FetchAnyway", "Cancel")
 
     def __init__(self):
         _Sieve.__init__(self, 0)
@@ -1228,6 +1313,11 @@ class SieveSpec(_Sieve):
         if (v or "") != self._text:
             self._text = v or ""
             self.Modified()
+
+    def _estimate_request(self):
+        if not self._text.strip():
+            return None, "Write a spec (it must end in save(...)) and press Apply."
+        return {"spec_text": self._text}, None
 
     def RequestData(self, request, inInfo, outInfo):
         if not self._text.strip():

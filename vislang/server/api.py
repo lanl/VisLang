@@ -205,7 +205,9 @@ def run(request):
         budget_bytes, budget_seconds, net_bps   per-request overrides
     Returns {"api", "status": "ok" | "held" | "error", "holds", "spec_text",
     "spec_path", "estimate", "output", "files", "run_id", "wire_bytes",
-    "probe_bytes", "reuse", "route", "total_s", "steps", "error"}."""
+    "probe_bytes", "reuse", "route", "total_s", "server_s", "server_read_bytes",
+    "steps", "error"} — server_s / server_read_bytes: the remote reduce's own
+    clock and what it read from storage (None when nothing ran remotely)."""
     from vislang.dsl.compose import compose_spec
     from vislang.server.cli_core import run_spec
     workdir = request["workdir"]
@@ -278,6 +280,7 @@ def _summarize(res, text, spec_path):
                        "cached_bytes") if pipe_rec.get(k) is not None},
             "route": pipe_rec.get("route"),
             "total_s": rec.get("total_s"),
+            **_server_work(rec),
             "steps": [str(s) for r in results for s in r.get("steps", [])],
             "error": errors[0] if errors else None,
             "report": res.get("report")}
@@ -316,6 +319,19 @@ def series_files(output, timesteps=None, tags=None):
                 out.append({"label": int(m.group(1)), "tag": tag,
                             "path": os.path.join(d, name)})
     out.sort(key=lambda f: (f["tag"] or "", -1 if f["label"] is None else f["label"]))
+    return out
+
+
+def _server_work(rec):
+    """The remote reduce's own clock and storage read, summed over the run's
+    remote jobs: {"server_s", "server_read_bytes"}, each None when absent."""
+    jobs = [p for p in rec.get("phases") or ()
+            if (p.get("name") or "").split("/")[-1] == "remote_exec"]
+    out = {}
+    for field in ("server_s", "server_read_bytes"):
+        vals = [p[field] for p in jobs if p.get(field) is not None]
+        out[field] = (round(sum(vals), 4) if field == "server_s" else int(sum(vals))) \
+            if vals else None
     return out
 
 

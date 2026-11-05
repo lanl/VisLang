@@ -61,8 +61,14 @@ Each session's `session.json` records which were in force.
 4. **Sieve Spec** — type any spec ending in `save(...)` (named boxes, a box
    that follows a track…).
 
+*Estimate* prices the request as last Applied without reading or fetching
+anything: what it would read on the server, move over the wire and write, and
+whether a fetch would be held (a request Sieve's cache would serve is priced
+at nothing).
+
 The panel's *Status* says what happened — fetched (bytes against the
-prediction, cache reuse), or held and why: over budget (*Fetch Anyway*
+prediction, cache reuse, and for a remote source the remote reduce: time on
+the server and bytes read there), or held and why: over budget (*Fetch Anyway*
 approves it), no session (*Connect* opens the password dialog), no Slurm
 allocation (it shows the `salloc` to ask for; the plugin never runs it).
 *Spec* shows the spec that ran; it is saved beside its output.

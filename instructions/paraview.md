@@ -15,13 +15,20 @@ helping someone who uses the plugin, and for evaluating it.
 | **Sieve Detail** | a filter under an overview (or a detail): the native box widget, fetched at full resolution | the same, with `region(x=…, y=…, z=…, coords=…)` — always explicit |
 | **Sieve Spec** | any spec the user types (named boxes, a track…) | the text itself |
 
-Buttons: **Fetch Anyway** (approve a held request: over budget, or a fallback
-whole-file copy), **Cancel**, **Connect** (opens the password dialog),
+Buttons: **Estimate** (price the request as last Applied — read on the server,
+over the wire, result, whether a fetch would be held — reading and fetching
+nothing; a request the extent cache would serve is priced at nothing; a Detail
+is priced from its input, before it has run), **Fetch Anyway** (approve a held
+request: over budget, or a fallback whole-file copy), **Cancel**, **Connect**
+(opens the password dialog),
 **Promote To Spec** (copy the spec into a Sieve Spec to edit). On a series,
 *Apply* fetches every timestep the Source's *Timesteps* field selects (`1-9`,
 `1,4,9`, `1-9/4`; empty: all) in one request; the slider then shows each from
 memory (on a Detail, the box across those timesteps).
-*Status* says what happened; *Spec* shows the spec that ran. The Source also
+*Status* says what happened — for a remote fetch also the **remote reduce**:
+the server's own time and what it read there, against the estimate (shown
+whatever `VISLANG_STATUS_TIMES` says: it is not a link time); *Spec* shows the
+spec that ran. The Source also
 has three table outputs — **Summary**, **Fields**, **Timesteps** — what the
 first Apply's `inspect` returned, kept current (selected / fetched / in view);
 ParaView opens a SpreadSheet on the Summary once (the `View` hints), and

@@ -183,6 +183,50 @@ def test_status():
     check("failed: the reason", "Failed: no such field" in
           core.status_text(None, {"status": "error", "error": "no such field"}))
 
+    print("== the remote reduce, and the cache, in Status ==")
+    rem = {"status": "ok", "estimate": {**est, "server_read_mb": 3.5 * 1024},
+           "wire_bytes": 225 * 1024 ** 2, "server_s": 412.34,
+           "server_read_bytes": 17 * 1024 ** 3, "route": "remote_reduce"}
+    t = core.status_text(None, rem)
+    check("fetched remotely: the reduce's server time and read, against the prediction",
+          "Remote reduce: 6.9 min on the server, reading 17.00 GB there (predicted 3.50 GB)"
+          in t, t)
+    os.environ["VISLANG_STATUS_TIMES"] = "0"
+    try:
+        t0 = core.status_text(None, rem)
+    finally:
+        os.environ.pop("VISLANG_STATUS_TIMES")
+    check("... shown even with link times off (it is the server's own clock)",
+          "Remote reduce: 6.9 min on the server" in t0, t0)
+    t = core.status_text(None, {"status": "ok", "route": "catalog_derived", "estimate": est})
+    check("served by computing on a cached result: says nothing was read or moved",
+          "computed here from a cached result" in t and "Remote reduce" not in t, t)
+
+    print("== Estimate ==")
+    held = {"site": "remote", "read_mb": 225.0, "server_read_mb": 920400.0,
+            "output_mb": 225.0, "over_budget": True, "budget_reason": "read",
+            "notes": ["coarsen reads all 120,638,668,800 cells of the region per "
+                      "timestep and keeps 29,491,200 (one per block)."]}
+    t = core.estimate_text(None, {"status": "ok", "estimate": held})
+    check("an estimate: server read, wire, result, and that a fetch would be held",
+          t.startswith("Estimate (nothing was read or fetched):")
+          and "read on the server: ~898.83 GB" in t and "over the wire: ~225.0 MB" in t
+          and "result: ~225.0 MB" in t and "coarsen reads all" in t
+          and "Over the server-read budget: a fetch would be held" in t, t)
+    free = {"site": "remote", "read_mb": 0.0, "server_read_mb": 0.0, "output_mb": 225.0,
+            "notes": ["served from the extent cache (a cached result of its start, with "
+                      "threshold u < 0.0 applied here): nothing is read next to the data "
+                      "and nothing crosses the wire."]}
+    t = core.estimate_text(None, {"status": "ok", "estimate": free})
+    check("an estimate the cache would serve: nothing to read or move, within budget",
+          "read on the server: ~0.0 MB" in t and "served from the extent cache" in t
+          and "Within budget" in t, t)
+    t = core.estimate_text(None, {"status": "held", "holds": {"session": {"reason": "x"}}})
+    check("an estimate with no session: says to Connect", "Could not estimate" in t
+          and "Connect" in t, t)
+    check("an estimate that failed: the reason", "no such field" in core.estimate_text(
+        None, {"status": "error", "error": "no such field"}))
+
 
 def test_series():
     print("== the Timesteps field and the Series line ==")

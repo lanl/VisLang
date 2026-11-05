@@ -105,6 +105,12 @@ check("Apply on a new source fetches nothing, and says what an overview would co
       m.GetDataInformation().GetNumberOfPoints() == 0
       and not glob.glob(os.path.join(SESSIONS, "*", "*-source-overview"))
       and "Nothing fetched yet" in status(m) and "would be ~0.1 MB" in status(m), status(m))
+m.SMProxy.InvokeCommand("Estimate")
+check("Estimate before any fetch: the price, and nothing fetched",
+      status(m).startswith("Estimate (nothing was read or fetched)")
+      and "read from disk" in status(m) and "Within budget" in status(m)
+      and m.GetDataInformation().GetNumberOfPoints() == 0
+      and not glob.glob(os.path.join(SESSIONS, "*", "*-source-overview")), status(m))
 m.Stride = 4                         # the user changes a setting and Applies
 m.UpdatePipeline()
 check("the next Apply that changes a setting fetches",
@@ -148,6 +154,18 @@ check("its spec names cells, whole", "x=(10, 20), y=(4, 12), coords='cells'" in 
 rho = fetch(hd).PointData["rho"]
 check("the values are the source's cells 10–19",
       float(rho[0]) == float(10 * 32 * 32 + 4 * 32), float(rho[0]))
+hd.SMProxy.InvokeCommand("Estimate")
+check("Estimate on a detail prices its box and leaves the box on screen",
+      status(hd).startswith("Estimate (nothing was read or fetched)")
+      and bounds(hd) == [10.0, 19.0, 4.0, 11.0, 0.0, 31.0], status(hd))
+he = SieveDetail(Input=h)
+he.BoxCorner, he.BoxSize = [0.0, 0.0, 0.0], [8.0, 8.0, 8.0]
+n = len(steps())
+he.SMProxy.InvokeCommand("Estimate")
+check("a new detail can be priced before it has run (from its input)",
+      status(he).startswith("Estimate (nothing was read or fetched)")
+      and len([d for d in steps()[n:] if d.endswith("-detail-detail")]) == 0, status(he))
+Delete(he)
 hdd = SieveDetail(Input=hd)
 hdd.BoxCorner, hdd.BoxSize = [12.0, 5.0, 3.0], [2.0, 2.0, 2.0]
 check("a detail of a detail keeps the numbering",
@@ -237,6 +255,10 @@ sp.UpdatePipeline()
 check("a typed spec runs and its first file is shown",
       sp.GetDataInformation().GetNumberOfPoints() == 64
       and os.path.exists(os.path.join(SESSIONS, "typed", "boxes", "b.vti")), status(sp))
+
+sp.SMProxy.InvokeCommand("Estimate")
+check("Estimate on a typed spec", status(sp).startswith("Estimate (nothing was read")
+      and "result: ~" in status(sp), status(sp))
 
 print("== promote to spec ==")
 hd.SMProxy.InvokeCommand("PromoteToSpec")
@@ -452,6 +474,19 @@ if FAKE:
     r = overview(Source=f"u@fakehost:{path('plain.h5')}", Stride=4)
     check("a remote overview, read next to the data",
           bounds(r) == [0.0, 28.0, 0.0, 28.0, 0.0, 28.0], status(r))
+    check("its status shows the remote reduce's time on the server",
+          "Remote reduce:" in status(r) and "on the server" in status(r), status(r))
+    r.SMProxy.InvokeCommand("Estimate")
+    check("Estimate of what is cached: nothing to read on the server, nothing to move",
+          "read on the server: ~0.0 MB" in status(r)
+          and "served from the extent cache" in status(r), status(r))
+    rf = SieveSource(Source=f"u@fakehost:{path('plain.h5')}", Stride=1)
+    rf.UpdatePipeline()
+    rf.SMProxy.InvokeCommand("Estimate")
+    check("Estimate of a new remote request: the read on the server, and the wire",
+          "read on the server: ~0.1 MB" in status(rf) and "over the wire: ~0.1 MB" in status(rf)
+          and "served from the extent cache" not in status(rf), status(rf))
+    Delete(rf)
     rd = SieveDetail(Input=r)
     rd.BoxCorner, rd.BoxSize = [10.0, 4.0, 0.0], [9.0, 7.0, 40.0]
     check("a remote detail lands where the local one did",
@@ -485,7 +520,8 @@ print("== the session trace ==")
 lines = [json.loads(ln) for f in glob.glob(os.path.join(SESSIONS, "*", "session.jsonl"))
          for ln in open(f)]
 actions = {ln.get("action") for ln in lines}
-check("every request is in the trace", {"inspect", "overview", "detail", "spec"} <= actions
+check("every request is in the trace", {"inspect", "overview", "detail", "spec",
+                                        "estimate"} <= actions
       and any(ln.get("memo_hit") for ln in lines)
       and any("budget" in (ln.get("holds") or []) for ln in lines), actions)
 check("each finished request names its spec and run",
