@@ -1,0 +1,7 @@
+# sha256 of each array's bytes in (x, y, z) order, C-contiguous, float64.
+# Server: the baseline .npy, stored (z, y, x), transposed with np.ascontiguousarray(a.transpose(2, 1, 0)).
+# Local: Sieve's outputs read back to .npy by scripts/vti2npy.py (outputs/*.u.npy), already (x, y, z).
+server  stride16.npy    (96, 480, 640)  8175a30f82af83de93a6164a034adf520ce9078561060e7fc5b81b4a5ea5e2d5
+local   s1_stride16.vti (640, 480, 96)  8175a30f82af83de93a6164a034adf520ce9078561060e7fc5b81b4a5ea5e2d5
+server  blockmin16.npy  (96, 480, 640)  cd85c1629b4db04b48fdf7c244737be04fa0cf8f11ce0beec87673a1cbdc55af
+local   s4_min16.vti    (640, 480, 96)  cd85c1629b4db04b48fdf7c244737be04fa0cf8f11ce0beec87673a1cbdc55af

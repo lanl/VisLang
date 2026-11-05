@@ -1,0 +1,1 @@
+{"script": "/mnt/na1/eecs/research/harp/data/ashrestha/vislang/cs3_baseline/stride.py", "args": ["/mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw", "/mnt/na1/eecs/research/harp/data/ashrestha/vislang/cs3_baseline/stride16.npy"], "server_s": 304.949, "read_bytes": 18119434240, "finished": "2026-11-05T07:32:42"}

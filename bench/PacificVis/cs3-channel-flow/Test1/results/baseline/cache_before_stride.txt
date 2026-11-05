@@ -1,0 +1,6 @@
+Thu Nov  5 07:26:55 AM PST 2026
+ 07:26:55 up 34 days, 18:27,  0 user,  load average: 2.90, 3.09, 3.31
+   RES    PAGES  SIZE FILE
+326.6G 85628776  900G /mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw
+RES PAGES  SIZE FILE
+ 0B     0  900G /mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw

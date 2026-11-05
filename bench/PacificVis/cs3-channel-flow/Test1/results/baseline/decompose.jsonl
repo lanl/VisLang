@@ -1,0 +1,5 @@
+{"way": "base", "slab": "z 753-768", "slab_bytes": 10066329600, "read_s": 64.034, "read_bytes": 10066591744, "reduce_s": 0.856, "finished": "2026-11-05T09:31:28"}
+{"way": "sieve", "slab": "z 753-768", "slab_bytes": 10066329600, "read_s": 63.448, "read_bytes": 10066591744, "reduce_s": 15.955, "finished": "2026-11-05T09:32:48"}
+{"way": "base", "slab": "z 753-768", "slab_bytes": 10066329600, "read_s": 67.115, "read_bytes": 10066591744, "reduce_s": 1.2, "finished": "2026-11-05T09:33:57"}
+{"way": "sieve", "slab": "z 753-768", "slab_bytes": 10066329600, "read_s": 67.397, "read_bytes": 10066591744, "reduce_s": 16.026, "finished": "2026-11-05T09:35:21"}
+equal: True

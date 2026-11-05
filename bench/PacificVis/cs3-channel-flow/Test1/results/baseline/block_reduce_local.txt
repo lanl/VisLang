@@ -1,0 +1,4 @@
+# 2026-11-05T09:28:41, Apple M4, VisLang d78270b
+slab 2560 x 7680 x 16 float64, 2,516,582,400 B
+equal: True
+Sieve block_reduce: 3.70 s; baseline two-step min: 0.46 s; ratio 8.1

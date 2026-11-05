@@ -1,0 +1,1 @@
+{"script": "/mnt/na1/eecs/research/harp/data/ashrestha/vislang/cs3_baseline/blockmin.py", "args": ["/mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw", "/mnt/na1/eecs/research/harp/data/ashrestha/vislang/cs3_baseline/blockmin16.npy"], "server_s": 6836.044, "read_bytes": 965194276864, "finished": "2026-11-05T09:26:39"}

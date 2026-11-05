@@ -133,6 +133,7 @@ Sources: each step's `numbers.json` (step 3b and step 7: per plane, `README.md` 
 |---|---|---|
 | Contiguous plane, cold | 3b upper, 7 lower (2 planes) | 1.0004x, 1.0033x, 1.0004x |
 | Whole file, sequential (41.6 GB cached before) | 4 | 0.977x measured; 1.020x with the cached pages added |
+| The same planes, cold (the block-minimum script, not Sieve; section 7) | baseline | 1.0001x |
 | Strided rows (every 16th 80 KiB row) | 1 | 4.80x |
 | Full-resolution box (65,536 pieces of 8 KiB) | 2 | 9.80x (partly warm) |
 
@@ -195,28 +196,41 @@ Scripts: `Test1/baseline/` (non-blank, non-comment lines):
 - run on the server by `run_all.sh` through `run_measured.py`, which records `server_s` and the
   process's `read_bytes` but is not counted.
 
-Before each script the file's pages were evicted from the page cache (`posix_fadvise(DONTNEED)`;
-`fincore` before and after: 326.6 GiB, then 0 B), so both baselines started cold.
+Before each script the file's pages were evicted from the page cache (`posix_fadvise(DONTNEED)`).
+`fincore` before and after: 326.6 GiB, then 0 B (stride); 16.9 GiB, then 0 B (block minimum). Both
+baselines started cold.
 
-Results: `Test1/results/baseline/`.
+Results: `Test1/results/baseline/` (README, `stride.json`, `blockmin.json`, `equality.txt`).
 
 | Route | Lines | Read on the server | `server_s` | Copied to the scientist | Equal to Sieve |
 |---|---|---|---|---|---|
 | Download the file | n/a | 966,367,641,600 B | n/a | **966,367,641,600 B** (`stat`) | n/a |
 | Script on the server: stride | 6 | 18,119,434,240 B | 304.95 s | 235,929,728 B (`.npy`) | yes: sha256 of the array equals `s1_stride16.vti`'s |
-| Script on the server: block minimum | 11 | PENDING | PENDING | 235,929,728 B (`.npy`) | PENDING |
+| Script on the server: block minimum | 11 | 965,194,276,864 B | 6,836.04 s | 235,929,728 B (`.npy`) | yes: sha256 of the array equals `s4_min16.vti`'s |
 | Sieve: stride (step 1) | 4 (spec) | 18,094,653,440 B | 376.36 s | 235,930,686 B | (reference) |
-| Sieve: block minimum (step 4) | 4 (spec) | 943,219,060,736 B | 10,344.78 s | 235,930,686 B | (reference) |
+| Sieve: block minimum (step 4) | 4 (spec) | 943,219,060,736 B (41.6 GB already cached) | 10,344.78 s | 235,930,686 B | (reference) |
 
+- **Sieve's estimate against a cold pass.** Sieve estimated step 4's read at 965,109,350,400 B. The
+  block-minimum script read the same planes from a cold cache: 965,194,276,864 B (+0.009 %).
 - **The scripts on the server are faster than Sieve.**
-  - The stride script: 304.95 s against 376.36 s, at the same bytes.
-  - The block-minimum script read at about 140 MB/s while running, against Sieve's 91 MB/s.
-- **The cause, measured.** Sieve's block reduction (`block_reduce`, `vislang/interpreter/narrowing.py`)
-  copies each slab twice, to reduce every block's cells in one fixed order (a mean then gives the same
-  bits however the data arrived).
-  - On a quarter-size slab (2560 x 7680 x 16 float64) it took 3.34 s, against 0.42 s for the
-    baseline's two-step minimum, with equal results (local measurement, `results/baseline/README.md`).
-  - Server decomposition: PENDING.
+  - Stride: 304.95 s against 376.36 s, at the same bytes.
+  - Block minimum: 6,836.04 s against 10,344.78 s (about 141 against 91 MB/s over the pass).
+- **The cause, measured on one slab** (`Test1/results/baseline/decompose.jsonl`). One slab of 16
+  planes (z 753-768) was read cold, then block-reduced, in each way: two runs each, alternating, each
+  in its own process.
+  - **Reading is the same:** 10,066,591,744 B in 63-67 s either way.
+  - **Reducing is not:** Sieve's `block_reduce` (`vislang/interpreter/narrowing.py`) took 16.0 s
+    against 0.9-1.2 s for the script's two-step minimum, with equal results.
+  - **Why:** `block_reduce` copies each slab twice, so that every block's cells are reduced in one
+    fixed order (a mean then gives the same bits however the data arrived).
+  - **How much of the gap:** over step 4's 96 slabs, the extra time is about 1,440 s, about 41 % of
+    the 3,509 s gap.
+    - The rest is not explained by this measurement.
+    - The two full passes ran at different times on a shared server and file system.
+  - **Without I/O, on a laptop** (`block_reduce_local.txt`): 3.70 s against 0.46 s on a quarter
+    slab (8.1x).
+- **Not changed for this paper.** A faster minimum and maximum (no fixed order is needed, since
+  they are exact in any order) is a possible change to Sieve, not made here.
 - **Where Sieve differs from the scripts:**
   - its spec states the request (4 lines; the plugin can write it);
   - the request is priced and held before it runs;
@@ -388,8 +402,11 @@ Overview and detail cuts therefore overlay in one ParaView scene.
   - each case is stated where it occurs.
 - **Read-ahead amplification** (4.8x strided, 9.8x small pieces) is measured, not modelled by the
   estimate.
-- **Sieve's block reduction is slower than a hand-written one** (section 7). The read is the same;
-  the reduction's copies are not free.
+- **Sieve's block reduction is slower than a hand-written one** (section 7): 10,344.78 s against
+  6,836.04 s for step 4.
+  - Reading the same slab costs the same either way.
+  - The reduction's two copies cost about 15 s per slab, about 41 % of the gap.
+  - The rest is not explained.
 - **The block minimum** locates reverse flow only to a block, 204 x 102 x up to 8 wall units.
 - **The netCDF copy** has the axes in reverse order in ParaView (section 10).
 

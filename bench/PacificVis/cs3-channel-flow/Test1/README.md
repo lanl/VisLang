@@ -8,7 +8,7 @@ the design is `../DESIGN.md`.
 | `results/step0` … `step7` | One folder per request, each with a README: spec as run, estimate, run report, run record, numbers, ParaView check |
 | `results/eval/` | Evaluation on the ground-truth area, and the pre-registered large-scale analysis |
 | `results/baseline/` | The scripts without Sieve, as run on the server: bytes, time, equality with Sieve |
-| `baseline/` | The baseline scripts (`stride.py`, `blockmin.py`), their launcher and measurement wrappers |
+| `baseline/` | The baseline scripts (`stride.py`, `blockmin.py`), their launcher and measurement wrapper; `decompose_slab.py` (one slab: read vs reduce) and `bench_block_reduce_local.py` |
 | `scripts/` | Analysis, conversion, figure and ParaView-check scripts |
 | `data/` | `channel5200-y.txt`, the JHTDB wall-normal grid |
 | `figures/` | `fig_cs3_overviews.{pdf,png}` |
@@ -29,5 +29,7 @@ the design is `../DESIGN.md`.
   python scripts/largescale_posthoc.py outputs results/step7
   python scripts/make_figure.py outputs results figures
   ```
+- **Baselines (on the server, from the server directory):** `bash run_all.sh`, then
+  `python decompose_slab.py <raw> <VisLang repo> base|sieve <out.npy>` (see `results/baseline/README.md`).
 - **ParaView checks:** `pvpython scripts/check_vti_pv.py <file.vti>` and
   `pvpython scripts/check_nc_pv.py <file.nc>`.
