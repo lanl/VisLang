@@ -1,0 +1,73 @@
+Status: OK
+Spec: spec.py
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw
+    spec (as written): source(u_10240x7680x1536_float64.raw) → region{x:(4608,5632),y:(3328,4352),z:(1,65)} → save
+    remote source gpu-server://mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw (966367.6 MB, id=f86ac04e)
+    static check: request valid against the cached schema (1 vars, dims={'grid': (10240, 7680, 1536)})
+    Cost estimate (remote):
+      read on the server: ~256 MB
+      over the wire: ~256 MB
+      result size: ~256 MB
+      est. transfer time: ~62 s–4.1 min (measured)
+      note: dtype not fully known — bytes assume 4 B/element where missing.
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw", "positions": null}, {"kind": "fields", "keep": ["u"]}, {"kind": "region", "ranges": [["x", 4608, 5632], ["y", 3328, 4352], ["z", 1, 65]], "coords": "index"}]}
+    remote exec: narrowing prefix -> /tmp/vislang_reduce_14099d47.npz (vars ['u'])
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(u_10240x7680x1536_float64.raw) → fields[u] → region{x:(4608,5632),y:(3328,4352),z:(1,65),index} → save
+    remote:  inspect //mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw → raw: vars=['u'], dims={'grid': (10240, 7680, 1536)}
+    remote:  project fields=['u']
+    remote:  region {'x': (4608, 5632), 'y': (3328, 4352), 'z': (1, 65)} (pushdown)
+    remote:  fuse -> grid_ranges=[(4608, 5632, 1), (3328, 4352, 1), (1, 65, 1)], project=['u']
+    remote:  -> save -> /tmp/vislang_reduce_14099d47.npz
+    remote:  Cost estimate (local):
+      read from disk: ~512 MB
+      result size: ~512 MB
+    pulled 1 var(s) + the grid's positions, 536.9 MB over the wire
+    assembled 1 var(s), 536.9 MB (0 cached, 1 fetched)
+    -> save (local)
+  output: /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s2_truth.vti
+
+--- Output ---
+Downloading from gpu-server:
+  remote: /tmp/vislang_reduce_14099d47.npz
+  local:  /Users/agoosh11/Projects/VisLang/.vislang/cache/pull_14099d47.npz
+  pull_14099d47.npz
+          7634944   1%   14.54MB/s   00:00:34
+         21528576   4%   26.49MB/s   00:00:18
+         36241408   7%   28.05MB/s   00:00:17
+         50659328   9%   27.48MB/s   00:00:16
+         67764224  13%   32.60MB/s   00:00:13
+         85557248  16%   33.83MB/s   00:00:12
+        101023744  19%   29.15MB/s   00:00:14
+        116359168  22%   29.19MB/s   00:00:13
+        134643712  25%   34.39MB/s   00:00:11
+        154173440  29%   36.75MB/s   00:00:09
+        173473792  32%   36.81MB/s   00:00:09
+        190971904  36%   33.35MB/s   00:00:09
+        210173952  39%   36.57MB/s   00:00:08
+        229277696  43%   36.44MB/s   00:00:08
+        246710272  46%   33.23MB/s   00:00:08
+        259588096  48%   24.55MB/s   00:00:10
+        277970944  52%   35.05MB/s   00:00:07
+        297205760  55%   36.67MB/s   00:00:06
+        310935552  58%   26.18MB/s   00:00:08
+        328859648  61%   33.94MB/s   00:00:05
+        342261760  64%   25.54MB/s   00:00:07
+        356646912  66%   27.39MB/s   00:00:06
+        371490816  69%   28.22MB/s   00:00:05
+        386695168  72%   28.57MB/s   00:00:05
+        402489344  75%   30.12MB/s   00:00:04
+        419954688  78%   33.29MB/s   00:00:03
+        436862976  81%   31.98MB/s   00:00:02
+        452263936  84%   29.35MB/s   00:00:02
+        469696512  87%   33.19MB/s   00:00:01
+        488243200  91%   35.33MB/s   00:00:01
+        505511936  94%   32.94MB/s   00:00:00
+        523206656  97%   33.56MB/s   00:00:00
+        536871998 100%   31.14MB/s   00:00:16 (xfer#1, to-check=0/1)
+
+✓ Downloaded 536.9 MB to /Users/agoosh11/Projects/VisLang/.vislang/cache/pull_14099d47.npz
+[save] wrote 1 array(s) as vtk -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s2_truth.vti; provenance in-file
+exit=0

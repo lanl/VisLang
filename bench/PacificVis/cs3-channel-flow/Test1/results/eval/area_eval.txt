@@ -1,0 +1,43 @@
+== A. cross-checks ==
+  stride_equals_truth_at_stride_cells: True
+  sieve_min_equals_local_block_min: True
+  sieve_mean_max_abs_diff_from_local_block_mean: 1.1102230246251565e-15
+
+== B. fraction of cells with u < 0, by level (levels with any) ==
+  z   1  y+   0.071  0.1265 %  (1326 cells)
+  z   2  y+   0.216  0.1130 %  (1185 cells)
+  z   3  y+   0.438  0.0926 %  (971 cells)
+  z   4  y+   0.740  0.0708 %  (742 cells)
+  z   5  y+   1.125  0.0514 %  (539 cells)
+  z   6  y+   1.596  0.0320 %  (336 cells)
+  z   7  y+   2.156  0.0185 %  (194 cells)
+  z   8  y+   2.736  0.0103 %  (108 cells)
+  z   9  y+   3.336  0.0062 %  (65 cells)
+  z  10  y+   3.958  0.0039 %  (41 cells)
+  z  11  y+   4.599  0.0017 %  (18 cells)
+  z  12  y+   5.262  0.0009 %  (9 cells)
+  z  13  y+   5.945  0.0005 %  (5 cells)
+  z  14  y+   6.649  0.0005 %  (5 cells)
+  z  15  y+   7.373  0.0002 %  (2 cells)
+  z  16  y+   8.117  0.0002 %  (2 cells)
+  z  17  y+   8.883  0.0001 %  (1 cells)
+  z  18  y+   9.669  0.0001 %  (1 cells)
+  highest level with any u < 0: {'z': 18, 'yplus': 9.668536679839344}
+
+== C. regions of u < 0 in the area ==
+  n_26: 208
+  n_6: 226
+  area_million_wu2: 84.93711337457007
+  per_million_wu2_26: 2.4488706024506195
+  per_million_wu2_6: 2.6607920968934615
+  attached_fraction: 1.0
+  touching_sides: 5
+  Dx_plus_mean: 25.15024828005388
+  Dspan_plus_mean: 24.018181143360458
+  cells_median: 11.0
+  top_yplus_max: 9.668536679839344
+
+== D/E. per operator (block row = 16 levels; blocks over all 4 rows) ==
+  stride event recall 0.02403846153846154  (5 of 208), block precision 1.0, block recall 0.01809954751131222, flagged 4 / holding 221, localization median 105.34382309512418 wu, value bias median 0.005352229701296174, SSIM row 0 0.1806
+  mean   event recall 0.0  (0 of 208), block precision None, block recall 0.0, flagged 0 / holding 221, localization median None wu, value bias median 0.13693852322713373, SSIM row 0 0.3437
+  min    event recall 1.0  (208 of 208), block precision 1.0, block recall 1.0, flagged 221 / holding 221, localization median 59.57703109732576 wu, value bias median 0.0, SSIM row 0 0.1357

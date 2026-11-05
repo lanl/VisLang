@@ -1,0 +1,44 @@
+{
+ "run_id": "95a87e87593a",
+ "status": "OK",
+ "counters": {
+  "ssh_query": 2,
+  "ssh_exec": 1
+ },
+ "pipelines": [
+  {
+   "route": "catalog_full_hit",
+   "est_server_read_mb": null,
+   "est_read_mb": null,
+   "est_output_mb": null,
+   "cached_bytes": 131072,
+   "result_bytes": 131072,
+   "wire_bytes": null
+  },
+  {
+   "route": "catalog_full_hit",
+   "est_server_read_mb": null,
+   "est_read_mb": null,
+   "est_output_mb": null,
+   "cached_bytes": 131072,
+   "result_bytes": 131072,
+   "wire_bytes": null
+  }
+ ],
+ "remote_exec_phases": [],
+ "phase_names": [
+  "remote_reduce/probe_source",
+  "remote_reduce/login_node_inspect",
+  "remote_reduce/catalog_delta",
+  "remote_reduce/catalog_derive",
+  "remote_reduce/static_check",
+  "remote_reduce",
+  "sink_save",
+  "remote_reduce/probe_source",
+  "remote_reduce/catalog_delta",
+  "remote_reduce/catalog_derive",
+  "remote_reduce/static_check",
+  "remote_reduce",
+  "sink_save"
+ ]
+}

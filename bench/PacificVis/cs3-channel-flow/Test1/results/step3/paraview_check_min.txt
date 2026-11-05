@@ -1,0 +1,4 @@
+type: vtkImageData dims: (64, 64, 4) extent: (0, 63, 0, 63, 0, 3)
+origin: (4615.5, 3335.5, 8.5) spacing: (16.0, 16.0, 16.0) bounds: (4615.5, 5623.5, 3335.5, 4343.5, 8.5, 56.5)
+point array 'u': double x16384, range (-0.07606312800445608, 0.7611998523001435)
+field data 'sieve_in_cells': '1'

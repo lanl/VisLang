@@ -1,0 +1,29 @@
+Status: OK
+Spec: spec.py
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw
+    spec (as written): source(u_10240x7680x1536_float64.raw) → region{x:(4608,5632),y:(3328,4352),z:(1,65)} → coarsen(16,mean) → save
+    remote source gpu-server://mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw (966367.6 MB, id=f86ac04e)
+    login-node inspect: schema cached (1 vars, dims={'grid': [10240, 7680, 1536]})
+    catalog: derived from a cached extent of its start (1 form(s)); applied here: coarsen 16 — nothing read next to the data
+    static check: request valid against the cached schema (1 vars, dims={'grid': (10240, 7680, 1536)})
+    catalog: full hit — nothing crossed the wire
+    assembled 1 var(s), 0.1 MB (1 cached, 0 fetched)
+    -> save (local)
+  output: /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s3_area_mean16.vti
+
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw
+    spec (as written): source(u_10240x7680x1536_float64.raw) → region{x:(4608,5632),y:(3328,4352),z:(1,65)} → coarsen(16,min) → save
+    remote source gpu-server://mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw (966367.6 MB, id=f86ac04e)
+    catalog: derived from a cached extent of its start (1 form(s)); applied here: coarsen 16 — nothing read next to the data
+    static check: request valid against the cached schema (1 vars, dims={'grid': (10240, 7680, 1536)})
+    catalog: full hit — nothing crossed the wire
+    assembled 1 var(s), 0.1 MB (1 cached, 0 fetched)
+    -> save (local)
+  output: /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s3_area_min16.vti
+
+--- Output ---
+[save] wrote 1 array(s) as vtk -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s3_area_mean16.vti; provenance in-file
+[save] wrote 1 array(s) as vtk -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s3_area_min16.vti; provenance in-file
+exit=0
