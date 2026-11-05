@@ -161,9 +161,20 @@ def test_end_to_end(tmp):
         check("the block minimum is held on its read", held.get("needs_confirm") and not ran)
         ran, base, _ = rem.run(low())
         check("approved, it runs next to the data", ran and base is not None)
-        ran, got, res = rem.run(threshold(low(), "x < -2"), confirm=False)
+        os.environ["VISLANG_TIMING"] = "1"
+        os.environ["VISLANG_TIMINGS_FILE"] = os.path.join(tmp, "derive_timings.jsonl")
+        import vislang.runtime.timing as timing
+        try:
+            with timing.run("spec.py"):
+                ran, got, res = rem.run(threshold(low(), "x < -2"), confirm=False)
+        finally:
+            os.environ.pop("VISLANG_TIMINGS_FILE")
+        import json as _json
+        rec = _json.loads(open(os.path.join(tmp, "derive_timings.jsonl")).read().splitlines()[-1])
         check("its threshold is not held and runs no remote job", not ran and got is not None
               and not res.get("needs_confirm"))
+        check("... and the run record says it was derived from the cache",
+              (rec.get("pipelines") or [{}])[0].get("route") == "catalog_derived", rec.get("pipelines"))
         check("... the blocks a fresh read keeps, placed where it places them",
               same(got, rem.fresh(threshold(low(), "x < -2"))))
     finally:

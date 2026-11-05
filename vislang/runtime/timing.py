@@ -261,6 +261,13 @@ def note(**fields):
     (_pipe if _pipe is not None else _run).update(fields)
 
 
+def noted(key):
+    """What `note` recorded under `key` on the current pipeline (or run), or None."""
+    if not enabled() or _run is None:
+        return None
+    return (_pipe if _pipe is not None else _run).get(key)
+
+
 def count(name, n=1):
     """Increment a run counter: ssh round trips, transfers, remote job launches,
     bytes over the wire. Hardware-independent, so these are the numbers that
