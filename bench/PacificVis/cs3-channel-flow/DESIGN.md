@@ -526,7 +526,13 @@ Cross-checks:
 
 ---
 
-## Decisions pending
+## Decisions taken (2026-11-05)
+- **Novelty is not needed.** The case cites the question as one scientists have asked (Lenaers et
+  al. 2012; Cardesa et al. 2019) and answers it with Sieve at Re_τ ≈ 5200. No "first" wording; the
+  Lakshmi Srinivas et al. check is dropped.
+- **Request 3b: yes** (the block-mean plane at y⁺ ≈ 100 for each wall).
+
+## Decisions pending (as of revision 3)
 1. **Request 3b** (proposed): the block-mean plane at y⁺ ≈ 100 for each wall, ~600 MiB read and
    ~2.3 MiB back per plane (optionally y⁺ ≈ 281 too).
 2. **Baseline (b):** the equality check on a subset (~40 GB read) or the full pass (~2 h).

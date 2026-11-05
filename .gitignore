@@ -48,3 +48,4 @@ plan.md
 unOrg/
 # PacificVis case studies: Sieve outputs are bulk data (kept on disk as records, not in git)
 bench/PacificVis/**/outputs/
+bench/PacificVis/cs3-channel-flow/draft/
