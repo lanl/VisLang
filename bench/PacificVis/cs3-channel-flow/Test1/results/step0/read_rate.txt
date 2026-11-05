@@ -1,0 +1,4 @@
+sequential: 2147483648 B in 0.63 s = 3403 MB/s; rchar +2147483746, read_bytes +0
+memmap stride-16 sample: shape (4, 480, 640), rows touched 1920 x 81920 B = 157286400 B; 16.18 s; rchar +101, read_bytes +738721792
+       RES   PAGES         SIZE FILE
+4158783488 1015328 966367641600 /mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/dns_10240x7680x1536_float64.raw

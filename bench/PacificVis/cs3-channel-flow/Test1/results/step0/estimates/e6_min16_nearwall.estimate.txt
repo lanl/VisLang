@@ -1,0 +1,21 @@
+Status: OK
+Spec: spec.py
+
+(estimate — dry run: forms static-checked against the source schema and the run costed; nothing materialized. Run `execute` to materialize.)
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/dns_10240x7680x1536_float64.raw  (dry run — nothing materialized)
+    spec (as written): source(dns_10240x7680x1536_float64.raw) → region{z:(1,17)} → coarsen(16,min) → save
+    remote source ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/dns_10240x7680x1536_float64.raw
+    plan: reduce on the remote (narrowing prefix next to the data), pull the result, run the sink locally
+    inspect ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/dns_10240x7680x1536_float64.raw → raw: vars=['dns'], dims={'grid': (10240, 7680, 1536)}
+    region {'z': (1, 17)} (pushdown)
+    coarsen 16x16x16 blocks, min (post-read: reads every cell of the region)
+    fuse -> grid_ranges=[(None, None, 1), (None, None, 1), (1, 17, 1)], post_ops=['Coarsen']
+    -> save (would run locally)
+    Cost estimate (remote):
+      over the wire: ~2 MB
+      result size: ~2 MB
+      est. time: ~1 s–2 s (measured)
+      note: coarsen reads all 1,258,291,200 cells of the region per timestep and keeps 307,200 (one per block).
+      note: prices the whole request; extents already cached locally are not deducted.

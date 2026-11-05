@@ -1,0 +1,19 @@
+Status: OK
+Spec: spec.py
+
+(estimate — dry run: forms static-checked against the source schema and the run costed; nothing materialized. Run `execute` to materialize.)
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/dns_10240x7680x1536_float64.raw  (dry run — nothing materialized)
+    spec (as written): source(dns_10240x7680x1536_float64.raw) → region{x:(4608,5632),y:(3328,4352),z:(1,65)} → save
+    remote source ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/dns_10240x7680x1536_float64.raw
+    plan: reduce on the remote (narrowing prefix next to the data), pull the result, run the sink locally
+    inspect ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/dns_10240x7680x1536_float64.raw → raw: vars=['dns'], dims={'grid': (10240, 7680, 1536)}
+    region {'x': (4608, 5632), 'y': (3328, 4352), 'z': (1, 65)} (pushdown)
+    fuse -> grid_ranges=[(4608, 5632, 1), (3328, 4352, 1), (1, 65, 1)]
+    -> save (would run locally)
+    Cost estimate (remote):
+      over the wire: ~512 MB
+      result size: ~512 MB
+      est. time: ~2.2 min–9.0 min (measured)
+      note: prices the whole request; extents already cached locally are not deducted.

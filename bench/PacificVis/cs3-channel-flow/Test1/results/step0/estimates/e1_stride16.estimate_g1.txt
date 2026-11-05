@@ -1,0 +1,7 @@
+    Cost estimate (remote):
+      read on the server: ~3.5 GB
+      over the wire: ~225 MB
+      result size: ~225 MB
+      est. time: ~58 s–3.9 min (measured)
+      note: a stride along the file's contiguous axis saves no reading: 46,080 rows of 10,225 cells are read to keep every 16th.
+      note: prices the whole request; extents already cached locally are not deducted.

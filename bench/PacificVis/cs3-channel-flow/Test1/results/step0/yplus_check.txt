@@ -1,0 +1,23 @@
+grid points: 1536; y[0]=-1.0, y[-1]=1.0, symmetric: True
+z  y+(grid)  U+(measured mean u / u_tau)
+   8      2.74    2.75
+  16      8.12    7.34
+  24     14.82   10.62
+  32     22.83   12.54
+  64     67.98   15.64
+ 128    220.44   18.48
+ 256    763.61   21.67
+ 512   2655.00   24.93
+ 768   5191.07   26.58
+16-cell blocks from z=1 (lower wall): block -> y+ range of its cells
+  block 0: z 1-16: y+ 0.07 - 8.12
+  block 1: z 17-32: y+ 8.88 - 22.83
+  block 2: z 33-48: y+ 23.92 - 42.79
+  block 3: z 49-64: y+ 44.21 - 67.98
+  block 4: z 65-80: y+ 69.73 - 98.37
+  block 5: z 81-96: y+ 100.44 - 133.94
+4-cell blocks from z=1: first four -> ['0.07-0.74', '1.13-2.74', '3.34-5.26', '5.94-8.12']
+levels with y+ <= 8.5 (lower wall): z 1..16
+spacing: dx+ = 12.73, dspan+ = 6.36
+block row 8 (z 129-144): y+ 223.5 - 271.3; y+ = 3.9*Re_tau^0.5 = 281
+upper wall, last block row (z 1521-1534, 14 cells): y+ 0.07 - 6.65
