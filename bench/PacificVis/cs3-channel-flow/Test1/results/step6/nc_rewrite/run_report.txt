@@ -1,0 +1,16 @@
+Status: OK
+Spec: spec.py
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw
+    spec (as written): source(u_10240x7680x1536_float64.raw) → region{z:(1,1535)} → coarsen(16,min) → save
+    remote source gpu-server://mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw (966367.6 MB, id=f86ac04e)
+    catalog: cached ['u'] for this narrowing
+    static check: request valid against the cached schema (1 vars, dims={'grid': (10240, 7680, 1536)})
+    catalog: full hit — nothing crossed the wire
+    assembled 1 var(s), 235.9 MB (1 cached, 0 fetched)
+    -> save (local)
+  output: /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s6_min16.nc
+
+--- Output ---
+[save] wrote 1 array(s) as netcdf4 -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s6_min16.nc; provenance in-file

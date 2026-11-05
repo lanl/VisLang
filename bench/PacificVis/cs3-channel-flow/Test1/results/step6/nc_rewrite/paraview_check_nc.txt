@@ -1,0 +1,4 @@
+reader: NetCDFReader (vtkNetCDFCFReader), chosen explicitly
+type: vtkImageData extent: (0, 95, 0, 479, 0, 639)
+bounds: (8.5, 1528.5, 7.5, 7671.5, 7.5, 10231.5)
+point array u 29491200 (-0.23169069274056772, 1.2099228106416786)
