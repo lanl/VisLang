@@ -279,6 +279,17 @@ def test_estimate(tmp):
     finally:
         os.environ.pop("VISLANG_BUDGET_READ_BYTES")
 
+    print("== a schema from an older cache version still lets the estimate see the cache ==")
+    from vislang.remote.catalog import ExtentCatalog, _SCHEMA_VERSION_KEY
+    from vislang.runtime.paths import cache_root
+    cat = ExtentCatalog(cache_root())
+    with cat._update() as m:
+        for entry in m["schemas"].values():
+            entry[_SCHEMA_VERSION_KEY] = 1          # as if written by an older build
+    stale, _ = estimate(threshold(low(), "u < -2"))
+    check("the cached result is still found: nothing read, nothing moved",
+          stale.server_read_mb == 0 and stale.read_mb == 0, stale)
+
     print("== part of a request cached: priced is the rest ==")
     n = 2000
     q = os.path.join(tmp, "pts2.npz")

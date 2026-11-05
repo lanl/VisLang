@@ -1078,7 +1078,10 @@ def cache_share(src, middle):
         return None
     from vislang.runtime.paths import cache_root
     catalog = ExtentCatalog(cache_root())
-    schema = catalog.schema(sid)
+    # An entry from an older catalog version still names the variables and the
+    # grid (all a cache key needs); the run re-reads it before pricing, but the
+    # extents cached under it are no less real.
+    schema = catalog.schema(sid) or catalog.stale_schema(sid)
     if schema is None:
         return {"want": None, "missing": None, "derived": None, "n": 1, "n_needed": 1}
     share = _unit_share(catalog, sid, src, prefix, schema)
