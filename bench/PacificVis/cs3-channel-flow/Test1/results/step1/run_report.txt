@@ -1,0 +1,74 @@
+Status: OK
+Spec: spec.py
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw
+    spec (as written): source(u_10240x7680x1536_float64.raw) → region{z:(1,1535)} → subsample(16) → save
+    remote source gpu-server://mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw (966367.6 MB, id=f86ac04e)
+    login-node inspect: schema cached (1 vars, dims={'grid': [10240, 7680, 1536]})
+    static check: request valid against the cached schema (1 vars, dims={'grid': (10240, 7680, 1536)})
+    Cost estimate (remote):
+      read on the server: ~3.5 GB
+      over the wire: ~225 MB
+      result size: ~225 MB
+      est. transfer time: ~55 s–3.7 min (measured)
+      note: a stride along the file's contiguous axis saves no reading: 46,080 rows of 10,225 cells are read to keep every 16th.
+    ship plan.json (the AST moved to the remote): {"vislang_plan": 1, "chain": [{"kind": "source", "uri": "//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw", "positions": null}, {"kind": "fields", "keep": ["u"]}, {"kind": "region", "ranges": [["z", 1, 1535]], "coords": "index"}, {"kind": "subsample", "uniform": 16, "per_axis": []}]}
+    remote exec: narrowing prefix -> /tmp/vislang_reduce_87d0518d.npz (vars ['u'])
+    remote:  --- what ran on the remote ---
+    remote:  spec (as written): source(u_10240x7680x1536_float64.raw) → fields[u] → region{z:(1,1535),index} → subsample(16) → save
+    remote:  inspect //mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw → raw: vars=['u'], dims={'grid': (10240, 7680, 1536)}
+    remote:  project fields=['u']
+    remote:  region {'z': (1, 1535)} (pushdown)
+    remote:  subsample uniform=16 (pushdown)
+    remote:  fuse -> grid_ranges=[(None, None, 16), (None, None, 16), (1, 1535, 16)], project=['u']
+    remote:  -> save -> /tmp/vislang_reduce_87d0518d.npz
+    remote:  Cost estimate (local):
+      read from disk: ~225 MB
+      result size: ~225 MB
+    pulled 1 var(s) + the grid's positions, 235.9 MB over the wire
+    assembled 1 var(s), 235.9 MB (0 cached, 1 fetched)
+    -> save (local)
+  output: /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s1_stride16.vti
+
+--- Output ---
+Downloading from gpu-server:
+  remote: /tmp/vislang_reduce_87d0518d.npz
+  local:  /Users/agoosh11/Projects/VisLang/.vislang/cache/pull_87d0518d.npz
+  pull_87d0518d.npz
+          5668864   2%   10.74MB/s   00:00:20
+         12779520   5%   13.54MB/s   00:00:15
+         18939904   8%   11.69MB/s   00:00:17
+         25853952  11%   13.17MB/s   00:00:15
+         32768000  14%   13.03MB/s   00:00:14
+         40468480  17%   14.66MB/s   00:00:12
+         47611904  20%   13.59MB/s   00:00:13
+         54853632  23%   13.77MB/s   00:00:12
+         62193664  26%   13.94MB/s   00:00:11
+         69533696  29%   14.00MB/s   00:00:11
+         76644352  32%   13.34MB/s   00:00:11
+         83689472  35%   13.16MB/s   00:00:11
+         91062272  39%   14.04MB/s   00:00:09
+         98500608  42%   14.17MB/s   00:00:09
+        105775104  45%   13.86MB/s   00:00:08
+        113213440  48%   14.15MB/s   00:00:08
+        120750080  51%   14.37MB/s   00:00:07
+        127991808  54%   13.74MB/s   00:00:07
+        135495680  57%   14.11MB/s   00:00:06
+        143163392  61%   14.28MB/s   00:00:06
+        150339584  64%   13.68MB/s   00:00:05
+        157941760  67%   14.32MB/s   00:00:05
+        165543936  70%   14.45MB/s   00:00:04
+        172982272  73%   14.16MB/s   00:00:04
+        179765248  76%   12.85MB/s   00:00:04
+        187858944  80%   15.42MB/s   00:00:02
+        196050944  83%   15.41MB/s   00:00:02
+        204570624  87%   16.21MB/s   00:00:01
+        213811200  91%   17.49MB/s   00:00:01
+        224329728  95%   20.03MB/s   00:00:00
+        234422272  99%   19.18MB/s   00:00:00
+        235930686 100%   14.37MB/s   00:00:15 (xfer#1, to-check=0/1)
+
+✓ Downloaded 235.9 MB to /Users/agoosh11/Projects/VisLang/.vislang/cache/pull_87d0518d.npz
+[save] wrote 1 array(s) as vtk -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs3-channel-flow/Test1/outputs/s1_stride16.vti; provenance in-file
+exit=0

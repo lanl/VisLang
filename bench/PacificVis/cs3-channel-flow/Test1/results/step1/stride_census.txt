@@ -1,0 +1,6 @@
+grid (640, 480, 96), levels z = 1, 17, ... 1521; 307,200 samples per level
+level  z     y+ (from nearer wall)  negatives  fraction %   95% CI %            min u
+    0     1        0.07 (lower)        297     0.0967   [0.0863, 0.1083]   -0.00902
+   95  1521        6.65 (upper)          1     0.0003   [0.0001, 0.0018]   -0.01259
+negative samples in the whole overview: 298 of 29,491,200
+mean of u per level (first 3): [0.003, 0.3222, 0.5244]

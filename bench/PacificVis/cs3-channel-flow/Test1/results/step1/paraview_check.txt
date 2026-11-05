@@ -1,0 +1,5 @@
+type: vtkImageData dims: (640, 480, 96) extent: (0, 639, 0, 479, 0, 95)
+origin: (0.0, 0.0, 1.0) spacing: (16.0, 16.0, 16.0) bounds: (0.0, 10224.0, 0.0, 7664.0, 1.0, 1521.0)
+point array 'u': double x29491200, range (-0.012587077308771191, 1.2996584188783962)
+field data 'sieve_in_cells': '1'
+field data 'sieve_provenance': 'format: sieve-provenance/2\nresult_summary: |\n  640x480x96 grid x 1 columns, 236 MB (from a 966 GB input)\n    float64  u\nlogical:\n  spec: |\n    # Case Study 3 (T' …
