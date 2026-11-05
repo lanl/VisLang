@@ -967,6 +967,72 @@ def remote_reduce_tags(src, middle, approval=None):
     return cut, steps, estimate
 
 
+def _local_ops(forms, schema):
+    """The post-read ops for key `forms` (threshold, coarsen) on this schema's
+    modality — the lowering `planner._lower` gives the same forms."""
+    from vislang.interpreter.narrowing import Coarsen, Predicate, RowMask, VoxelMask
+    from vislang.interpreter.planner import _AXIS_INDEX
+    grid = ((schema or {}).get("dimensions") or {}).get("grid")
+    ops = []
+    for f in forms:
+        if f[0] == "threshold":
+            pred = Predicate(f[1], f[2], f[3])
+            ops.append(VoxelMask(predicates=(pred,)) if grid else RowMask(predicates=(pred,)))
+        elif f[0] == "coarsen" and grid:
+            factors = [1] * len(grid)
+            if f[1] is not None:
+                factors = [int(f[1])] * len(grid)
+            for axis, fac in f[2]:
+                factors[_AXIS_INDEX[axis]] = int(fac)
+            ops.append(Coarsen(factors=tuple(factors), how=f[3]))
+        else:
+            return None
+    return ops
+
+
+def _derive(catalog, sid, want, key, schema, steps):
+    """{var: array} (+ the geometry piece) for `key`, computed HERE from a cached
+    extent of its written start — nothing read next to the data — or None.
+
+    The cached arrays go through the same post-read ops a fresh read would run
+    (threshold, coarsen) in written order; a variable read only for a cut is
+    dropped after it, as the reducer drops it; the result is stored under
+    `key`, so asking again is an exact hit."""
+    from vislang.interpreter.load import _apply_post_ops
+    from vislang.formats.dataset_info import coarsened_geometry
+    from vislang.interpreter.narrowing import Coarsen
+    if want is None or schema is None or not isinstance(key, dict):
+        return None
+    cut_vars = [f[1] for f in key.get("forms") or () if f[0] == "threshold"]
+    need = list(dict.fromkeys(list(want) + cut_vars))
+    geom = _wants_geometry(schema)
+    got = catalog.derive(sid, need + ([GEOMETRY_KEY] if geom else []), key)
+    if got is None:
+        return None
+    arrays, rest, had = got
+    ops = _local_ops(rest, schema)
+    if ops is None:
+        return None
+    data = {v: np.array(arrays[v]) for v in need}
+    _apply_post_ops(data, ops, tuple(schema.get("positions") or ()))
+    out = {v: data[v] for v in want}
+    if geom:
+        g = decode_geometry(arrays[GEOMETRY_KEY])
+        for op in ops:
+            if isinstance(op, Coarsen):
+                g = coarsened_geometry(g, op.factors)
+        out[GEOMETRY_KEY] = encode_geometry(g)
+    for var, arr in out.items():
+        catalog.store(sid, var, key, arr)
+    done = ", ".join(" ".join(str(x) for x in f[:2] if x is not None)
+                     if f[0] == "coarsen" else f"threshold {f[1]} {f[2]} {f[3]}"
+                     for f in rest)
+    steps.append(f"catalog: derived from a cached extent of its start "
+                 f"({len(had['forms'])} form(s)); applied here: {done} — "
+                 f"nothing read next to the data")
+    return out
+
+
 def remote_reduce(src, middle, approval=None):
     """Run the narrowing prefix of `middle` on the remote host of src.uri.
     Returns (loaded DatasetInfo, steps, CostEstimate|None). Raises
@@ -1000,6 +1066,7 @@ def remote_reduce(src, middle, approval=None):
         list(schema["variables"]) if schema else None)
 
     have, missing = {}, _with_geometry(want, schema)
+    derived = None
     if want is not None:
         with timing.phase("catalog_delta"):
             have, missing = catalog.delta(sid, _with_geometry(want, schema), key)
@@ -1010,6 +1077,14 @@ def remote_reduce(src, middle, approval=None):
                     cached_bytes=int(sum(a.nbytes for a in have.values())) if have else 0)
         if _data_vars(have):
             steps.append(f"catalog: cached {sorted(_data_vars(have))} for this narrowing")
+        if _data_vars(missing):
+            with timing.phase("catalog_derive"):
+                derived = _derive(catalog, sid, want, key, schema, steps)
+            if derived is not None:
+                have, missing = derived, []
+                timing.note(route="catalog_derived",
+                            cached_bytes=int(sum(a.nbytes for v, a in derived.items()
+                                                 if v != GEOMETRY_KEY)))
 
     # --- cost gate: estimate the wire transfer BEFORE shipping the read -------
     # Remote cost is bytes over ssh; we measure the link with a synthetic probe
@@ -1036,7 +1111,8 @@ def remote_reduce(src, middle, approval=None):
             raise BudgetHold(estimate, steps)
     else:
         estimate = None
-        timing.note(route="catalog_full_hit")
+        if derived is None:
+            timing.note(route="catalog_full_hit")
 
     # --- allocation gate: the server-side lowering/reduce srun-steps into a HELD
     # Slurm allocation. In AUTO discovery mode, if none exists we HOLD and PROPOSE
@@ -1511,13 +1587,24 @@ def remote_folder_reduce(src, middle, ts_nodes, out_local_dir, approval=None):
 
     # --- catalog delta per timestep (local, no network) ----------------------
     have, missing = {}, {}                              # unit -> cached {var: arr} / [vars]
+    derived = 0                                         # units computed here from a cached start
     with timing.phase("catalog_delta", n=len(units)):
         for label in plan:
             for t in plan[label]:
                 h, m = catalog.delta(per[label]["sid"], request, keys[(label, t)])
+                if _data_vars(m):
+                    got = _derive(catalog, per[label]["sid"], project, keys[(label, t)],
+                                  known, steps if not derived else [])
+                    if got is not None:
+                        h, m, derived = got, [], derived + 1
                 have[(label, t)] = h
                 if m:
                     missing[(label, t)] = m
+    if derived:
+        timing.note(derived_units=derived)
+        if derived > 1:
+            steps.append(f"catalog: {derived} {'timestep' if tagged is None else 'box'}(s) derived from cached extents "
+                         f"of their start")
     if tagged is None:
         # The folder form {label: [missing vars]}, which every executor reads.
         manifest = {str(label): m for (label, _), m in missing.items()}

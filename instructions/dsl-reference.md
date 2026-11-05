@@ -284,7 +284,9 @@ coarsen(region(fields(src, ["pressure"]), x=(0, 4096)), 8, how="min")
 - Grids only: on point data it raises (use `subsample`). The mean of an integer
   field is float64; min and max keep the type.
 - Over a remote source the reduction runs next to the data, like the other
-  forms; the extent catalog reuses a coarsened extent on an exact match only.
+  forms. A later request that starts with the same chain and adds a
+  `threshold` (or another `coarsen`) is served from the cached result, the rest
+  computed locally (see "Reuse of cached results" under `threshold`).
 
 ## threshold(node, "var op value") -> node
 Keep elements where the predicate holds, e.g. `"density > 0.5"`. Operators:
@@ -295,6 +297,29 @@ Keep elements where the predicate holds, e.g. `"density > 0.5"`. Operators:
 The predicate variable does not need to be in `fields(...)` — it is read for
 the mask, then dropped. Multiple `threshold`s AND together; combine with
 `region` freely.
+
+### Reuse of cached results (remote sources)
+A remote result is kept in the extent catalog under its chain of forms, **in
+written order**. A later request is served from it, with nothing read next to
+the data, when:
+- it is the same chain (an exact match), or a region/stride cut of a cached
+  region/stride (a superset sliced down);
+- the cached chain is the request's own **start**, form for form in written
+  order, and what the request adds after it is `threshold`s and `coarsen`s —
+  these run locally on the cached values, exactly as after a fresh read
+  (`threshold(subsample(A, 2), "x < 2")` from a cached `subsample(A, 2)`);
+- or the cached chain ends in thresholds **looser** than the request's in the
+  same place, on the same variable (`x < 1` from a cached `x < 2`).
+
+Order is part of the meaning, so `[subsample, threshold]` never serves
+`[threshold, subsample]` (on points a sample of the survivors is not the
+survivors of a sample), and a threshold before a `coarsen` never serves one
+after it. A stride the cache cannot give (3 from 2), a looser request, or a cut
+on a variable not cached under that start goes to the remote. The variable a
+cut reads must be cached under that start too. A looser cached threshold on an
+integer grid is tightened only while its float32 mask cast was exact (|v| ≤
+2**24). Derived results are stored under their own chain, so asking again is an
+exact match. Named boxes reuse exact matches only.
 
 ## timesteps(node, start, stop) / timesteps(node, [labels]) -> node
 Time-axis selection for a **folder (timeseries)** source, by `#N` label (the

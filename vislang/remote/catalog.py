@@ -157,6 +157,80 @@ def _axis_slice(req, had):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Deriving a request from a cached extent: its written start, then local forms
+# ---------------------------------------------------------------------------
+# Forms that can run on a cached array as they would after a fresh read: they
+# read only the values already in it. A region or subsample after them cannot
+# (on points a sample of survivors is not the survivors of a sample).
+_LOCAL_FORMS = ("threshold", "coarsen")
+_FLOAT32_EXACT = float(2 ** 24)      # every integer up to this is exact in float32
+
+
+def implies(req, had):
+    """True when every value passing predicate `req` also passes `had` — the
+    values `req` keeps are a subset of those `had` kept. Each is (op, value),
+    op one of < <= > >= == !=. Anything unproven is False."""
+    (ro, rv), (ho, hv) = req, had
+    try:
+        rv, hv = float(rv), float(hv)
+    except (TypeError, ValueError):
+        return False
+    if ro == "==":                                   # a single value: does it pass?
+        return {"<": rv < hv, "<=": rv <= hv, ">": rv > hv, ">=": rv >= hv,
+                "==": rv == hv, "!=": rv != hv}.get(ho, False)
+    if ho == "!=":                                   # does req exclude hv?
+        return {"!=": rv == hv, "<": rv <= hv, "<=": rv < hv,
+                ">": rv >= hv, ">=": rv > hv}.get(ro, False)
+    if ho in ("<", "<="):
+        if ro == "<":
+            return rv <= hv
+        if ro == "<=":
+            return rv < hv if ho == "<" else rv <= hv
+        return False
+    if ho in (">", ">="):
+        if ro == ">":
+            return rv >= hv
+        if ro == ">=":
+            return rv > hv if ho == ">" else rv >= hv
+        return False
+    return False
+
+
+def derivation(req_forms, had_forms):
+    """(forms to apply locally, tightened) turning the extent cached for
+    `had_forms` into the one `req_forms` asks for — or None.
+
+    Order is the meaning: the cached forms must be the request's own start, in
+    written order, form for form. One relaxation: thresholds that END the cached
+    chain may be looser than the request's thresholds in the same place (each
+    implied by one of them), since the request's stricter cut, re-applied, keeps
+    exactly what it would have kept fresh. What follows that start must be
+    forms that run on the values alone (threshold, coarsen). So [subsample,
+    threshold] never serves [threshold, subsample], however equal their numbers."""
+    req, had = list(req_forms or ()), list(had_forms or ())
+    j = len(had)
+    while j and had[j - 1][0] == "threshold":
+        j -= 1
+    head, tail = had[:j], had[j:]
+    if req[:j] != head:
+        return None
+    rest = req[j:]
+    run = []
+    for f in rest:
+        if f[0] != "threshold":
+            break
+        run.append(f)
+    if not all(any(r[1] == t[1] and implies((r[2], r[3]), (t[2], t[3])) for r in run)
+               for t in tail):
+        return None
+    if not rest or any(f[0] not in _LOCAL_FORMS for f in rest):
+        return None
+    if tail and rest == tail:
+        return None                                  # the same chain: an exact match
+    return rest, bool(tail)
+
+
 class ExtentCatalog:
     """JSON-manifest index over locally cached array extents."""
 
@@ -309,6 +383,45 @@ class ExtentCatalog:
                 return encode_geometry(narrowed_geometry(decode_geometry(arr), slices))
             if arr.ndim == len(slices):
                 return arr[tuple(slices)]
+        return None
+
+    def derive(self, source_id, variables, narrow_key):
+        """(arrays, local forms, cached key) to serve `narrow_key` from an extent
+        that holds its written start (see `derivation`), or None. Every name in
+        `variables` must be cached under that one key — a threshold's variable
+        included, since the local cut reads it. Prefers the extent that leaves
+        the least to do. Where a looser cached threshold is tightened, a float32
+        value beyond 2**24 refuses: it may be an integer the mask's cast rounded,
+        and a fresh read would compare the exact integer."""
+        if not isinstance(narrow_key, dict) or set(narrow_key) != {"forms"} or not variables:
+            return None
+        self._refresh()
+        ext = self._manifest["extents"].get(source_id, {})
+        by_var = [{e["key"]: e for e in ext.get(v, [])} for v in variables]
+        shared = set.intersection(*(set(d) for d in by_var))
+        found = []
+        for key in shared:
+            had = by_var[0][key].get("narrow")
+            if not isinstance(had, dict) or set(had) != {"forms"}:
+                continue
+            got = derivation(narrow_key["forms"], had["forms"])
+            if got is not None:
+                found.append((len(had["forms"]), key, had, got))
+        for _, key, had, (rest, tightened) in sorted(found, key=lambda f: -f[0]):
+            arrays = {}
+            for v, entries in zip(variables, by_var):
+                arr = self._read(entries[key])
+                if arr is None:
+                    break
+                arrays[v] = arr
+            else:
+                cut_vars = {f[1] for f in rest if f[0] == "threshold"}
+                if tightened and any(
+                        arrays[v].dtype == np.float32 and arrays[v].size
+                        and np.nanmax(np.abs(arrays[v]), initial=0.0) > _FLOAT32_EXACT
+                        for v in cut_vars if v in arrays):
+                    continue
+                return arrays, rest, had
         return None
 
     def delta(self, source_id, variables, narrow_key):
