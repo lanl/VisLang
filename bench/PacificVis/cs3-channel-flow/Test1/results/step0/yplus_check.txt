@@ -21,3 +21,7 @@ levels with y+ <= 8.5 (lower wall): z 1..16
 spacing: dx+ = 12.73, dspan+ = 6.36
 block row 8 (z 129-144): y+ 223.5 - 271.3; y+ = 3.9*Re_tau^0.5 = 281
 upper wall, last block row (z 1521-1534, 14 cells): y+ 0.07 - 6.65
+plane nearest y+ = 100: z = 81 (y+ 100.44); mirror at the upper wall: z = 1454 (y+ 100.44)
+plane nearest y+ = 281: z = 147 (y+ 281.38); mirror at the upper wall: z = 1388 (y+ 281.38)
+area of 1024 x 1024 cells in wall units: 13034 x 6517 = 84.9 million
+one cell in the wall plane: 81.0 wall units^2; a 20-unit-diameter disc covers 3.9 cells; a stride of 16 keeps 1 cell in 256 of a plane

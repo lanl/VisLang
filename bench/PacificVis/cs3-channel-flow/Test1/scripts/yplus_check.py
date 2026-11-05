@@ -29,3 +29,13 @@ print(f"block row 8 (z 129-144): y+ {yp[129]:.1f} - {yp[144]:.1f}; "
       f"y+ = 3.9*Re_tau^0.5 = {3.9*RE_TAU**0.5:.0f}")
 ypu = (1 - y) * RE_TAU
 print(f"upper wall, last block row (z 1521-1534, 14 cells): y+ {ypu[1534]:.2f} - {ypu[1521]:.2f}")
+for target in (100.0, 281.0):            # Lenaers et al. 2012 (y+ ~ 100); Mathis et al. 2009 (3.9 Re_tau^0.5)
+    z = int(np.argmin(np.abs(yp[:768] - target)))
+    zu = 1535 - z
+    print(f"plane nearest y+ = {target:.0f}: z = {z} (y+ {yp[z]:.2f}); mirror at the upper wall: z = {zu} "
+          f"(y+ {ypu[zu]:.2f})")
+print(f"area of 1024 x 1024 cells in wall units: {1024*8*np.pi/10240*RE_TAU:.0f} x "
+      f"{1024*3*np.pi/7680*RE_TAU:.0f} = {1024*8*np.pi/10240*RE_TAU*1024*3*np.pi/7680*RE_TAU/1e6:.1f} million")
+print(f"one cell in the wall plane: {8*np.pi/10240*RE_TAU*3*np.pi/7680*RE_TAU:.1f} wall units^2; "
+      f"a 20-unit-diameter disc covers {np.pi*100/(8*np.pi/10240*RE_TAU*3*np.pi/7680*RE_TAU):.1f} cells; "
+      f"a stride of 16 keeps 1 cell in 256 of a plane")

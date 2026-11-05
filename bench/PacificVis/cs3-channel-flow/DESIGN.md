@@ -1,15 +1,36 @@
 # Case Study 3 (turbulent channel flow): design
 
-Status (2026-11-04, revision 2): **design agreed in outline; nothing run yet.** Step 0
+Status (2026-11-05, revision 3): **design agreed in outline; nothing run yet.** Step 0
 (verifying the data) read about 3 GB on gpu-server in place; only printed text crossed the
 wire. Records: `Test1/results/step0/README.md`.
+
+Revision 3 (2026-11-05), after reading the cited papers in full (`LITERATURE.md` holds the
+quotes):
+- The large-scale reference moves to **y⁺ ≈ 100**, the height Lenaers et al. used (grid level
+  z = 81, mirror z = 1454). Request 3b becomes **one plane per wall** (~600 MiB read each) instead
+  of a 16-plane layer at y⁺ ≈ 250. Mathis' y⁺ ≈ 281 (z = 147) is a second height.
+- Lenaers' 69 % counts backflow **points** at the wall under positive large-scale u. Our
+  whole-wall measure is per block. The ground-truth area gives the point measure too, so both
+  are reported and the difference is named.
+- Events are **26-connected** regions (Cardesa et al.'s definition); 6-connectivity is the
+  sensitivity check.
+- How often: the stride overview's z = 1 plane is an unbiased whole-wall sample of the area
+  fraction, the quantity Lenaers reports (0.06 % at Re_τ = 1000). This is a use the stride *is*
+  good for.
+- JHTDB gives **no dataset DOI**; the one in the author's draft plan is dropped. Cite Lee &
+  Moser (2015) and JHTDB's requested papers.
+- No prior backflow analysis at Re_τ ≈ 5200 was found. One paper (Lakshmi Srinivas et al. 2024,
+  wall-shear-stress PDFs up to Re_τ 5200) must be checked before any novelty wording.
+- Resolution caveat: our Δx⁺ = 12.7 is 1.5× coarser than Cardesa's detection grid, so region
+  counts are biased low and sizes high. Area fractions are robust (Lenaers).
 
 Changes from revision 1, all agreed in discussion:
 - **The feature changed.** The file is streamwise velocity, not pressure, so the case looks for
   reverse-flow (backflow) events instead of low-pressure cores (section 2).
 - **One full read instead of two.** Only the block-minimum overview reads the whole file. Block
   means of the test area come from its cached full-resolution cut. The large-scale field comes
-  from the stride overview, or from a thin mean layer (request 3b, proposed).
+  from the stride overview, or from a block-mean plane (request 3b, proposed; revision 3 moved
+  it to y⁺ ≈ 100).
 - **Three claims, not five:** cost estimation, reuse of cached results, provenance. The finding
   that the choice of reduction decides what the overview shows is the **motivation**, not a
   language claim. A script can name its operator too. What Sieve adds is a runtime that
@@ -40,9 +61,12 @@ Changes from revision 1, all agreed in discussion:
 | Remote checkout | gpu-server's VisLang at `b4a7a96` (all of section 5) | `git log` on the server |
 | Velocity components | Only u is on the server; v, w, p exist only in JHTDB | `ls` |
 
+| Simulation (Lee & Moser 2015) | Re_τ = 5186; Lx = 8πδ, Lz = 3πδ; Δx⁺ = 12.7, Δz⁺ = 6.4; first knot Δy⁺ = 0.498; Re_b = 1.25 × 10⁵; constant mass flux. JHTDB stores 11 frames "around 0.7 flow-through time" apart, at "wavemode resolution". The paper does not discuss backflow | `LITERATURE.md` §2.3–2.4 |
+| Agreement with the published profiles | Published peak u′rms⁺ ≈ 3.02 at y⁺ 15.7, U⁺ = 26.575 near the centre, JHTDB "Uc ∼ 1.10"; ours: 3.06 at y⁺ 14.8, U_c⁺ ≈ 26.6, 1.103 | `LITERATURE.md` §2.3 |
+
 ### Unknown
-- Which of JHTDB's 11 snapshots this is (the Open SciVis page could not be reached from here).
-  Needed only to cite the snapshot.
+- Which of JHTDB's 11 frames this is (the Open SciVis page could not be reached from here).
+  Needed only to cite the frame.
 - Whether the NFS rate holds for a ~2 h read.
 
 ---
@@ -52,26 +76,37 @@ Changes from revision 1, all agreed in discussion:
 **Where, and how often, does the near-wall flow reverse direction (u < 0) at Re_τ ≈ 5200,
 and do the reverse-flow events sit beneath large-scale high-speed or low-speed regions?**
 
-- **Lenaers, Li, Brethouwer, Schlatter & Örlü (2012),** *Phys. Fluids* 24, 035110,
-  doi:10.1063/1.3696304:
-  - backflow occurs at about 0.06 % of wall points at Re_τ = 1000;
-  - it becomes more frequent and reaches farther from the wall as Re_τ grows (up to y⁺ ≈ 8.5);
-  - most events lie beneath a positive (high-speed) large-scale structure, attributed to
-    amplitude modulation.
-- **Cardesa, Monty, Soria & Chong (2019),** *J. Fluid Mech.* 880, R3, doi:10.1017/jfm.2019.774:
-  - backflow regions are attached to the wall;
-  - their density per wall area grows with Re_τ;
-  - they are roughly circular in the wall-parallel plane.
+Precedent (full quotes in `LITERATURE.md`):
+- **Lenaers et al. (2012),** *Phys. Fluids* 24, 035110, channel DNS to Re_τ = 1000:
+  - "0.06% at the wall at Reτ = 1000", rising from 0.01 % at Re_τ = 180;
+  - backflow reaches "y⁺ ≈ 8.5 at Reτ = 1000";
+  - regions are about 20 viscous units across;
+  - "69% of the points with backflow … are located underneath a positive large-scale motion"
+    (u at y⁺ ≈ 100, Gaussian low-pass, width unstated), while locally backflow sits in low-speed
+    streaks. They attribute the rise with Re_τ to amplitude modulation.
 
-  (Abstract-level reading; check the full text before citing details.)
-- **Mathis, Hutchins & Marusic (2009),** *J. Fluid Mech.* 628 (amplitude modulation; outer site
-  y⁺ ≈ 3.9 Re_τ^½ ≈ 280). **Hutchins & Marusic (2007),** *J. Fluid Mech.* 579 (very large
-  motions). Page numbers to be checked.
-- **Data:** Lee & Moser (2015), *J. Fluid Mech.* 774; JHTDB channel5200, doi:10.7281/T1PV6HJV;
-  distributed by the Open SciVis Datasets (acknowledge).
+  **This is the question we ask, at Re_τ ≈ 5200.**
+- **Cardesa et al. (2019),** *J. Fluid Mech.* 880, R3, channel DNS to Re_τ = 2003:
+  - backflow regions (26-connected u < 0) are wall-attached;
+  - bounding boxes about 19–20 × 19–21 viscous units, about 1 unit tall;
+  - density 1.39 → 1.97 per million wall units² from Re_τ 547 to 2003.
+
+  They do not classify by high- or low-speed large scales.
+- **Mathis et al. (2009)** (amplitude modulation strengthens with Re_τ; large scales λx > δ;
+  outer site y⁺ = 3.9 Re_τ^½ ≈ 281) and **Chen, Chung & Wan (2023)** (pipe: backflow at the tail
+  tip of a large-scale low-speed structure beneath a high-speed one) give the mechanism and its
+  nuance. Willert et al. (2018) and Brücker (2015) give experimental fractions of 0.01–0.1 %.
+- **Data:** Lee & Moser (2015), *J. Fluid Mech.* 774, 395–415, doi:10.1017/jfm.2015.268. JHTDB's
+  requested citations (Li et al. 2008; Perlman et al. 2007; Graham et al. 2016), ODC-By licence.
+  Acknowledge the Open SciVis Datasets as the file's distributor.
+- **Novelty:** none found at Re_τ ≈ 5200. Frame it as extending Lenaers' question by 5× in Re_τ,
+  pending the Lakshmi Srinivas et al. (2024) check (`LITERATURE.md` §4).
 
 **Why this feature motivates the case.** The events are a few cells across and rare.
-- A stride of 16 keeps 1 cell in 256 of each wall-parallel plane, so it samples few of them.
+- A stride of 16 keeps 1 cell in 256 of each wall-parallel plane, and a region about 20 viscous
+  units across covers about 4 cells of it. A given region therefore holds a kept cell with
+  probability of roughly 4/256 ≈ 1.5 % (derived). The stride still estimates **how often**
+  (an unbiased sample of the area fraction); it cannot show **where**.
 - A block mean is dominated by the forward flow around an event and stays positive.
 - A block minimum is negative if and only if its block holds a reverse-flow cell.
 
@@ -100,7 +135,7 @@ Sieve prints binary units as "MB"/"GB". Exact byte counts go in the tables.
 | 1 | **Stride overview** `save(subsample(inner, 16), "s1_stride16.vti")` | ~3.5 GiB (46,080 x-rows of 10,225 cells) | ~225 MiB | cost estimation (the cheap side) | yes |
 | 2 | **Ground-truth block** `save(region(src, x=(4608, 5632), y=(3328, 4352), z=(1, 65)), "s2_truth.vti")` | 512 MiB | 512 MiB | (ground truth) | yes |
 | 3 | **Its block means and minima** `coarsen(region(src, …same box…), 16, how="mean")`, then `how="min"` | **0: computed from request 2's cached cut** | 0 | reuse of cached results | no (nothing read) |
-| 3b | *(proposed, new)* **Large-scale layer** `save(coarsen(region(src, z=(129, 145)), 16, how="mean"), "s3b_layer_mean.vti")`: block row 8, y⁺ 223.5–271.3 | ~9.4 GiB (16 planes) | ~2.3 MiB | cost estimation (a mean is cheap where the region is thin) | yes |
+| 3b | *(proposed)* **Large-scale planes** at y⁺ ≈ 100, the height of Lenaers et al.: `save(coarsen(region(src, z=(81, 82)), x=16, y=16, how="mean"), "s3b_lower.vti")`, and z=(1454, 1455) for the upper wall | ~600 MiB per plane (arith.: 629,145,600 B) | ~2.3 MiB per plane | cost estimation (a block mean is cheap where the region is thin) | yes |
 | 4 | **Block-minimum overview** `low = coarsen(inner, 16, how="min")`, `save(low, "s4_min16.vti")` | **~898.8 GiB (every cell); held until approved** | ~225 MiB | cost estimation, reduction next to the data | **yes: the one full read, ~2 h** |
 | 5 | **Backflow blocks** `save(threshold(low, "u < 0"), "s5_backflow.vti")` | **0: computed from request 4's cached result; the estimate says so beforehand** | 0 | reuse of cached results | no (nothing read) |
 | 6 | **Reproduce from the file** (spec recovered from request 4's output by `provenance`) | 0 | 0 | provenance | no |
@@ -120,10 +155,12 @@ What each request gives the scientist:
    - The cached cut is the request's own start (`region`), and what follows (`coarsen`) runs
      on the values alone, so Sieve computes it locally.
    - Reuse keeps the written order: a threshold before a coarsen is a different request.
-3b. The large-scale streamwise velocity near y⁺ ≈ 250 over the whole wall, by the operator that
-   suits large features (a mean), at about 1 % of the file's read.
-   - Without 3b, the large-scale field comes from the stride overview, low-pass filtered.
-   - With 3b, the filtered stride becomes a cross-check.
+3b. The streamwise velocity at y⁺ ≈ 100 over each whole wall, as 16 × 16-cell block means
+   (204 × 102 viscous units), by the operator that suits large features, at 0.07 % of the file's
+   read per plane. The stride overview also holds z = 81 (1 + 16·5) as every 16th cell, so 3b
+   and the stride sample the same plane. The filtered stride is a cross-check, and it is the
+   fallback if 3b is not run. Mathis' y⁺ ≈ 281 (z = 147, 1388) is the same request at another
+   height, if wanted.
 4. Where backflow occurs, over both whole walls: block row 0 at each wall, 640 × 480 blocks,
    each block's most negative u.
 5. The census: which blocks hold reverse flow. The output is a NaN-masked grid of the same
@@ -251,8 +288,11 @@ the same way if it has any.
 
 **Definitions:**
 - *Backflow cell:* u < 0 at z ≥ 1.
-- *Event:* a 6-connected component of backflow cells. 26-connectivity is reported as a one-line
-  sensitivity check. Events touching the block's sides are kept and flagged.
+- *Event:* a 26-connected component of backflow cells (Cardesa et al. 2019). 6-connectivity is
+  reported as a one-line sensitivity check. Events touching the area's sides are kept and flagged.
+  Expected count (derived, for planning only): Cardesa's density at Re_τ 2003 (1.97 per million
+  wall units²) over our 84.9 million gives ~170 at least. Our coarser grid merges or loses the
+  smallest regions, so fewer may be found.
 - *Block flagged:*
   - stride: its kept cell (the block's first) has u < 0;
   - mean: block mean < 0;
@@ -277,13 +317,30 @@ Cross-checks:
 5. **SSIM:** 2-D SSIM (`skimage.metrics.structural_similarity`, data range = ground truth's over
    row 0) between each z-plane 1–16 and the overview upsampled by nearest neighbour, averaged.
 
-**Science (whole wall):**
-- Census per wall from request 5: blocks holding backflow, out of 307,200, and the distribution
-  of their minima.
-- Large-scale field: u′_L = request 3b's layer minus its plane mean, Gaussian-filtered with
-  σ = δ/2 in x and y (fixed now). Without 3b: request 1's row nearest y⁺ ≈ 250, same filter.
-- The answer: the fraction of backflow blocks with u′_L > 0 above them, against the fraction of
-  wall area with u′_L > 0. Also as a curve over streamwise shift (the structures are inclined).
+**Science (fixed now; definitions matched to the literature, `LITERATURE.md` §5):**
+- **How often (Lenaers' measure: fraction of wall area).**
+  - (a) Ground-truth area: the exact fraction of cells with u < 0 at z = 1 (y⁺ 0.07, standing in
+    for τ_w < 0), and per level up to y⁺ 68. This also gives the reach (highest level with any
+    u < 0), compared with Lenaers' y⁺ ≈ 8.5 at 1000.
+  - (b) Each whole wall: the stride overview's z = 1 (and z = 1534) samples, 307,200 per wall, an
+    unbiased estimate of the same fraction, with a binomial confidence interval.
+  - Compare with 0.01 / 0.05 / 0.06 % at Re_τ 180 / 590 / 1000 (Lenaers) and 0.01–0.1 % (Willert,
+    Re_τ 1000 and 2700).
+- **Where (census).** Request 5: blocks holding backflow, per wall, out of 307,200, and the
+  distribution of their minima.
+- **Size and number.** 26-connected regions in the ground-truth area: bounding boxes in viscous
+  units, regions per million wall units², compared with Cardesa (≈ 19–20 units across; 1.97 per
+  million at 2003), with the resolution caveat.
+- **Beneath high- or low-speed large scales.**
+  - Large-scale field u′_L: the plane at y⁺ ≈ 100 (request 3b, else the stride's z = 81 samples)
+    minus its mean, then a 2-D low-pass keeping λx > δ and λz > δ/4 (sharp spectral cut-off).
+    Sensitivity: λz > δ/8 and > δ/2; and the y⁺ ≈ 281 plane.
+  - (a) Whole walls, blocks: the fraction of backflow blocks with u′_L > 0 above them, against the
+    fraction of wall area with u′_L > 0.
+  - (b) Ground-truth area, points: the fraction of backflow cells at z = 1 with u′_L > 0 above
+    them. This is the same measure as Lenaers' 69 %, over a small area (~2.5δ × 1.3δ), so it is
+    indicative only.
+  - Report both; the text names which compares with Lenaers.
 
 **Baselines:**
 - **(a) Download the whole file:** 966,367,641,600 B (`stat`), not run.
@@ -320,7 +377,7 @@ Cross-checks:
 | 1 Stride overview | 3.5 GiB | [X] | 225 MiB | [X] | [X s] | [X %] | [X] |
 | 2 Ground truth | 512 MiB | [X] | 512 MiB | [X] | [X s] | (truth) | (truth) |
 | 3 Means / minima of it (cache) | 0 | 0 | 0 | 0 | none | [X %] / 100 %* | [X] / [X] |
-| 3b Large-scale layer (proposed) | 9.4 GiB | [X] | 2.3 MiB | [X] | [X s] | | |
+| 3b Large-scale plane, y⁺ ≈ 100 (proposed; per wall) | 600 MiB | [X] | 2.3 MiB | [X] | [X s] | | |
 | 4 Block-minimum overview | 898.8 GiB (held) | [X] | 225 MiB | [X] | [X h] | | |
 | 5 Backflow blocks (cache) | 0 | 0 | 0 | 0 | none | | |
 | 6 Reproduce from provenance | 0 | 0 | 0 | 0 | none | | |
@@ -335,6 +392,17 @@ Cross-checks:
 
 - **Pressure → backflow.** The draft plan's pressure references (del Álamo et al. 2006; Panton,
   Lee & Moser 2017; Robinson 1991; Jeong & Hussain 1995) do not apply to this case.
+- **Resolution.** Our Δx⁺ = 12.7 equals Cardesa's spacing *before* dealiasing. Their regions were
+  detected on a grid 1.5× finer, and 23–32 % of them are one cell long in x. Region counts here
+  are biased low and sizes high. Area fractions are robust: Lenaers found finer grids give only
+  "slightly lower" fractions, and a grid near ours "sufficient".
+- **High- vs low-speed is not a single answer.** Lenaers: under positive large scales, inside
+  low-speed streaks. Chen et al. (pipe): at the tail of a large-scale low-speed structure beneath
+  a high-speed one. Our classification is at one height, at block or cell level. State it
+  exactly; don't write "contradicts".
+- **Novelty unverified.** Lakshmi Srinivas et al. (2024, PRF) study wall-shear-stress PDFs to
+  Re_τ 5200 (abstract only seen). They may already give the negative-τ_w probability at 5200.
+  Check before any "first" wording.
 - **Index space.**
   - In cell indices, block row 0 (y⁺ 0.07–8.1) is drawn as thick as a centre row spanning
     hundreds of wall units.
@@ -388,13 +456,17 @@ Cross-checks:
 > spanwise × wall-normal), reachable only over ssh. The wall-normal grid is stretched: the first
 > 16 cells above each wall span less than nine viscous units.
 >
-> *Scientific Task.* Near the wall the flow occasionally reverses. These are small regions where
-> the streamwise velocity is negative, covering well under a tenth of a percent of the wall at
-> lower Reynolds numbers [Lenaers et al. 2012; Cardesa et al. 2019]. At Re_τ = 1000 most of them
-> lie beneath large-scale high-speed regions [Lenaers et al. 2012]. A scientist asks whether this
-> holds at Re_τ ≈ 5200, and first needs to see where the events are.
+> *Scientific Task.* Near the wall the streamwise velocity occasionally reverses. At Re_τ = 1000,
+> 0.06 % of the wall area has negative wall shear stress, and 69 % of these backflow points lie
+> beneath positive large-scale motions [Lenaers et al. 2012]. The regions of reverse flow are
+> wall-attached, about 20 viscous units across, and more numerous per unit area at higher
+> Reynolds numbers [Cardesa et al. 2019]. Both trends are linked to the amplitude modulation of
+> the near-wall cycle by the outer large scales, which strengthens with Re_τ [Mathis et al. 2009].
+> Backflow statistics have been reported up to Re_τ ≈ 2000; a scientist asks how often and where
+> the flow reverses at Re_τ ≈ 5200, and whether it still lies beneath high-speed regions.
 >
-> The events are a few grid cells across, smaller than any useful reduction factor, so how the
+> On this grid a region of reverse flow covers about four cells of a wall-parallel plane, smaller
+> than any useful reduction factor, so how the
 > overview is reduced decides whether they appear in it. A stride skips them, and a block
 > average blends them into the forward flow around them. A block minimum keeps every one, but
 > it must read every cell of the 966 GB file, where the stride reads a small fraction of it.
@@ -434,13 +506,16 @@ Cross-checks:
 > fetches.]
 >
 > *Not paying twice.* Thresholding the minimum overview at u < 0 gives the blocks that hold
-> reverse flow: [N] of 307,200 at the lower wall and [N] at the upper. Before it ran, Sieve's
+> reverse flow: [N] of 307,200 at the lower wall and [N] at the upper. (The stride overview,
+> which misses where the events are, still samples how often they occur: [X] % of the wall,
+> against 0.06 % at Re_τ = 1000 [Lenaers et al. 2012].) Before it ran, Sieve's
 > estimate priced this request at nothing. The cached overview is the request's own start and
 > the threshold reads only its values, so the threshold is applied locally; no remote job ran
 > and [0 bytes] moved. Reuse follows the request's written order: a threshold applied *before*
 > the block minimum is a different request and would be read again. Against the large-scale
-> velocity at y⁺ ≈ 250, [X %] of these blocks lie beneath high-speed regions, which cover [X %]
-> of the wall, [in agreement / not] with Lenaers et al. at Re_τ = 1000.
+> velocity at y⁺ ≈ 100, [X %] of these blocks lie beneath high-speed regions, which cover [X %]
+> of the wall. Over the ground-truth area, [X] % of backflow points lie beneath positive large
+> scales, against 69 % at Re_τ = 1000 [Lenaers et al. 2012].
 >
 > *What the output records.* A field of block minima is biased low compared with any pointwise
 > field, and the source file carries no metadata that could say so. The overview's provenance
@@ -452,7 +527,10 @@ Cross-checks:
 ---
 
 ## Decisions pending
-1. **Request 3b** (new, proposed): a thin block-mean layer for the large-scale field,
-   ~9.4 GiB read, ~2.3 MiB back.
+1. **Request 3b** (proposed): the block-mean plane at y⁺ ≈ 100 for each wall, ~600 MiB read and
+   ~2.3 MiB back per plane (optionally y⁺ ≈ 281 too).
 2. **Baseline (b):** the equality check on a subset (~40 GB read) or the full pass (~2 h).
 3. **Approval to run** requests 1 and 2 (and 3b), then request 4. Not before you say so.
+4. **The novelty check:** Lakshmi Srinivas et al. (2024, *Phys. Rev. Fluids* 9, 124604) is
+   paywalled. If you have library access, its negative-τ_w probability at Re_τ 5200 (if
+   reported) decides how Section 4.3 frames the "how often" number.
