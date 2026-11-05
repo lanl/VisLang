@@ -531,6 +531,16 @@ Cross-checks:
   al. 2012; Cardesa et al. 2019) and answers it with Sieve at Re_τ ≈ 5200. No "first" wording; the
   Lakshmi Srinivas et al. check is dropped.
 - **Request 3b: yes** (the block-mean plane at y⁺ ≈ 100 for each wall).
+- **Step 6 also saves the block-minimum overview as netCDF-4** (`save(low, "s6_min16.nc")`, decided
+  2026-11-05). `.vti` stays the primary output: ParaView opens it directly, and it keeps the
+  placement in source cells, which Sieve's HDF5/netCDF outputs do not for a grid with no geometry.
+  The `.nc` copy is the same request in another format, so it is served from the extent cache
+  (0 B read, 0 B moved). It shows that a format conversion of cached data costs nothing, and gives
+  a copy readable without VTK (h5py/xarray), with the provenance record in its attributes.
+- **Step 4 is run detached from the Claude session** (its own process session, `caffeinate`). The
+  first attempt (2026-11-05 03:29) was killed after ~12 min when the session that started it ended.
+  The remote job stopped with it, by design. Its partial record is in
+  `Test1/results/step4/attempt1_interrupted/`.
 
 ## Decisions pending (as of revision 3)
 1. **Request 3b** (proposed): the block-mean plane at y⁺ ≈ 100 for each wall, ~600 MiB read and
