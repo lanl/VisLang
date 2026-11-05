@@ -1,0 +1,6 @@
+equals threshold of step 4 (NaN where u >= 0, same values elsewhere): True
+blocks kept: 28118 of 29491200
+  block row  0:  14004 blocks (4.559 %), minima median -0.0016, min -0.1396
+  block row  1:     10 blocks (0.003 %), minima median -0.0116, min -0.0567
+  block row 94:     20 blocks (0.007 %), minima median -0.0118, min -0.0411
+  block row 95:  14084 blocks (4.585 %), minima median -0.0016, min -0.2317

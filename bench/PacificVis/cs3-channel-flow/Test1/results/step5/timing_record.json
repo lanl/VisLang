@@ -1,0 +1,87 @@
+{
+ "run_id": "e4ec9a4b70b6",
+ "started": "2026-11-05T07:08:02",
+ "spec": "spec.py",
+ "spec_sha": "f6bc652d0265",
+ "commit": "d73bf0c",
+ "status": "OK",
+ "total_s": 4.2406,
+ "env": {},
+ "pipelines": [
+  {
+   "index": 0,
+   "status": "ok",
+   "kind": "save",
+   "uri": "ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw",
+   "forms": [
+    "region",
+    "coarsen",
+    "threshold"
+   ],
+   "dry_run": false,
+   "ts_range": null,
+   "site": "remote",
+   "folder": false,
+   "host": "gpu-server",
+   "source_bytes": 966367641600,
+   "source_id": "f86ac04e",
+   "schema_cached": true,
+   "want_vars": 1,
+   "cached_vars": 0,
+   "missing_vars": 1,
+   "cached_bytes": 235929600,
+   "route": "catalog_derived",
+   "pre_validated": true,
+   "result_bytes": 235929600,
+   "fetched_vars": 0,
+   "materialized": true,
+   "held": null,
+   "s": 4.2323
+  }
+ ],
+ "phases": [
+  {
+   "name": "remote_reduce/probe_source",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0001
+  },
+  {
+   "name": "remote_reduce/catalog_delta",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.006
+  },
+  {
+   "name": "remote_reduce/catalog_derive",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.2604
+  },
+  {
+   "name": "remote_reduce/static_check",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0001
+  },
+  {
+   "name": "remote_reduce",
+   "depth": 0,
+   "pipeline": 0,
+   "s": 0.2769
+  },
+  {
+   "name": "sink_save",
+   "depth": 0,
+   "pipeline": 0,
+   "bytes": 235929600,
+   "s": 0.8573
+  }
+ ],
+ "counters": {
+  "ssh_query": 2
+ },
+ "confirm": false,
+ "dry_run": false,
+ "n_pipelines": 1
+}

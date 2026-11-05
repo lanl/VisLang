@@ -1,0 +1,21 @@
+Status: OK
+Spec: spec.py
+
+(estimate — dry run: forms static-checked against the source schema and the run costed; nothing materialized. Run `execute` to materialize.)
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw  (dry run — nothing materialized)
+    spec (as written): source(u_10240x7680x1536_float64.raw) → region{z:(1,1535)} → coarsen(16,min) → threshold(u<0.0) → save
+    remote source ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw
+    plan: reduce on the remote (narrowing prefix next to the data), pull the result, run the sink locally
+    inspect ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw → raw: vars=['u'], dims={'grid': (10240, 7680, 1536)}
+    region {'z': (1, 1535)} (pushdown)
+    coarsen 16x16x16 blocks, min (post-read: reads every cell of the region)
+    threshold u < 0.0 (voxel NaN-mask)
+    fuse -> grid_ranges=[(None, None, 1), (None, None, 1), (1, 1535, 1)], post_ops=['Coarsen', 'VoxelMask']
+    -> save (would run locally)
+    Cost estimate (remote):
+      read on the server: ~0 MB
+      over the wire: ~0 MB
+      result size: ~225 MB
+      note: served from the extent cache (a cached result of its start, with threshold u < 0.0 applied here): nothing is read next to the data and nothing crosses the wire.

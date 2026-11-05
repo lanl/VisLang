@@ -1,0 +1,20 @@
+{
+ "run_id": "e4ec9a4b70b6",
+ "status": "OK",
+ "started": "2026-11-05T07:08:02",
+ "commit": "d73bf0c",
+ "est_server_read_bytes": null,
+ "est_wire_bytes": null,
+ "est_result_bytes": null,
+ "est_over_budget": null,
+ "server_read_bytes": null,
+ "wire_bytes": null,
+ "probe_bytes": null,
+ "server_s": null,
+ "server_phases": [],
+ "remote_jobs": null,
+ "route": "catalog_derived",
+ "cached_bytes": 235929600,
+ "result_bytes": 235929600,
+ "source_bytes": 966367641600
+}
