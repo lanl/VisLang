@@ -176,6 +176,22 @@ def test_held_end_to_end(tmp):
                                 os.path.join(tmp, "quick.npz")))
         check("the stride is under the read budget and runs unasked",
               st.get("materialized") and not st.get("needs_confirm"))
+
+        print("== a later run prices with the file's element size (from the cached schema) ==")
+        from vislang.remote.catalog import ExtentCatalog
+        from vislang.runtime.paths import cache_root
+        schemas = ExtentCatalog(cache_root())._manifest["schemas"]
+        check("the cached schema keeps the element size",
+              any((v.get("itemsizes") or {}).get("u") == 8 for v in schemas.values()), schemas)
+        reset_sinks()
+        again = plan_pipeline(save(subsample(region(source(far), z=(1, 32)), 4),
+                                   os.path.join(tmp, "quick4.npz")))
+        est = again.get("estimate")
+        kept = 8 * 8 * 8                        # 32 / 4 per axis (z: 31 cells from 1 -> 8)
+        check("... so a run after the first prices 8 B per float64 value, not 4",
+              est is not None and abs(est.read_mb - kept * 8 / 2 ** 20) < 1e-12
+              and not any("dtype not fully known" in n for n in est.notes),
+              None if est is None else (est.read_mb, kept * 8 / 2 ** 20, est.notes))
     finally:
         for k in env:
             os.environ.pop(k, None)

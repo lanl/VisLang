@@ -472,8 +472,9 @@ class DatasetInfo:
         # Per-variable element size in bytes (var -> itemsize), captured by inspect
         # from the same header it already reads for shapes — no bulk read. Used by
         # the cost estimator for honest byte math; absent means "unknown", and the
-        # estimator falls back to a 4-byte (float32) assumption. This is live
-        # metadata only: it is NEVER persisted to the extent catalog.
+        # estimator falls back to a 4-byte (float32) assumption. The extent
+        # catalog keeps it with the schema (catalog SCHEMA_VERSION 5), so a
+        # remote run priced from a cached schema uses the real element size.
         self.itemsizes = itemsizes or {}
 
         # Semantic role binding resolved by inspect: which variables are the

@@ -171,9 +171,8 @@ def _inspect_report(path):
             "dimensions": dict(info.dimensions or {}),
             "positions": list(info.positions) if info.positions else None,
             "attributes": _jsonable_attrs(info.attributes),
-            # Live metadata for the caller's cost estimate (honest byte math
-            # instead of a 4 B/element guess). NOT persisted to the catalog —
-            # remote_reduce._catalog_schema strips it before store_schema.
+            # Bytes per element, for the caller's cost estimate (honest byte
+            # math instead of a 4 B/element guess); the catalog keeps them.
             "itemsizes": {k: int(v) for k, v in (info.itemsizes or {}).items()},
             "filetype": info.filetype,
             # Where the grid sits (origin + spacing, or "points listed") — what
@@ -279,6 +278,9 @@ def _run_single(text, out):
             # Likewise the geometry: without it the next run could not tell a
             # world region from a cell one.
             "geometry": _geometry_desc(info),
+            # And the element sizes: without them the next run's estimate fell
+            # back to 4 B/element (half a float64 file's bytes).
+            "itemsizes": {k: int(v) for k, v in (info.itemsizes or {}).items()},
         },
         "steps": result["steps"],
         "saved_variables": saved,
@@ -419,7 +421,9 @@ def _run_folder_delta(text, manifest_path, outdir, dedupe_geometry=False):
                               "positions": list(info.positions) if info.positions else None,
                               "filetype": info.filetype,
                               "attributes": _jsonable_attrs(info.attributes),
-                              "geometry": _geometry_desc(info)}
+                              "geometry": _geometry_desc(info),
+                              "itemsizes": {k: int(v) for k, v in
+                                            (info.itemsizes or {}).items()}}
                 grid = "grid" in (info.dimensions or {})
                 units = []                       # (tag, keep, columns to read, send geometry)
                 for tag, keep in pieces:

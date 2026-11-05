@@ -60,7 +60,11 @@ _EXTENT_DIR = "extents"
 #   3  same shape; v2 entries written after a remote reduce lost `attributes`
 #      (the reducer's report omitted them and overwrote the login-node schema)
 #   4  + geometry (where a grid sits; decides how a region's numbers are read)
-SCHEMA_VERSION = 4
+#   5  + itemsizes (bytes per element). Without them every run after a file's
+#      first priced its bytes at 4 B/element: a float64 file at half its size,
+#      read on the server and over the wire alike. They are header facts, as
+#      stable as the dimensions under the same identity.
+SCHEMA_VERSION = 5
 _SCHEMA_VERSION_KEY = "schema_version"
 
 

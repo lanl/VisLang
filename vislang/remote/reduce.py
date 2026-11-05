@@ -544,19 +544,28 @@ def _geometry_in(*mappings):
 
 # ---------------------------------------------------------------------------
 def _catalog_schema(schema):
-    """The persistable part of a schema. `itemsizes` is live inspect metadata and
-    is deliberately NOT stored in the catalog (see DatasetInfo.itemsizes)."""
-    return {k: v for k, v in (schema or {}).items() if k != "itemsizes"}
+    """The persistable part of a schema: all of it, `itemsizes` as plain ints
+    (catalog SCHEMA_VERSION 5). The estimate needs them on every run, and the
+    catalog's identity (size, mtime, header hash) changes when the file does."""
+    out = dict(schema or {})
+    if out.get("itemsizes"):
+        out["itemsizes"] = {k: int(v) for k, v in out["itemsizes"].items()}
+    return out
 
 
 def _keep_attributes(schema, known):
-    """`schema` (a reducer's report) with `known`'s attributes filled in when it
-    has none. A remote checkout older than this build reports its schema without
-    `attributes`; storing that over the login-node schema would erase header
-    facts (GenericIO's phys_scale/dtypes) that a format-preserving save needs."""
-    if not schema or schema.get("attributes") or not (known or {}).get("attributes"):
+    """`schema` (a reducer's report) with `known`'s attributes and element sizes
+    filled in where it has none. A remote checkout older than this build reports
+    its schema without them; storing that over the login-node schema would erase
+    header facts (GenericIO's phys_scale/dtypes) that a format-preserving save
+    needs, and the element sizes the next estimate prices bytes with."""
+    if not schema:
         return schema
-    return {**schema, "attributes": known["attributes"]}
+    out = dict(schema)
+    for key in ("attributes", "itemsizes"):
+        if not out.get(key) and (known or {}).get(key):
+            out[key] = known[key]
+    return out
 
 
 def _prime_schema(conn, remote_path, catalog, sid, steps):
