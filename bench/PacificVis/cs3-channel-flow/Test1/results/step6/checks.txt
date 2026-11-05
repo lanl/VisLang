@@ -1,0 +1,19 @@
+replay .vti equals step 4's .vti: True
+  dataset u (640, 480, 96) float64
+  dataset x (640,) >f4
+  dataset y (480,) >f4
+  dataset z (96,) >f4
+  root attrs: ['sieve_axis_order', '_NCProperties', 'sieve_provenance', 'history']
+  u shape (640, 480, 96)
+.nc equals step 4's .vti (axes (0, 1, 2) -> x,y,z): True
+ attr sieve_axis_order : x,y,z (index space, matching the DSL's region/subsample axes)
+   data_sha256 in record: []
+ attr sieve_provenance : ['format: sieve-provenance/2\nresult_summary: |\n  640×480×96 grid × 1 columns, 236 MB (from a 966 GB input)\n    float64  u\nlogical:\n  spec: |\n    # Case Study 3 (Test1), step 6: reproduce step 4 
+   data_sha256 in record: ['59228478a3bbf986']
+s4_min16.vti ['59228478a3bbf986'] ['bc3ed21606b4'] ['10368']
+s6_replay_min16.vti ['59228478a3bbf986'] ['55135d3ac77b'] ['3']
+x [0. 0. 0.] ... 0.0 {'CLASS': 'DIMENSION_SCALE', 'NAME': 'This is a netCDF dimension but not a netCDF variable.       640', '_Netcdf4Dimid': '0'}
+y [0. 0. 0.] ... 0.0 {'CLASS': 'DIMENSION_SCALE', 'NAME': 'This is a netCDF dimension but not a netCDF variable.       480', '_Netcdf4Dimid': '1'}
+z [0. 0. 0.] ... 0.0 {'CLASS': 'DIMENSION_SCALE', 'NAME': 'This is a netCDF dimension but not a netCDF variable.        96', '_Netcdf4Dimid': '2'}
+u attrs {'_Netcdf4Coordinates': '[0 1 2]'}
+history ['2026-11-05T07:09:34-08:00: sieve 0.1.0 (53ef52f): 640×480×96 grid × 1 columns, 236 MB (from a 966 GB input)']

@@ -1,0 +1,140 @@
+{
+ "run_id": "55135d3ac77b",
+ "started": "2026-11-05T07:09:25",
+ "spec": "spec.py",
+ "spec_sha": "f9350a0a3a2f",
+ "commit": "53ef52f",
+ "status": "OK",
+ "total_s": 8.2814,
+ "env": {},
+ "pipelines": [
+  {
+   "index": 0,
+   "status": "ok",
+   "kind": "save",
+   "uri": "ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw",
+   "forms": [
+    "region",
+    "coarsen"
+   ],
+   "dry_run": false,
+   "ts_range": null,
+   "site": "remote",
+   "folder": false,
+   "host": "gpu-server",
+   "source_bytes": 966367641600,
+   "source_id": "f86ac04e",
+   "schema_cached": true,
+   "want_vars": 1,
+   "cached_vars": 1,
+   "missing_vars": 0,
+   "cached_bytes": 235929672,
+   "pre_validated": true,
+   "route": "catalog_full_hit",
+   "result_bytes": 235929600,
+   "fetched_vars": 0,
+   "materialized": true,
+   "held": null,
+   "s": 8.0218
+  },
+  {
+   "index": 1,
+   "status": "ok",
+   "kind": "save",
+   "uri": "ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw",
+   "forms": [
+    "region",
+    "coarsen"
+   ],
+   "dry_run": false,
+   "ts_range": null,
+   "site": "remote",
+   "folder": false,
+   "host": "gpu-server",
+   "source_bytes": 966367641600,
+   "source_id": "f86ac04e",
+   "schema_cached": true,
+   "want_vars": 1,
+   "cached_vars": 1,
+   "missing_vars": 0,
+   "cached_bytes": 235929672,
+   "pre_validated": true,
+   "route": "catalog_full_hit",
+   "result_bytes": 235929600,
+   "fetched_vars": 0,
+   "materialized": true,
+   "held": null,
+   "s": 0.251
+  }
+ ],
+ "phases": [
+  {
+   "name": "remote_reduce/probe_source",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0001
+  },
+  {
+   "name": "remote_reduce/catalog_delta",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0831
+  },
+  {
+   "name": "remote_reduce/static_check",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0001
+  },
+  {
+   "name": "remote_reduce",
+   "depth": 0,
+   "pipeline": 0,
+   "s": 0.0947
+  },
+  {
+   "name": "sink_save",
+   "depth": 0,
+   "pipeline": 0,
+   "bytes": 235929600,
+   "s": 4.9098
+  },
+  {
+   "name": "remote_reduce/probe_source",
+   "depth": 1,
+   "pipeline": 1,
+   "s": 0.0
+  },
+  {
+   "name": "remote_reduce/catalog_delta",
+   "depth": 1,
+   "pipeline": 1,
+   "s": 0.0251
+  },
+  {
+   "name": "remote_reduce/static_check",
+   "depth": 1,
+   "pipeline": 1,
+   "s": 0.0001
+  },
+  {
+   "name": "remote_reduce",
+   "depth": 0,
+   "pipeline": 1,
+   "s": 0.0281
+  },
+  {
+   "name": "sink_save",
+   "depth": 0,
+   "pipeline": 1,
+   "bytes": 235929600,
+   "s": 0.2206
+  }
+ ],
+ "counters": {
+  "ssh_query": 2
+ },
+ "confirm": false,
+ "dry_run": false,
+ "n_pipelines": 2
+}
