@@ -1,0 +1,81 @@
+{
+ "definition": "    python largescale.py <outputs dir> <results dir>     (cvision env: numpy)",
+ "lambda_x>delta, lambda_z>delta/4": {
+  "a_points_whole_lower_wall_stride": {
+   "n": 297,
+   "beneath_positive": 149,
+   "fraction_beneath_positive": 0.5016835016835017,
+   "area_fraction_positive": 0.5025520833333333
+  },
+  "b_points_ground_truth_area": {
+   "n": 1326,
+   "beneath_positive": 716,
+   "fraction_beneath_positive": 0.5399698340874811,
+   "area_fraction_positive": 0.5025520833333333
+  },
+  "c_blocks_lower_wall": {
+   "n": 14004,
+   "beneath_positive": 7742,
+   "fraction_beneath_positive": 0.5528420451299628,
+   "area_fraction_positive": 0.5025520833333333
+  },
+  "c_blocks_upper_wall": {
+   "n": 14084,
+   "beneath_positive": 7661,
+   "fraction_beneath_positive": 0.5439505822209599,
+   "area_fraction_positive": 0.4954915364583333
+  }
+ },
+ "lambda_x>delta, lambda_z>delta/8": {
+  "a_points_whole_lower_wall_stride": {
+   "n": 297,
+   "beneath_positive": 149,
+   "fraction_beneath_positive": 0.5016835016835017,
+   "area_fraction_positive": 0.5040690104166666
+  },
+  "b_points_ground_truth_area": {
+   "n": 1326,
+   "beneath_positive": 754,
+   "fraction_beneath_positive": 0.5686274509803921,
+   "area_fraction_positive": 0.5040690104166666
+  },
+  "c_blocks_lower_wall": {
+   "n": 14004,
+   "beneath_positive": 7784,
+   "fraction_beneath_positive": 0.5558411882319337,
+   "area_fraction_positive": 0.5040690104166666
+  },
+  "c_blocks_upper_wall": {
+   "n": 14084,
+   "beneath_positive": 7503,
+   "fraction_beneath_positive": 0.5327321783584209,
+   "area_fraction_positive": 0.494404296875
+  }
+ },
+ "lambda_x>delta, lambda_z>delta/2": {
+  "a_points_whole_lower_wall_stride": {
+   "n": 297,
+   "beneath_positive": 131,
+   "fraction_beneath_positive": 0.44107744107744107,
+   "area_fraction_positive": 0.49250651041666665
+  },
+  "b_points_ground_truth_area": {
+   "n": 1326,
+   "beneath_positive": 620,
+   "fraction_beneath_positive": 0.4675716440422323,
+   "area_fraction_positive": 0.49250651041666665
+  },
+  "c_blocks_lower_wall": {
+   "n": 14004,
+   "beneath_positive": 7512,
+   "fraction_beneath_positive": 0.5364181662382177,
+   "area_fraction_positive": 0.49250651041666665
+  },
+  "c_blocks_upper_wall": {
+   "n": 14084,
+   "beneath_positive": 7380,
+   "fraction_beneath_positive": 0.5239988639591026,
+   "area_fraction_positive": 0.4848177083333333
+  }
+ }
+}

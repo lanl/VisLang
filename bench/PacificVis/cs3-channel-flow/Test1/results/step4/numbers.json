@@ -1,0 +1,44 @@
+{
+ "run_id": "bc3ed21606b4",
+ "status": "OK",
+ "started": "2026-11-05T04:13:22",
+ "commit": "f765b3f",
+ "est_server_read_bytes": 965109350400,
+ "est_wire_bytes": 235929600,
+ "est_result_bytes": 235929600,
+ "est_over_budget": true,
+ "server_read_bytes": 943219060736,
+ "wire_bytes": 235930686,
+ "probe_bytes": 4194304,
+ "server_s": 10344.7811,
+ "server_phases": [
+  [
+   {
+    "name": "import",
+    "s": 0.1505
+   },
+   {
+    "name": "inspect",
+    "s": 0.0111
+   },
+   {
+    "name": "lower",
+    "s": 0.0007
+   },
+   {
+    "name": "materialize",
+    "s": 10344.3312,
+    "bytes": 235929600
+   },
+   {
+    "name": "sink_save",
+    "s": 0.2404
+   }
+  ]
+ ],
+ "remote_jobs": null,
+ "route": "remote_reduce",
+ "cached_bytes": 0,
+ "result_bytes": 235929600,
+ "source_bytes": 966367641600
+}

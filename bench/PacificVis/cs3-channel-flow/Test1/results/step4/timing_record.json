@@ -1,0 +1,161 @@
+{
+ "run_id": "bc3ed21606b4",
+ "started": "2026-11-05T04:13:22",
+ "spec": "spec.py",
+ "spec_sha": "f313173a9b12",
+ "commit": "f765b3f",
+ "status": "OK",
+ "total_s": 10372.7823,
+ "env": {},
+ "pipelines": [
+  {
+   "index": 0,
+   "status": "ok",
+   "kind": "save",
+   "uri": "ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw",
+   "forms": [
+    "region",
+    "coarsen"
+   ],
+   "dry_run": false,
+   "ts_range": null,
+   "site": "remote",
+   "folder": false,
+   "host": "gpu-server",
+   "source_bytes": 966367641600,
+   "source_id": "f86ac04e",
+   "schema_cached": true,
+   "want_vars": 1,
+   "cached_vars": 0,
+   "missing_vars": 1,
+   "cached_bytes": 0,
+   "pre_validated": true,
+   "probe_bw_bps": 1905960.0,
+   "probe_bw_source": "probe",
+   "plan_bytes": 350,
+   "srun": false,
+   "result_bytes": 235929600,
+   "fetched_vars": 1,
+   "route": "remote_reduce",
+   "est_site": "remote",
+   "est_read_mb": 225.0,
+   "est_server_read_mb": 920400.0,
+   "est_output_mb": 225.0,
+   "est_payload_mb": null,
+   "est_time_lo_s": 61.892589854687685,
+   "est_time_hi_s": 247.57035941875074,
+   "est_confidence": "measured",
+   "est_over_budget": true,
+   "est_n_timesteps": 1,
+   "est_n_boxes": null,
+   "materialized": true,
+   "held": null,
+   "s": 10372.7564
+  }
+ ],
+ "phases": [
+  {
+   "name": "remote_reduce/probe_source",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0001
+  },
+  {
+   "name": "remote_reduce/catalog_delta",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0083
+  },
+  {
+   "name": "remote_reduce/catalog_derive",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0071
+  },
+  {
+   "name": "remote_reduce/static_check",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0002
+  },
+  {
+   "name": "remote_reduce/cost_estimate",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 2.2016
+  },
+  {
+   "name": "remote_reduce/remote_exec",
+   "depth": 1,
+   "pipeline": 0,
+   "srun": false,
+   "s": 10347.0032,
+   "server_s": 10344.7811,
+   "startup_s": 1.49,
+   "server_read_bytes": 943219060736,
+   "launch_s": 0.7321,
+   "server_phases": [
+    {
+     "name": "import",
+     "s": 0.1505
+    },
+    {
+     "name": "inspect",
+     "s": 0.0111
+    },
+    {
+     "name": "lower",
+     "s": 0.0007
+    },
+    {
+     "name": "materialize",
+     "s": 10344.3312,
+     "bytes": 235929600
+    },
+    {
+     "name": "sink_save",
+     "s": 0.2404
+    }
+   ]
+  },
+  {
+   "name": "remote_reduce/pull/transfer",
+   "depth": 2,
+   "pipeline": 0,
+   "remote": "/tmp/vislang_reduce_0ed3084e.npz",
+   "bytes": 235930686,
+   "s": 11.5741
+  },
+  {
+   "name": "remote_reduce/pull",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 13.3705
+  },
+  {
+   "name": "remote_reduce",
+   "depth": 0,
+   "pipeline": 0,
+   "s": 10364.3953
+  },
+  {
+   "name": "sink_save",
+   "depth": 0,
+   "pipeline": 0,
+   "bytes": 235929600,
+   "s": 5.0993
+  }
+ ],
+ "counters": {
+  "ssh_query": 3,
+  "bandwidth_probes": 1,
+  "probe_bytes": 4194304,
+  "ssh_exec": 2,
+  "transfers": 1,
+  "wire_bytes": 235930686,
+  "wire_bytes_file": 235930686
+ },
+ "confirm": true,
+ "dry_run": false,
+ "n_pipelines": 1
+}

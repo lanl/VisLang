@@ -1,0 +1,15 @@
+== lambda_x>delta, lambda_z>delta/4 ==
+  a_points_whole_lower_wall_stride: 149 of 297 beneath u'_L > 0 = 50.2 % (u'_L > 0 covers 50.3 % of the wall)
+  b_points_ground_truth_area: 716 of 1326 beneath u'_L > 0 = 54.0 % (u'_L > 0 covers 50.3 % of the wall)
+  c_blocks_lower_wall: 7742 of 14004 beneath u'_L > 0 = 55.3 % (u'_L > 0 covers 50.3 % of the wall)
+  c_blocks_upper_wall: 7661 of 14084 beneath u'_L > 0 = 54.4 % (u'_L > 0 covers 49.5 % of the wall)
+== lambda_x>delta, lambda_z>delta/8 ==
+  a_points_whole_lower_wall_stride: 149 of 297 beneath u'_L > 0 = 50.2 % (u'_L > 0 covers 50.4 % of the wall)
+  b_points_ground_truth_area: 754 of 1326 beneath u'_L > 0 = 56.9 % (u'_L > 0 covers 50.4 % of the wall)
+  c_blocks_lower_wall: 7784 of 14004 beneath u'_L > 0 = 55.6 % (u'_L > 0 covers 50.4 % of the wall)
+  c_blocks_upper_wall: 7503 of 14084 beneath u'_L > 0 = 53.3 % (u'_L > 0 covers 49.4 % of the wall)
+== lambda_x>delta, lambda_z>delta/2 ==
+  a_points_whole_lower_wall_stride: 131 of 297 beneath u'_L > 0 = 44.1 % (u'_L > 0 covers 49.3 % of the wall)
+  b_points_ground_truth_area: 620 of 1326 beneath u'_L > 0 = 46.8 % (u'_L > 0 covers 49.3 % of the wall)
+  c_blocks_lower_wall: 7512 of 14004 beneath u'_L > 0 = 53.6 % (u'_L > 0 covers 49.3 % of the wall)
+  c_blocks_upper_wall: 7380 of 14084 beneath u'_L > 0 = 52.4 % (u'_L > 0 covers 48.5 % of the wall)
