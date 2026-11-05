@@ -557,11 +557,14 @@ def _write_netcdf4(out, loaded):
                 # the .vti carries, so a reader without VTK lines the cut up with
                 # its source and its sibling cuts). A placement in cells is
                 # labelled as such: a dimensionless index, never a physical unit.
+                # No CF `axis` attribute: ParaView's netCDF CF reader takes
+                # axis X/Y as longitude/latitude and, with its default
+                # "Spherical Coordinates" on, bends the grid into a shell. A
+                # coordinate variable is already identified by its name.
                 cells = in_cells(geom)
                 for i, ax in enumerate(axes):
                     cv = ds.createVariable(ax, "f8", (ax,))
                     cv[:] = geom["origin"][i] + np.arange(shape[i]) * geom["spacing"][i]
-                    cv.axis = ax.upper()
                     if cells:
                         cv.units = "1"
                         cv.long_name = (f"{ax} cell index in the source (the source "

@@ -662,7 +662,10 @@ def test_netcdf():
         cx = ds.variables["x"]
         check("nc_cells_coords_labelled",
               cx.units == "1" and cx.sieve_units == "source cells"
-              and "no physical position" in cx.long_name and cx.axis == "X",
+              and "no physical position" in cx.long_name
+              # no CF axis attribute: ParaView's CF reader would read X/Y as
+              # longitude/latitude and bend the grid into a spherical shell
+              and "axis" not in cx.ncattrs(),
               {k: cx.getncattr(k) for k in cx.ncattrs()})
         check("nc_cells_flag", int(ds.sieve_in_cells) == 1)
     check("nc_explains_cells_coords",
@@ -705,6 +708,7 @@ def test_netcdf_coords_from_geometry():
         check("nc_coords_from_origin_spacing",
               list(ds.variables["x"][:3]) == [100.0, 102.0, 104.0],
               list(ds.variables["x"][:3]))
+        check("nc_world_coords_no_axis_attribute", "axis" not in ds.variables["x"].ncattrs())
         check("nc_world_coords_not_labelled_as_cells",
               "sieve_units" not in ds.variables["x"].ncattrs()
               and "sieve_in_cells" not in ds.ncattrs())
