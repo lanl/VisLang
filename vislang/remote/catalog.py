@@ -350,23 +350,20 @@ class ExtentCatalog:
         except (OSError, ValueError):
             return None                   # manifest points at a lost file: miss
 
-    def lookup(self, source_id, var, narrow_key):
-        """Cached array for this exact request, or a slice of a containing
-        pure-grid extent. None on any doubt — a miss is never wrong data.
-
-        Grid superset reuse fuses each key's forms to per-axis ranges using the
-        source's cached schema (grid shape); a key we can't fuse — a threshold,
-        particle data, or a source with no cached schema — falls back to
-        exact-match only."""
+    def _candidates(self, source_id, var, narrow_key):
+        """(entry, slices) that could serve this request, best first, from the
+        manifest alone: the exact entry (slices None), else each pure-grid
+        extent containing it with the slices that cut it out."""
         entries = self._manifest["extents"].get(source_id, {}).get(var, [])
         key = _canon(narrow_key)
         for e in entries:
             if e["key"] == key:
-                return self._read(e)
+                yield e, None
+                return
         grid = ((self.schema(source_id) or {}).get("dimensions") or {}).get("grid")
         req = _grid_ranges_of(narrow_key, grid)
         if req is None:
-            return None
+            return
         for e in entries:
             had = _grid_ranges_of(e["narrow"], grid)
             if had is None or len(had) != len(req):
@@ -374,7 +371,20 @@ class ExtentCatalog:
             slices = [_axis_slice(r, h) for r, h in zip(req, had)]
             if any(s is None for s in slices):
                 continue
+            yield e, slices
+
+    def lookup(self, source_id, var, narrow_key):
+        """Cached array for this exact request, or a slice of a containing
+        pure-grid extent. None on any doubt — a miss is never wrong data.
+
+        Grid superset reuse fuses each key's forms to per-axis ranges using the
+        source's cached schema (grid shape); a key we can't fuse — a threshold,
+        particle data, or a source with no cached schema — falls back to
+        exact-match only (`derive` handles a cached start of such a chain)."""
+        for e, slices in self._candidates(source_id, var, narrow_key):
             arr = self._read(e)
+            if slices is None:
+                return arr
             if arr is None:
                 continue
             if var == GEOMETRY_KEY:
@@ -385,9 +395,31 @@ class ExtentCatalog:
                 return arr[tuple(slices)]
         return None
 
-    def derive(self, source_id, variables, narrow_key):
+    def covers(self, source_id, var, narrow_key):
+        """True when `lookup` would serve this request — decided from the
+        manifest alone, no array read (the estimate's question). A file lost
+        since it was indexed is found only by the read, which then misses."""
+        self._refresh()
+        for e, slices in self._candidates(source_id, var, narrow_key):
+            if slices is None or var == GEOMETRY_KEY or len(e.get("shape") or ()) == len(slices):
+                return True
+        return False
+
+    def _exact_in_float32(self, entries):
+        """False when a float32 extent holds a value beyond 2**24 (so it may be
+        an integer the mask's cast rounded), or cannot be read."""
+        for e in entries:
+            if e.get("dtype") == "float32":
+                arr = self._read(e)
+                if arr is None or (arr.size and np.nanmax(np.abs(arr), initial=0.0) > _FLOAT32_EXACT):
+                    return False
+        return True
+
+    def derive(self, source_id, variables, narrow_key, peek=False):
         """(arrays, local forms, cached key) to serve `narrow_key` from an extent
-        that holds its written start (see `derivation`), or None. Every name in
+        that holds its written start (see `derivation`), or None. `peek` answers
+        from the manifest (arrays None) — only a tightened cut reads its
+        variable, to check the float32 guard below. Every name in
         `variables` must be cached under that one key — a threshold's variable
         included, since the local cut reads it. Prefers the extent that leaves
         the least to do. Where a looser cached threshold is tightened, a float32
@@ -408,6 +440,12 @@ class ExtentCatalog:
             if got is not None:
                 found.append((len(had["forms"]), key, had, got))
         for _, key, had, (rest, tightened) in sorted(found, key=lambda f: -f[0]):
+            cut_vars = {f[1] for f in rest if f[0] == "threshold"}
+            if tightened and not self._exact_in_float32(
+                    [d[key] for v, d in zip(variables, by_var) if v in cut_vars]):
+                continue
+            if peek:
+                return None, rest, had            # the estimate's question: no arrays
             arrays = {}
             for v, entries in zip(variables, by_var):
                 arr = self._read(entries[key])
@@ -415,12 +453,6 @@ class ExtentCatalog:
                     break
                 arrays[v] = arr
             else:
-                cut_vars = {f[1] for f in rest if f[0] == "threshold"}
-                if tightened and any(
-                        arrays[v].dtype == np.float32 and arrays[v].size
-                        and np.nanmax(np.abs(arrays[v]), initial=0.0) > _FLOAT32_EXACT
-                        for v in cut_vars if v in arrays):
-                    continue
                 return arrays, rest, had
         return None
 

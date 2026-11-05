@@ -1033,6 +1033,79 @@ def _derive(catalog, sid, want, key, schema, steps):
     return out
 
 
+def _unit_share(catalog, sid, src, prefix, schema, label=None, convert=True):
+    """What the extent cache holds toward one file's request, from its index —
+    the same key and the same three questions the run asks (exact, a sliced
+    superset, a cached start): {"want", "missing" (pieces still to fetch),
+    "derived" (forms the run would apply here, or None)}."""
+    prefix = _resolve_on_host(src, prefix, schema, [], convert=convert)
+    key = _narrow_key(prefix, label)
+    project = _projection_of(prefix)
+    want = project if project is not None else list(schema.get("variables") or [])
+    missing = [v for v in _with_geometry(want, schema) if not catalog.covers(sid, v, key)]
+    if _data_vars(missing):
+        cut_vars = [f[1] for f in key["forms"] if f[0] == "threshold"]
+        need = list(dict.fromkeys(list(want) + cut_vars))
+        got = catalog.derive(sid, need + ([GEOMETRY_KEY] if _wants_geometry(schema) else []),
+                             key, peek=True)
+        if got is not None:
+            return {"want": want, "missing": [], "derived": got[1]}
+    return {"want": want, "missing": missing, "derived": None}
+
+
+def cache_share(src, middle):
+    """The estimate's view of the extent cache for a single remote file: what
+    `remote_reduce` would serve without reading next to the data. Identifies the
+    file as the run does (stat + header hash: metadata round trips, no bulk
+    read). None when it cannot tell (no session, no narrowing, a named box) —
+    the estimate then prices the whole request."""
+    from vislang.interpreter.track import tagged_region
+    prefix, _ = _split_middle(middle)
+    if not prefix or tagged_region(prefix) is not None:
+        return None
+    try:
+        _, _, _, _, sid = _probe(src, [])
+    except Exception:
+        return None
+    from vislang.runtime.paths import cache_root
+    catalog = ExtentCatalog(cache_root())
+    schema = catalog.schema(sid)
+    if schema is None:
+        return {"want": None, "missing": None, "derived": None, "n": 1, "n_needed": 1}
+    share = _unit_share(catalog, sid, src, prefix, schema)
+    share.update(n=1, n_needed=1 if share["missing"] else 0)
+    return share
+
+
+def folder_cache_share(src, middle, files):
+    """`cache_share` over a series' selected timesteps (`files`: rows of
+    label, uri, size, mtime — the per-file identity the run keys on): how many
+    still need a remote read, and the union of what they miss."""
+    from vislang.interpreter.track import tagged_region
+    prefix, _ = _split_middle(middle)
+    if not prefix or tagged_region(prefix) is not None:
+        return None
+    from vislang.runtime.paths import cache_root
+    catalog = ExtentCatalog(cache_root())
+    sids = {row[0]: make_source_id(*row[1:4]) for row in files}
+    schema = catalog.schema(sids[files[0][0]]) or catalog.stale_schema(sids[files[0][0]])
+    if schema is None:
+        return {"want": None, "missing": None, "derived": None,
+                "n": len(files), "n_needed": len(files)}
+    missing, derived, needed = set(), 0, 0
+    want = None
+    for label, sid in sids.items():
+        u = _unit_share(catalog, sid, src, prefix, schema, label=label, convert=False)
+        want = u["want"]
+        if u["missing"]:
+            needed += 1
+            missing.update(u["missing"])
+        elif u["derived"]:
+            derived += 1
+    return {"want": want, "missing": sorted(missing), "derived": derived or None,
+            "n": len(files), "n_needed": needed}
+
+
 def remote_reduce(src, middle, approval=None):
     """Run the narrowing prefix of `middle` on the remote host of src.uri.
     Returns (loaded DatasetInfo, steps, CostEstimate|None). Raises

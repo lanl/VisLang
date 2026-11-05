@@ -619,8 +619,63 @@ def _probe_bandwidth(uri, steps):
         return None
 
 
+def _form_text(form):
+    """A catalog key form as the spec wrote it, e.g. `threshold u < 0`."""
+    if form[0] == "threshold":
+        return f"threshold {form[1]} {form[2]} {form[3]}"
+    if form[0] == "coarsen":
+        per = ", ".join(f"{a}={f}" for a, f in form[2])
+        return f"coarsen {form[1] if form[1] is not None else per} {form[3]}"
+    return form[0]
+
+
+def _deduct_cached(full, share, info, narrowing, sink_kind, bw, pts):
+    """The estimate of what a run would still read and move, given what the
+    extent cache already holds (`share`, from reduce.cache_share): the run asks
+    the cache first and prices only what is missing, so the estimate does too.
+    The result size stays the whole request's — it is materialized either way."""
+    from vislang.interpreter.estimate import estimate_plan_cost, CostEstimate
+    from vislang.formats.dataset_info import GEOMETRY_KEY
+    n, need, missing = share["n"], share["n_needed"], share["missing"] or []
+    if need == 0:
+        derived = share.get("derived")
+        if derived and n == 1:
+            how = (f"a cached result of its start, with "
+                   f"{', '.join(_form_text(f) for f in derived)} applied here")
+        elif derived:
+            how = f"{derived} of {n} timestep(s) from cached results of their start"
+        else:
+            how = "cached results"
+        return CostEstimate(site="remote", read_mb=0.0, server_read_mb=0.0,
+                            output_mb=full.output_mb,
+                            browser_payload_mb=full.browser_payload_mb,
+                            n_timesteps=full.n_timesteps,
+                            notes=[f"served from the extent cache ({how}): nothing is read "
+                                   f"next to the data and nothing crosses the wire."])
+    data = [v for v in missing if v != GEOMETRY_KEY] or list(share["want"] or [])[:1]
+    delta = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",
+                               n_timesteps=need, sink_kind=sink_kind, wire_vars=data,
+                               net_bw_bps=bw)
+    if GEOMETRY_KEY in missing and pts and delta.read_mb is not None:
+        delta = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",
+                                   n_timesteps=need, sink_kind=sink_kind, wire_vars=data,
+                                   net_bw_bps=bw,
+                                   read_mb_override=delta.read_mb / max(1, need) + pts)
+    want = [v for v in share["want"] or ()]
+    if need == n and set(data) >= set(want):
+        full.notes.append("nothing for this request is in the extent cache.")
+        return full
+    delta.output_mb, delta.n_timesteps = full.output_mb, full.n_timesteps
+    delta.browser_payload_mb = full.browser_payload_mb
+    held = (f"{n - need} of {n} timestep(s)" if need < n else
+            f"{len(want) - len(data)} of {len(want)} variable(s)")
+    delta.notes.append(f"the extent cache already holds {held} of this request; "
+                       f"priced: only what is missing.")
+    return delta
+
+
 def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=1,
-                     schema_uri=None, plan=None, sid=None):
+                     schema_uri=None, plan=None, sid=None, share=None):
     """Price a remote request WITHOUT running it — the `estimate` path.
 
     This is a dry run with a sink present, which is a different intent from a
@@ -697,6 +752,17 @@ def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=
                                           read_mb_override=estimate.read_mb / max(
                                               1, int(n_timesteps)) + pts)
         estimate.notes += [n.replace("world box(es)", "world box") for n in sized]
+        # Ask the extent cache what the run would ask it, from its index alone.
+        if schema_uri is None:
+            try:
+                from vislang.remote.reduce import cache_share
+                share = cache_share(src, middle)
+            except Exception:
+                share = None
+        if share is not None and share.get("missing") is not None:
+            estimate = _deduct_cached(estimate, share, info, narrowing, sink.kind, bw, pts)
+        elif share is not None:
+            estimate.notes.append("nothing for this request is in the extent cache.")
     else:
         plan = plan or {None: tag_names(tagged)}
         counts, firsts = _tag_summary(plan)
@@ -711,11 +777,12 @@ def _estimate_remote(src, middle, sink, steps, mode, has_narrowing, n_timesteps=
         estimate = estimate_boxes_cost(info=info, boxes=boxes, site="remote",
                                        n_timesteps=n_timesteps, sink_kind=sink.kind,
                                        net_bw_bps=_probe_bandwidth(src.uri, steps))
-    # The estimate prices the WHOLE request. Extents already held locally are not
-    # deducted, so this is an upper bound on what would cross — the useful
-    # direction for a budget question.
-    estimate.notes.append("prices the whole request; extents already cached "
-                          "locally are not deducted.")
+    # Where the cache could not be asked (no session to identify the file, named
+    # boxes), the estimate prices the WHOLE request: an upper bound on what would
+    # cross — the useful direction for a budget question.
+    if share is None:
+        estimate.notes.append("prices the whole request; extents already cached "
+                              "locally are not deducted.")
     timing.note_estimate(estimate)
     steps.append(f"-> {sink.kind} (would run locally)")
     steps.append(format_plan_estimate(estimate))
@@ -1590,9 +1657,15 @@ def _plan_remote_folder(src, middle, ts_nodes, sink, terminal, dry_run, approval
         timing.note(selected_timesteps=len(files),
                     source_bytes=int(sum(f[2] for f in files)))
         from vislang.remote.catalog import make_source_id
+        try:
+            from vislang.remote.reduce import folder_cache_share
+            share = None if plan is not None else folder_cache_share(src, middle, files)
+        except Exception:
+            share = None
         return _estimate_remote(src, middle, sink, steps, mode, has_narrowing,
                                 n_timesteps=len(files), schema_uri=files[0][1],
-                                plan=plan, sid=make_source_id(*files[0][1:4]))
+                                plan=plan, sid=make_source_id(*files[0][1:4]),
+                                share=share)
 
     # Execute: one remote job for the whole folder (gates mirror _plan_remote).
     steps = []

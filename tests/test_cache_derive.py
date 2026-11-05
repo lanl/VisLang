@@ -233,11 +233,89 @@ def test_end_to_end(tmp):
     check("... as a fresh read gives them", same(got, rem.fresh(threshold(source(f"u@fakehost:{c}"), "m < 100"))))
 
 
+def test_estimate(tmp):
+    """The dry run asks the extent cache what the run would ask it, so the
+    price shown before a request is the price the run pays."""
+    from vislang.dsl import reset_sinks
+    from vislang.dsl.forms import source, subsample, threshold, coarsen, region, fields, timesteps, save
+    from vislang.interpreter.planner import plan_pipeline
+    rem = Remote(tmp)
+    rng = np.random.default_rng(11)
+
+    def estimate(node, out="est.npz"):
+        reset_sinks()
+        res = plan_pipeline(save(node, os.path.join(tmp, out)), dry_run=True)
+        return res["estimate"], "\n".join(res["steps"])
+
+    print("== the estimate deducts what the cache holds ==")
+    p = os.path.join(tmp, "u_32x32x32_float64.raw")
+    rng.normal(size=(32, 32, 32)).ravel(order="F").tofile(p)
+    low = lambda: coarsen(region(source(f"u@fakehost:{p}"), z=(1, 31)), 8, how="min")
+    rem.cache("estimate")
+    os.environ["VISLANG_BUDGET_READ_BYTES"] = str(64 * 1024)
+    try:
+        before, _ = estimate(threshold(low(), "u < -2"))
+        check("before anything is cached: the whole read, held",
+              before.server_read_mb > 0 and before.budget_reason == "read", before)
+        check("... and it says the cache holds nothing of it",
+              any("nothing for this request is in the extent cache" in n for n in before.notes),
+              before.notes)
+        rem.run(low())
+        after, text = estimate(threshold(low(), "u < -2"))
+        check("after the block minimum is cached: its threshold reads and moves nothing",
+              after.server_read_mb == 0 and after.read_mb == 0 and not after.over_budget, after)
+        check("... the result size is still the request's", after.output_mb == before.output_mb)
+        check("... and the report says how", "served from the extent cache" in text
+              and "threshold u < -2.0 applied here" in text and "read on the server: ~0 MB" in text,
+              text)
+        ran, _, res = rem.run(threshold(low(), "u < -2"), confirm=False)
+        check("the run agrees: not held, no remote job", not ran and res.get("materialized"))
+        exact, _ = estimate(low())
+        check("the cached request itself: nothing to read", exact.server_read_mb == 0
+              and any("cached results" in n for n in exact.notes), exact.notes)
+        other, _ = estimate(coarsen(region(source(f"u@fakehost:{p}"), z=(1, 31)), 8, how="max"))
+        check("another reduction is priced in full", other.server_read_mb == before.server_read_mb
+              and other.over_budget, other)
+    finally:
+        os.environ.pop("VISLANG_BUDGET_READ_BYTES")
+
+    print("== part of a request cached: priced is the rest ==")
+    n = 2000
+    q = os.path.join(tmp, "pts2.npz")
+    np.savez(q, x=rng.uniform(size=n), y=rng.uniform(size=n), z=rng.uniform(size=n),
+             v=rng.normal(size=n), w=rng.normal(size=n))
+    rem.run(fields(subsample(source(f"u@fakehost:{q}"), 2), ["v"]))
+    both, _ = estimate(fields(subsample(source(f"u@fakehost:{q}"), 2), ["v", "w"]))
+    w_only, _ = estimate(fields(subsample(source(f"u@fakehost:{q}"), 2), ["w"]))
+    check("one of two variables cached: priced as the other alone",
+          both.read_mb == w_only.read_mb and both.server_read_mb == w_only.server_read_mb
+          and both.read_mb > 0, (both.read_mb, w_only.read_mb))
+    check("... and it says so", any("1 of 2 variable(s)" in m for m in both.notes), both.notes)
+
+    print("== a series: the timesteps still to read ==")
+    d = os.path.join(tmp, "eseries")
+    os.makedirs(d)
+    for t in (1, 2, 3, 4):
+        rng.normal(size=(16, 16, 16)).ravel(order="F").tofile(os.path.join(d, f"u#{t}_16x16x16_float64.raw"))
+    S = lambda a, b: subsample(timesteps(source(f"u@fakehost:{d}"), a, b), 2)
+    reset_sinks()
+    plan_pipeline(save(S(1, 3), os.path.join(tmp, "ebase")), confirm=True)
+    three, _ = estimate(threshold(S(1, 3), "u < 0"), "eser")
+    check("every selected timestep derivable: nothing to read", three.server_read_mb == 0
+          and three.read_mb == 0, three)
+    four, _ = estimate(threshold(S(1, 4), "u < 0"), "eser")
+    one, _ = estimate(threshold(S(4, 4), "u < 0"), "eser")
+    check("one timestep not cached: priced as that one", abs(four.server_read_mb - one.server_read_mb) < 1e-9
+          and four.n_timesteps == 4 and any("3 of 4 timestep(s)" in m for m in four.notes),
+          (four.server_read_mb, one.server_read_mb, four.notes))
+
+
 if __name__ == "__main__":
     test_rule()
     tmp = tempfile.mkdtemp(prefix="vislang_derive_test_")
     try:
         test_end_to_end(tmp)
+        test_estimate(tmp)
     finally:
         for k in ("VISLANG_CACHE", "VISLANG_REMOTE", "VISLANG_REMOTE_TMP", "VISLANG_PROVENANCE"):
             os.environ.pop(k, None)

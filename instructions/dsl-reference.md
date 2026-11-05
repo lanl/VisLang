@@ -321,6 +321,12 @@ integer grid is tightened only while its float32 mask cast was exact (|v| ≤
 2**24). Derived results are stored under their own chain, so asking again is an
 exact match. Named boxes reuse exact matches only.
 
+The **estimate asks the cache the same question** (from its index; no array is
+read): a request it would serve is priced at 0 read on the server and 0 over
+the wire and is not held; one partly cached (some variables, some timesteps) is
+priced for the rest. Where the cache cannot be asked — no session to identify
+the file, named boxes — the whole request is priced, and the estimate says so.
+
 ## timesteps(node, start, stop) / timesteps(node, [labels]) -> node
 Time-axis selection for a **folder (timeseries)** source, by `#N` label (the
 integer in each filename):
