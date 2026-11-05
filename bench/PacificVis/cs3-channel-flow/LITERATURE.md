@@ -314,6 +314,21 @@ large from small at λx = δ. Ours:
 - sensitivity with λz > δ/8 and λz > δ/2;
 - Mathis' outer site (y⁺ ≈ 281, z = 147) as a second reference height.
 
+### 5b. What we measured (2026-11-05; sources in `CASE_STUDY_BRIEF.md` §8)
+
+| Their quantity | Theirs | Ours, Re_τ 5186 |
+|---|---|---|
+| Fraction of wall area with backflow | Lenaers 0.06 % (Re_τ 1000); Willert 0.01–0.1 % | **0.0967 %** whole lower wall (stride, 95 % CI 0.0863–0.1083 %); 0.1265 % in the ground-truth area |
+| Wall-normal reach | Lenaers y⁺ ≈ 8.5 | **y⁺ 9.67** (z = 18), ground-truth area |
+| Region size | ≈ 20 viscous units across | bounding boxes **25.2 × 24.0** (biased up by the grid) |
+| Regions per area | Cardesa 1.39–1.97 per million wall units² | **2.45** (26-connected; 2.66 with 6-connectivity) |
+| Backflow beneath positive large-scale u at y⁺ ≈ 100 | Lenaers 69 % of points | **Pre-registered filter (λx > δ):** 54.0 % of area points, 55.3 % / 54.4 % of blocks (lower / upper wall); chance ≈ 50 %. **Post hoc, cut-off in viscous units (λx⁺ > 1000, Lenaers' δ):** 69.0 % of area points, 63.9 % / 62.9 % of blocks |
+
+Safe wording for the last row: "With the large scales defined as at Re_τ 1000 in viscous units, the
+fraction matches Lenaers' 69 %. With the cut-off at our δ, the association is weak at y⁺ ≈ 100 and
+moderate further out (60–62 % of blocks at y⁺ 281 and 519)." The post-hoc results must be labelled
+as such.
+
 ---
 
 ## 6. Sentences safe to use in Section 4.3 (adapt wording, keep the facts)
@@ -327,7 +342,8 @@ large from small at λx = δ. Ours:
   scales [Mathis et al. 2009], an effect that strengthens with Re_τ."
 - "Backflow statistics have been reported up to Re_τ = 2003 [Cardesa et al. 2019]; the Re_τ ≈ 5200
   simulation of Lee & Moser (2015) allows the question to be asked at 2.6 times that Reynolds
-  number." (Only after the Lakshmi Srinivas et al. check.)
+  number." (The Lakshmi Srinivas et al. check was dropped on 2026-11-05: no novelty is claimed, so
+  the sentence stands without any "first".)
 - "A region of reverse flow about 20 viscous units across covers about four cells of the Re_τ ≈
   5200 grid in the wall-parallel plane (Δx⁺ = 12.7, Δz⁺ = 6.4); a stride of 16 keeps one cell in
   256." (Derived; `Test1/results/step0/yplus_check.txt`.)
@@ -338,4 +354,4 @@ large from small at λx = δ. Ours:
 - That our grid resolves the smallest backflow regions that Cardesa's dealiased grid resolves.
 - That Lenaers counted events (they counted points), or used a stated filter width (they didn't).
 - A dataset DOI for JHTDB channel5200 (none given).
-- Novelty at Re_τ ≈ 5200 before the Lakshmi Srinivas et al. (2024) check.
+- Novelty at Re_τ ≈ 5200 (none is claimed; decided 2026-11-05).
