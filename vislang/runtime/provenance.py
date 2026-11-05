@@ -571,6 +571,12 @@ def _save_lines(fmt, ext, in_filetype, grid, positions, geometry, series,
     elif fmt == "netcdf4":
         more.append("dimensions x, y, z in Sieve's index order" if grid
                     else 'one "particles" dimension')
+        if (grid and isinstance(geometry, dict) and geometry.get("kind") == "uniform"
+                and geometry.get("origin") is not None):
+            more.append(f"coordinate variables x, y, z from origin "
+                        f"{_flow_text(geometry.get('origin'))}, spacing "
+                        f"{_flow_text(geometry.get('spacing'))}"
+                        + _in_cells_text(geometry))
     if fmt == "npz" and grid:
         if listed:
             more.append("each point's position kept beside the data (sieve_points)")

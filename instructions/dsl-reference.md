@@ -381,8 +381,10 @@ cells**: a cut is written with origin = its first cell and spacing = its stride
 `units: source cells`. No physical position is claimed — cell i of a grid sits
 at i — but an overview and a detail cut overlay in ParaView, named boxes land
 apart, and a saved cut is re-cut in its source's numbering (`region(x=(10,
-15))` on it means the source's cells 10–14). HDF5/netCDF outputs get no
-coordinate variables for it.
+15))` on it means the source's cells 10–14). A netCDF-4 output carries the same
+placement as coordinate variables `x`, `y`, `z` labelled as cell indices
+(`units = "1"`, `sieve_units = "source cells"`, global `sieve_in_cells = 1`); a
+plain HDF5 output gets no coordinate datasets for it.
 
 **`.npz` output** keeps a grid's place in space too, under reserved keys
 (`sieve_origin` + `sieve_spacing` [+ `sieve_in_cells`], or `sieve_points`), so a

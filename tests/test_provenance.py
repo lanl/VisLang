@@ -26,7 +26,7 @@ from vislang.runtime import provenance
 from vislang.formats.dataset_info import DatasetInfo
 from vislang.dsl import reset_sinks
 from vislang.dsl.forms import (source, region, fields, save, subsample, threshold,
-                               timesteps)
+                               timesteps, coarsen)
 from vislang.interpreter.planner import plan_pipeline
 from vislang.interpreter.narrowing import reset_sampling, _get_particle_indices
 from vislang.runtime.paths import REPO_ROOT
@@ -649,8 +649,37 @@ def test_netcdf():
     check("nc_explains_dims", "dimensions x, y, z in Sieve's index order"
           in rec["logical"]["spec_explanation"], rec["logical"]["spec_explanation"])
 
+    # The source (HDF5) states no geometry, so the cut is placed in its
+    # source's cells — the placement a .vti of the same cut carries — and the
+    # coordinate variables say so: an index, not a physical unit.
     with Dataset(out) as ds:
-        check("nc_no_invented_coords", "x" not in ds.variables, list(ds.variables))
+        check("nc_cells_coords_written", all(a in ds.variables for a in "xyz"),
+              list(ds.variables))
+        check("nc_cells_coords_are_the_cut's_source_cells",
+              list(ds.variables["x"][:]) == [2.0, 3.0, 4.0, 5.0]
+              and list(ds.variables["y"][:3]) == [0.0, 1.0, 2.0],
+              (list(ds.variables["x"][:]), list(ds.variables["y"][:3])))
+        cx = ds.variables["x"]
+        check("nc_cells_coords_labelled",
+              cx.units == "1" and cx.sieve_units == "source cells"
+              and "no physical position" in cx.long_name and cx.axis == "X",
+              {k: cx.getncattr(k) for k in cx.ncattrs()})
+        check("nc_cells_flag", int(ds.sieve_in_cells) == 1)
+    check("nc_explains_cells_coords",
+          "coordinate variables x, y, z from origin (2.0, 0.0, 0.0), spacing (1.0, 1.0, 1.0) in "
+          "the source's cell indices" in rec["logical"]["spec_explanation"],
+          rec["logical"]["spec_explanation"])
+
+    # A block reduction sits at its blocks' centres, in cells, as in the .vti.
+    out2 = os.path.join(d, "o2.nc")
+    run_spec(lambda: save(coarsen(fields(source(src), ["rho"]), 2, how="min"), out2))
+    with Dataset(out2) as ds:
+        check("nc_cells_coords_block_centres",
+              list(ds.variables["x"][:3]) == [0.5, 2.5, 4.5]
+              and len(ds.variables["z"]) == 6,
+              (list(ds.variables["x"][:3]), len(ds.variables["z"])))
+    check("nc_cells_coords_not_listed_as_variables",
+          inspect_file(out2).variables == ["rho"], inspect_file(out2).variables)
 
 
 def test_netcdf_coords_from_geometry():
@@ -676,6 +705,13 @@ def test_netcdf_coords_from_geometry():
         check("nc_coords_from_origin_spacing",
               list(ds.variables["x"][:3]) == [100.0, 102.0, 104.0],
               list(ds.variables["x"][:3]))
+        check("nc_world_coords_not_labelled_as_cells",
+              "sieve_units" not in ds.variables["x"].ncattrs()
+              and "sieve_in_cells" not in ds.ncattrs())
+    ex = provenance.record_for(out)["logical"]["spec_explanation"]
+    check("nc_explains_world_coords",
+          "coordinate variables x, y, z from origin (100.0, 200.0, 300.0), spacing (2.0, 2.0, 2.0)\n"
+          in ex + "\n" and "cell indices" not in ex, ex)
     info = inspect_file(out)
     check("nc_coords_not_listed_as_variables", info.variables == ["rho"],
           info.variables)

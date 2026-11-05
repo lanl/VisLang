@@ -550,14 +550,25 @@ def _write_netcdf4(out, loaded):
                 ds.createDimension(ax, int(n))
             ds.sieve_axis_order = ",".join(axes) + " (index space, matching the " \
                                                    "DSL's region/subsample axes)"
-            if geom.get("kind") == "uniform" and not in_cells(geom):
-                # Coordinate variables only where the source actually stated a
-                # geometry; index space is a real answer and an origin is never
-                # synthesized (a placement in source cells is not one).
+            if geom.get("kind") == "uniform":
+                # Coordinate variables wherever the result has a placement: the
+                # source's stated geometry, or — for a source that states none —
+                # the cut's place among its source's cells (the same placement
+                # the .vti carries, so a reader without VTK lines the cut up with
+                # its source and its sibling cuts). A placement in cells is
+                # labelled as such: a dimensionless index, never a physical unit.
+                cells = in_cells(geom)
                 for i, ax in enumerate(axes):
                     cv = ds.createVariable(ax, "f8", (ax,))
                     cv[:] = geom["origin"][i] + np.arange(shape[i]) * geom["spacing"][i]
                     cv.axis = ax.upper()
+                    if cells:
+                        cv.units = "1"
+                        cv.long_name = (f"{ax} cell index in the source (the source "
+                                        f"states no geometry; no physical position)")
+                        cv.sieve_units = "source cells"
+                if cells:
+                    ds.sieve_in_cells = np.int8(1)
             dims = axes
         else:
             n = len(next(iter(loaded.data.values())))
