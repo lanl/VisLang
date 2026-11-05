@@ -231,14 +231,19 @@ def note_server(rec, server):
       server_s   executor entry -> result written (imports, read, cut, write)
       startup_s  process start -> executor entry (Linux only, else absent)
       launch_s   what is left: ssh, srun and the trip back
-    `server_phases` is the remote planner's own breakdown, kept off the run's
-    `phases` list so a leaf like `inspect` is not summed twice."""
+    `server_read_bytes` is what the executor fetched from storage over
+    server_s (Linux `read_bytes`; absent elsewhere) — page-cache hits are not
+    in it, read-ahead is. `server_phases` is the remote planner's own
+    breakdown, kept off the run's `phases` list so a leaf like `inspect` is
+    not summed twice."""
     if not rec or not isinstance(server, dict):
         return
     try:
         rec["server_s"] = server.get("server_s")
         if server.get("startup_s") is not None:
             rec["startup_s"] = server["startup_s"]
+        if server.get("read_bytes") is not None:
+            rec["server_read_bytes"] = int(server["read_bytes"])
         if rec.get("s") is not None and rec["server_s"] is not None:
             rec["launch_s"] = round(max(0.0, rec["s"] - rec["server_s"]
                                         - (server.get("startup_s") or 0.0)), 4)
@@ -278,6 +283,7 @@ def note_estimate(est):
         pass
     note(est_site=getattr(est, "site", None),
          est_read_mb=getattr(est, "read_mb", None),
+         est_server_read_mb=getattr(est, "server_read_mb", None),
          est_output_mb=getattr(est, "output_mb", None),
          est_payload_mb=getattr(est, "browser_payload_mb", None),
          est_time_lo_s=getattr(est, "time_lo_s", None),

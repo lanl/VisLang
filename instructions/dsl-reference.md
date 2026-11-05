@@ -275,7 +275,10 @@ coarsen(region(fields(src, ["pressure"]), x=(0, 4096)), 8, how="min")
   cells, which the blocks then leave out (a block of only masked cells is NaN);
   after, it masks the block values — two different answers, both honored.
 - **Cost:** every cell of the region is read (no stride is pushed into the
-  read); only the result is smaller. The estimate prices it that way. A region
+  read); only the result is smaller. The estimate prices it that way: over a
+  remote source its `read on the server` is the whole region while `over the
+  wire` is the result, and a read over `VISLANG_BUDGET_READ_BYTES` (default
+  100 GiB) is held for confirmation like an over-budget transfer. A region
   larger than `VISLANG_SLAB_MB` (default 1024) is read and reduced slab by slab,
   so it never sits in memory whole; the result is the same bits either way.
 - Grids only: on point data it raises (use `subsample`). The mean of an integer

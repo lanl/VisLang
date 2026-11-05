@@ -77,6 +77,8 @@ class FormatAdapter:
     supports_strided_read = False
     supports_column_pushdown = False
     slab_axis = 0       # slowest-varying array axis: a streamed read cuts slabs along it
+    fast_axis = None    # contiguous array axis, when the reader reads it in whole runs
+                        # (a stride along it saves no reading); None = not declared
 
     @classmethod
     def can_handle(cls, filepath):
@@ -453,6 +455,7 @@ class RawAdapter(FormatAdapter):
     supports_strided_read = True      # memmap slicing reads only what it touches
     supports_column_pushdown = True   # one variable per file
     slab_axis = 2                     # x fastest: z planes are the contiguous slabs
+    fast_axis = 0                     # an x row is contiguous: a memmap reads it whole
 
     _NAME = re.compile(r'^(?P<var>.+?)_(?P<nx>\d+)x(?P<ny>\d+)x(?P<nz>\d+)_(?P<dtype>[a-z]+\d*)\.raw$')
 
@@ -1222,7 +1225,8 @@ def adapter_capabilities(dataset_info):
         inst = _GENERATED_BY_NAME.get(dataset_info.filetype)
         cls = type(inst) if inst is not None else FormatAdapter
     return {"strided_read": getattr(cls, 'supports_strided_read', False),
-            "column_pushdown": getattr(cls, 'supports_column_pushdown', False)}
+            "column_pushdown": getattr(cls, 'supports_column_pushdown', False),
+            "fast_axis": getattr(cls, 'fast_axis', None)}
 
 
 def get_adapter_for_info(dataset_info):

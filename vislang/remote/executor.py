@@ -64,12 +64,35 @@ def _process_age():
         return None
 
 
+_PROC_IO = "/proc/self/io"
+
+
+def _read_bytes():
+    """Bytes this process has caused to be fetched from storage so far — the
+    kernel's `read_bytes` (Linux only; None elsewhere). It counts what the
+    filesystem actually fetched, read-ahead and memory-mapped pages included,
+    and not what the page cache already held: the measured counterpart of the
+    estimate's `server_read_mb`."""
+    try:
+        with open(_PROC_IO) as f:
+            for line in f:
+                if line.startswith("read_bytes:"):
+                    return int(line.split(":", 1)[1])
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def _server_timing():
     """The server's own clock, for the caller's `remote_exec` record: entry ->
-    now (the meta is printed last, after the result is written)."""
+    now (the meta is printed last, after the result is written), and the bytes
+    read from storage over the same span."""
     t = {"startup_s": _clock.get("startup_s")}
     if _clock["t0"] is not None:
         t["server_s"] = round(time.perf_counter() - _clock["t0"], 4)
+    io0, io1 = _clock.get("io0"), _read_bytes()
+    if io0 is not None and io1 is not None:
+        t["read_bytes"] = io1 - io0
     rec = _clock["rec"] or {}
     t["phases"] = [{k: p[k] for k in ("name", "s", "bytes") if p.get(k) is not None}
                    for p in rec.get("phases") or ()]
@@ -201,7 +224,7 @@ def _held_reason(result):
         return None
     if result.get("needs_confirm"):
         return ("remote plan HELD over budget and produced no output — the remote "
-                "budget (VISLANG_BUDGET_BYTES/SECONDS) is stricter than the "
+                "budget (VISLANG_BUDGET_BYTES/SECONDS/READ_BYTES) is stricter than the "
                 "caller's, which already confirmed this request")
     if result.get("needs_allocation"):
         return "remote plan HELD: no Slurm allocation on the remote"
@@ -504,6 +527,7 @@ def main(argv=None):
     # The server's clock starts here: what the caller's `remote_exec` wall clock
     # holds beyond this (ssh, srun, the trip back) is launch, not work.
     _clock["t0"] = time.perf_counter()
+    _clock["io0"] = _read_bytes()
     _clock["startup_s"] = _process_age()
     from vislang.runtime import timing
     with timing.capture() as rec:

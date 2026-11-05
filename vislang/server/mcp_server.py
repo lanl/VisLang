@@ -194,8 +194,9 @@ def run_pipeline(spec_path: str, confirm: bool = False, without_allocation: bool
     say so rather than offering to authenticate.
 
     COST GATE: before any bulk read/transfer, the interpreter estimates the run's
-    cost (bytes; plus a measured time band for remote transfers). If a pipeline is
-    OVER BUDGET (env VISLANG_BUDGET_BYTES / VISLANG_BUDGET_SECONDS) the run is HELD
+    cost (bytes; plus a measured time band for remote transfers, and the bytes a
+    remote run reads next to the data). If a pipeline is OVER BUDGET (env
+    VISLANG_BUDGET_BYTES / VISLANG_BUDGET_SECONDS / VISLANG_BUDGET_READ_BYTES) the run is HELD
     — nothing is materialized — and the report shows `Status: NEEDS CONFIRM` with
     the estimate. Do NOT silently re-run with confirm=True: surface the estimate to
     the user and let them choose to (a) commit as-is, or (b) tell you how to narrow

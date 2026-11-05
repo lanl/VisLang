@@ -1322,6 +1322,12 @@ def _folder_estimate(src, schema, checked, missing, conn, n_timesteps,
     info = _info_from_schema(src.uri, schema) if schema else None
     total, notes, unknown = 0.0, [], False
     sampled, whole, priced_pts, shared = {}, 0, set(), 0
+    # Read next to the data, per file: a format read whole is read once
+    # whatever its boxes; one read in part reads each box on its own.
+    from vislang.formats.adapters import adapter_capabilities
+    from vislang.interpreter.estimate import _reads_whole
+    reads_whole = info is not None and _reads_whole(adapter_capabilities(info))
+    server, server_notes = {}, []
     for (label, tag), names in missing.items():
         narrowing, dtype, digest = checked.get(tag), None, None
         if info is None or narrowing is None:
@@ -1336,9 +1342,17 @@ def _folder_estimate(src, schema, checked, missing, conn, n_timesteps,
                 narrowing, steps, dtype, digest = got
                 sampled[steps] = sampled.get(steps, 0) + 1
         data = _data_vars(names) or []
+        if data or reads_whole or GEOMETRY_KEY in names:    # geometry alone still reads a column
+            piece = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",
+                                       wire_vars=data or list(info.variables[:1]))
+            if piece.server_read_mb is not None:
+                had = server.get(label, 0.0)
+                server[label] = (max(had, piece.server_read_mb) if reads_whole
+                                 else had + piece.server_read_mb)
+            server_notes += [m for m in piece.notes if m.startswith("a stride along")
+                             and m not in server_notes]
         if data:
-            mb = estimate_plan_cost(info=info, narrowing=narrowing, site="remote",
-                                    wire_vars=data).read_mb
+            mb = piece.read_mb
             if mb is None:
                 unknown = True
                 continue
@@ -1367,9 +1381,11 @@ def _folder_estimate(src, schema, checked, missing, conn, n_timesteps,
         notes.append("value-dependent row cut — the count survives only after the "
                      "read, so this prices the pre-cut selection: an UPPER bound.")
     read_mb = None if unknown else total
+    notes += server_notes
     return _priced(site="remote", read_mb=read_mb, output_mb=read_mb,
                    browser_payload_mb=None, n_timesteps=max(1, n_timesteps),
-                   net_bw_bps=net_bw, notes=notes)
+                   net_bw_bps=net_bw, notes=notes,
+                   server_read_mb=None if unknown else sum(server.values()))
 
 
 def remote_folder_reduce(src, middle, ts_nodes, out_local_dir, approval=None):

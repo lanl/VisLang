@@ -189,6 +189,13 @@ def rows(recs):
                 # the data vs ssh + srun + interpreter start around it.
                 "server_s": _phase_field(r, "remote_exec", "server_s") if first else None,
                 "launch_s": _phase_field(r, "remote_exec", "launch_s") if first else None,
+                # what the executor fetched from storage (Linux read_bytes), and
+                # the estimate's logical read next to the data, in MiB
+                "server_read_mib": (round(_phase_field(r, "remote_exec", "server_read_bytes") / MB, 3)
+                                    if first and _phase_field(r, "remote_exec",
+                                                              "server_read_bytes") is not None
+                                    else None),
+                "est_server_read_mib": p.get("est_server_read_mb"),
                 "pull_s": _phase_s(r, "pull") if first else None,
                 # The whole-file/whole-folder FETCH route (VISLANG_REMOTE=off, or
                 # a fallback) spends nearly all its wall clock in these two, and
@@ -236,7 +243,8 @@ RUNS_COLS = ["started", "site", "route", "forms", "n_timesteps", "source_mib",
              "server_s", "launch_s", "pull_s", "fetch_s", "transfer_s", "materialize_s", "sink_s",
              "ssh_exec", "remote_jobs", "status"]
 
-EST_COLS = ["started", "site", "route", "est_read_mib", "wire_mib", "err_pct",
+EST_COLS = ["started", "site", "route", "est_server_read_mib", "server_read_mib",
+            "est_read_mib", "wire_mib", "err_pct",
             "est_time_lo_s", "est_time_hi_s", "pull_s", "in_band",
             "probe_bw_mibps", "est_over_budget"]
 

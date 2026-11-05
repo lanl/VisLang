@@ -226,6 +226,7 @@ def run(request):
     approval = request.get("approval") or {}
     overrides = {"VISLANG_BUDGET_BYTES": request.get("budget_bytes"),
                  "VISLANG_BUDGET_SECONDS": request.get("budget_seconds"),
+                 "VISLANG_BUDGET_READ_BYTES": request.get("budget_read_bytes"),
                  "VISLANG_NET_BPS": request.get("net_bps")}
     with _env(overrides):
         res = run_spec(spec_path, confirm=bool(approval.get("budget")),

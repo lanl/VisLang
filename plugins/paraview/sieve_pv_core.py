@@ -416,10 +416,14 @@ def status_text(job, result=None, showing=None):
                 "Press 'Fetch anyway' to approve that copy, or narrow the request.")
     if "budget" in holds:
         e = holds["budget"].get("estimate") or {}
-        why = {"size": "size", "time": "time", "size+time": "size and time"}.get(
-            e.get("budget_reason"), "budget")
+        parts = (e.get("budget_reason") or "").split("+")
+        why = " and ".join({"size": "size", "time": "time",
+                            "read": "server-read"}.get(p, p) for p in parts if p) or "budget"
+        server = (f", reading {_mb(e.get('server_read_mb'))} on the server"
+                  if "read" in parts and e.get("server_read_mb") is not None else "")
         return (f"Over the {why} budget: {_mb(e.get('read_mb'))}"
-                f"{_secs(e.get('time_lo_s'), e.get('time_hi_s'))}. Nothing was fetched.\n"
+                f"{_secs(e.get('time_lo_s'), e.get('time_hi_s'))}{server}. "
+                "Nothing was read or fetched.\n"
                 "Press 'Fetch anyway' to approve it, or narrow the request "
                 "(larger stride, smaller box, fewer fields).")
     if st == "error":

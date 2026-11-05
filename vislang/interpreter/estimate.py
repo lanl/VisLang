@@ -208,13 +208,23 @@ def _budget_seconds():
     return float(os.environ.get("VISLANG_BUDGET_SECONDS", 3500))
 
 
+def _budget_read_bytes():
+    """Bytes a remote run may read NEXT TO THE DATA before it is held. A
+    separate budget from the wire's: a block reduction can read a terabyte to
+    send back megabytes, and that read is the cost (a shared filesystem, hours
+    of a host) the wire budget never sees."""
+    return int(float(os.environ.get("VISLANG_BUDGET_READ_BYTES", 100 * 1024 ** 3)))
+
+
 @dataclass
 class CostEstimate:
     """What executing one lowered plan is predicted to cost. `read_mb` is disk
-    read (local) or bytes over the wire (remote). Time is remote-only and only
-    when a link speed was measured (else None)."""
+    read (local) or bytes over the wire (remote). `server_read_mb` is remote
+    only: what the reader next to the data reads to produce those bytes. Time
+    is remote-only and only when a link speed was measured (else None)."""
     site: str                              # 'local' | 'remote'
     read_mb: float | None = None
+    server_read_mb: float | None = None
     output_mb: float | None = None
     browser_payload_mb: float | None = None
     n_timesteps: int = 1
@@ -222,7 +232,7 @@ class CostEstimate:
     time_hi_s: float | None = None
     confidence: str | None = None          # 'measured' | None
     over_budget: bool = False
-    budget_reason: str | None = None       # 'size' | 'time' | 'size+time' | None
+    budget_reason: str | None = None       # 'size' | 'time' | 'read', joined by '+' | None
     notes: list = field(default_factory=list)
     n_boxes: int = 0                       # named boxes priced (0 = one box per step)
 
@@ -309,6 +319,51 @@ def _bytes_mb(info, vars_, count):
     return total / _MB
 
 
+def _reads_whole(caps):
+    """True when the format's reader reads a file whole and slices in memory."""
+    return not caps.get('strided_read') and not caps.get('column_pushdown')
+
+
+def _server_read(info, narrowing, vars_, *, modality, grid, selected, full, kept, caps):
+    """(MB the reader next to the data reads for `vars_`, notes) — the logical
+    bytes the reader touches, not what the result keeps:
+
+      - a format read whole: every variable, every element (once per file);
+      - full columns (no row-level partial read): the named columns, whole;
+      - a strided grid read: the cells it selects, except that along the file's
+        contiguous axis (when the reader declares one) a stride saves nothing —
+        the whole span between the first and last kept cell is read, row by row;
+      - a coarsen: every cell of the region, whatever the stride of the result.
+
+    Page size, chunking and the filesystem's read-ahead are not modelled: the
+    measured read (`server_read_bytes`) can exceed this."""
+    notes = []
+    if selected is None:
+        return None, notes
+    if _reads_whole(caps):
+        return _bytes_mb(info, list(info.variables), full), notes
+    if modality != 'volume' or not caps.get('strided_read'):
+        return _bytes_mb(info, vars_, full), notes
+    if kept is not None:
+        return _bytes_mb(info, vars_, selected), notes
+    fast = caps.get('fast_axis')
+    ranges = (narrowing.grid_ranges if narrowing is not None and narrowing.grid_ranges
+              else None)
+    if fast is None or ranges is None or (ranges[fast].step or 1) == 1:
+        return _bytes_mb(info, vars_, selected), notes
+    r, n = ranges[fast], grid[fast]
+    kept_fast = _grid_axis_count(r, n)
+    span = (kept_fast - 1) * (r.step or 1) + 1 if kept_fast else 0
+    lines = 1
+    for i, (ri, ni) in enumerate(zip(ranges, grid)):
+        if i != fast:
+            lines *= _grid_axis_count(ri, ni)
+    notes.append(f"a stride along the file's contiguous axis saves no reading: "
+                 f"{lines:,} rows of {span:,} cells are read to keep every "
+                 f"{r.step or 1}th.")
+    return _bytes_mb(info, vars_, lines * span), notes
+
+
 def _fmt_time(s):
     if s is None:
         return "?"
@@ -356,7 +411,27 @@ def estimate_plan_cost(*, info, narrowing, site, n_timesteps=1, sink_kind=None,
     strided = caps.get('strided_read', False)
     col_pushdown = caps.get('column_pushdown', False)
 
-    output_mb = read_mb = None
+    output_mb = read_mb = server_read_mb = None
+    if site == 'remote':
+        # What the remote reads: the variables shipped (the catalog's missing
+        # set, or the projection) plus any a mask needs at read time.
+        server_vars = list(wire_vars) if wire_vars is not None else list(read_set)
+        try:
+            from vislang.interpreter.narrowing import post_op_read_vars
+            for v in sorted(post_op_read_vars(getattr(narrowing, 'post_ops', ()) or (),
+                                              getattr(narrowing, 'positions', None))):
+                if v not in server_vars:
+                    server_vars.append(v)
+        except Exception:
+            pass
+        server_read_mb, server_notes = _server_read(
+            info, narrowing, server_vars, modality=modality,
+            grid=grid if modality == 'volume' else None, selected=selected,
+            full=full, kept=kept if modality == 'volume' else None, caps=caps)
+        if server_read_mb is None and read_mb_override is not None:
+            server_read_mb = read_mb_override          # a whole-file fetch reads it whole
+        notes += server_notes
+
     if selected is not None:
         if modality != 'volume':
             kept = None
@@ -401,6 +476,8 @@ def estimate_plan_cost(*, info, narrowing, site, n_timesteps=1, sink_kind=None,
     n = max(1, int(n_timesteps))
     if read_mb is not None:
         read_mb *= n
+    if server_read_mb is not None:
+        server_read_mb *= n
     if output_mb is not None:
         output_mb *= n
     if browser_payload_mb is not None:
@@ -408,16 +485,17 @@ def estimate_plan_cost(*, info, narrowing, site, n_timesteps=1, sink_kind=None,
 
     est = _priced(site=site, read_mb=read_mb, output_mb=output_mb,
                   browser_payload_mb=browser_payload_mb, n_timesteps=n,
-                  net_bw_bps=net_bw_bps, notes=notes)
+                  net_bw_bps=net_bw_bps, notes=notes, server_read_mb=server_read_mb)
     if any(v not in info.itemsizes for v in read_set):
         est.notes.append("dtype not fully known — bytes assume 4 B/element where missing.")
     return est
 
 
 def _priced(*, site, read_mb, output_mb, browser_payload_mb, n_timesteps,
-            net_bw_bps, notes, n_boxes=0):
+            net_bw_bps, notes, n_boxes=0, server_read_mb=None):
     """A CostEstimate from its byte totals: the time band (remote, when the link
-    was measured) and the budget verdict."""
+    was measured) and the budget verdict — the wire (size, time) and, remote,
+    the read next to the data (read)."""
     time_lo_s = time_hi_s = confidence = None
     if site == 'remote' and read_mb is not None:
         if net_bw_bps:
@@ -427,15 +505,19 @@ def _priced(*, site, read_mb, output_mb, browser_payload_mb, n_timesteps,
             notes.append("network speed unavailable (no ssh-key probe) — "
                          "time not estimated.")
 
+    if site != 'remote':
+        server_read_mb = None
     over_size = read_mb is not None and (read_mb * _MB) > _budget_bytes()
     over_time = time_hi_s is not None and time_hi_s > _budget_seconds()
-    reason = ('size+time' if over_size and over_time else
-              'size' if over_size else 'time' if over_time else None)
-    return CostEstimate(site=site, read_mb=read_mb, output_mb=output_mb,
+    over_read = server_read_mb is not None and (server_read_mb * _MB) > _budget_read_bytes()
+    reason = "+".join(r for r, over in (("size", over_size), ("time", over_time),
+                                        ("read", over_read)) if over) or None
+    return CostEstimate(site=site, read_mb=read_mb, server_read_mb=server_read_mb,
+                        output_mb=output_mb,
                         browser_payload_mb=browser_payload_mb, n_timesteps=n_timesteps,
                         time_lo_s=time_lo_s, time_hi_s=time_hi_s, confidence=confidence,
-                        over_budget=bool(over_size or over_time), budget_reason=reason,
-                        notes=notes, n_boxes=n_boxes)
+                        over_budget=bool(over_size or over_time or over_read),
+                        budget_reason=reason, notes=notes, n_boxes=n_boxes)
 
 
 def estimate_boxes_cost(*, info, boxes, site, n_timesteps=1, sink_kind=None,
@@ -477,10 +559,34 @@ def estimate_boxes_cost(*, info, boxes, site, n_timesteps=1, sink_kind=None,
         notes.append("each file is read once and every box is cut from that read.")
     else:
         read_mb = total("read_mb")
+    server_read_mb = None
+    if site == 'remote':
+        # The remote job reads a file read whole once and cuts every box from
+        # it; a format read in part reads each box on its own.
+        caps = {}
+        try:
+            from vislang.formats.adapters import adapter_capabilities
+            caps = adapter_capabilities(info)
+        except Exception:
+            pass
+        if _reads_whole(caps) or 'particles' in (info.dimensions or {}):
+            reads = [e.server_read_mb for e, _ in parts if e.server_read_mb is not None]
+            server_read_mb = max(reads) * n if reads else None
+        else:
+            server_read_mb = total("server_read_mb")    # counts already span the timesteps
     return _priced(site=site, read_mb=read_mb, output_mb=total("output_mb"),
                    browser_payload_mb=total("browser_payload_mb"), n_timesteps=n,
                    net_bw_bps=net_bw_bps, notes=notes,
-                   n_boxes=sum(k for _, k in parts))
+                   n_boxes=sum(k for _, k in parts), server_read_mb=server_read_mb)
+
+
+def _fmt_mb(mb):
+    """MB (MiB, as every figure in this report) — in GB/TB once it is large."""
+    if mb >= 1024 ** 2:
+        return f"{mb / 1024 ** 2:.2f} TB"
+    if mb >= 1024:
+        return f"{mb / 1024:.1f} GB"
+    return f"{mb:.0f} MB"
 
 
 def format_plan_estimate(est):
@@ -490,6 +596,8 @@ def format_plan_estimate(est):
         lines.append(f"  timesteps: {est.n_timesteps}")
     if est.n_boxes:
         lines.append(f"  named boxes: {est.n_boxes}")
+    if est.server_read_mb is not None:
+        lines.append(f"  read on the server: ~{_fmt_mb(est.server_read_mb)}")
     if est.read_mb is not None:
         label = "over the wire" if est.site == 'remote' else "read from disk"
         lines.append(f"  {label}: ~{est.read_mb:.0f} MB")
@@ -498,7 +606,7 @@ def format_plan_estimate(est):
     if est.browser_payload_mb is not None:
         lines.append(f"  browser payload: ~{est.browser_payload_mb:.0f} MB")
     if est.time_lo_s is not None:
-        lines.append(f"  est. time: ~{_fmt_time(est.time_lo_s)}–{_fmt_time(est.time_hi_s)} "
+        lines.append(f"  est. transfer time: ~{_fmt_time(est.time_lo_s)}–{_fmt_time(est.time_hi_s)} "
                      f"({est.confidence})")
     for note in est.notes:
         lines.append(f"  note: {note}")

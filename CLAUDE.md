@@ -235,7 +235,10 @@ or auto-discovery won't find it. Recommend `-p skylake-gold`; never guess
 re-run the spec — every timestep then steps into the same held allocation.
 
 **Each gate has its own approval** (`vislang/interpreter/approval.py`):
-`confirm=True` approves the priced plan's cost and nothing else;
+`confirm=True` approves the priced plan's cost and nothing else — over the
+wire, and, for a remote run, the bytes it reads next to the data (`read on the
+server`, held over `VISLANG_BUDGET_READ_BYTES`, default 100 GiB: a block
+reduction can read a terabyte to send megabytes);
 `without_allocation=True` goes on with no allocation (the run then falls back to
 copying whole files — only the selected timesteps of a folder); `allow_fetch=True`
 approves such a fallback copy when it is over budget. Never pass any of them
