@@ -354,6 +354,18 @@ Chance is 49-51 % in every row.
 - **Row 2** (e): the whole lower wall. The large-scale u'_L at y+ 100 (pre-registered filter) is in
   grey, the 14,004 reverse-flow blocks are red dots, and the ground-truth area is outlined.
 
+`Test1/figures/pv_{channel,closeup}.png`: the outputs in one ParaView scene, as each file places
+itself (`Test1/scripts/render_paraview_scene.py` in pvpython 6.1.0-RC2; `trim_pv_panels.py` only
+removes empty margins).
+- **(a)** The channel outline, with the 14,004 lower-wall blocks of step 5 (red cubes) and, over
+  the back third, step 3b's block means at y+ 100 (grey). Step 2's area is outlined in blue.
+- **(b)** A 128 x 128-cell part of step 2's area (source cells x 5120-5247, y 4224-4351). It shows:
+  - the wall plane, coloured by u;
+  - the full-resolution surfaces u = 0 around its 32 regions;
+  - the outline of each of step 4's 32 negative blocks there (31 in block row 0, 1 in row 1).
+
+  Every cell with u < 0 lies in an outlined block.
+
 ---
 
 ## 10. Outputs in ParaView

@@ -11,7 +11,7 @@ the design is `../DESIGN.md`.
 | `baseline/` | The baseline scripts (`stride.py`, `blockmin.py`), their launcher and measurement wrapper; `decompose_slab.py` (one slab: read vs reduce) and `bench_block_reduce_local.py` |
 | `scripts/` | Analysis, conversion, figure and ParaView-check scripts |
 | `data/` | `channel5200-y.txt`, the JHTDB wall-normal grid |
-| `figures/` | `fig_cs3_overviews.{pdf,png}` |
+| `figures/` | `fig_cs3_overviews.{pdf,png}`; `pv_channel.png`, `pv_closeup.png` (ParaView scene) |
 | `outputs/` | Sieve's outputs (`.vti`, `.nc`) and their `.npy` conversions; not in git |
 
 ## Reproduce
@@ -31,5 +31,7 @@ the design is `../DESIGN.md`.
   ```
 - **Baselines (on the server, from the server directory):** `bash run_all.sh`, then
   `python decompose_slab.py <raw> <VisLang repo> base|sieve <out.npy>` (see `results/baseline/README.md`).
+- **ParaView scene:** `pvpython --force-offscreen-rendering scripts/render_paraview_scene.py
+  outputs figures`, then `python scripts/trim_pv_panels.py figures` (cvision env).
 - **ParaView checks:** `pvpython scripts/check_vti_pv.py <file.vti>` and
   `pvpython scripts/check_nc_pv.py <file.nc>`.
