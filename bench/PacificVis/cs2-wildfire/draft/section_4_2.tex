@@ -238,7 +238,7 @@ that matter, at full resolution.
     \includegraphics[width=\linewidth]{teaser_paraview}
   \end{minipage}\hfill
   \begin{minipage}[c]{0.42\textwidth}
-\begin{lstlisting}[language=Python, numbers=none, frame=tb, aboveskip=0pt, keepspaces=true, basicstyle=\ttfamily\footnotesize]
+\begin{lstlisting}[language=Python, numbers=none, frame=tb, aboveskip=0pt, keepspaces=true, basicstyle=\ttfamily\fontsize{8}{9.5}\selectfont]
 src  = source("ssh://host/wildfire/")
 view = timesteps(src, 9000, 45000)
 view = fields(view, ["theta", "u", "v", "w"])
@@ -246,8 +246,8 @@ view = region(view, x=(-100, 200), y=(-120, 120),
               z=(0, 350), coords="world")
 save(view, "box.vts")
 \end{lstlisting}
-\vspace{10pt}
-\begin{lstlisting}[numbers=none, frame=tb, aboveskip=0pt, keepspaces=true]
+\vspace{12pt}
+\begin{lstlisting}[numbers=none, frame=tb, aboveskip=0pt, keepspaces=true, basicstyle=\ttfamily\fontsize{6.8}{8}\selectfont\color{black!75}]
 # from the provenance record in each output
 Steps
   1. timesteps  keep timesteps #9000 to #45000
