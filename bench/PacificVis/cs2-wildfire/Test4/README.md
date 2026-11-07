@@ -8,7 +8,8 @@ from the files here; nothing is read from Test1–Test3.
 |---|---|
 | `specs/` | The two Sieve requests: `overview.py` (step 1) and `box.py` (step 3), exactly as run |
 | `results/sieve_cold/{overview,box}/` | Each request from an empty extent cache and an evicted server page cache: spec as run, run report, run record (`timing_record.json`), `numbers.json` (estimate, bytes over the network, bytes read and time on the server) |
-| `results/sieve_warm/` | The same two requests again over the cold run's cache (a revisit) |
+| `results/sieve_warm/` | The same two requests again over the cold run's cache (a revisit: 0 B, no server job) |
+| `results/sieve_{cold,warm}_wholefile_reader/` | The first run, before Sieve's VTK reader selected arrays (commit `b825316`): same bytes over the network and same outputs, but every file read whole on the server (95.5 + 40.6 GB). Kept as the record of that fix (`ba71991`) |
 | `results/server_route/` | The script route on the server: its time and reads (`cut_*.json`), the bytes it copies back (`cut_sizes.txt`), and the check that its rebuilt series equals Sieve's (`equal_*.txt`) |
 | `results/eval/` | The evaluation pass (full resolution, every timestep): fronts at strides 1–16, wind profiles ahead of the front, lee ground; `summary.{json,md}` (scripts/analyze.py) |
 | `results/` | `cost_table.{csv,md,tex}` (Table 1), `lines.txt` (lines of code per route) |

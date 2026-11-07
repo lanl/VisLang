@@ -142,7 +142,10 @@ read + reduce + write on the server.
 - **Caveat found:** before the fire (#1000) the lee slope's near-ground flow is already
   reversed across all y (terrain); by #9000 it is near zero. The paper must not call the
   reversal fire-made; it can say it is confined to the burning strip after the crossing.
-- **Sieve reads whole files on the server** (95.5 GB for the overview vs the script's
-  70.9 GB, which reads only the needed fields). Sieve's estimate (54.0 GB) assumes field-
-  only reads. Cause: the VTK adapter reads with `pv.read` (every array). Open: fix the
-  adapter, or leave server time out of Table 1.
+- **Sieve read whole files on the server** in the first run (95.5 GB for the overview vs
+  the script's 70.9 GB; estimate 54.0 GB). Cause: the VTK adapter read with `pv.read`
+  (every array). **Fixed in `ba71991`** (only the requested arrays, one read per request,
+  header-only inspect; the estimate now prices the grid positions). Rerun: overview read
+  70.89 GB (estimate 70.86) in 567 s, box 27.09 GB (estimate 27.08) in 237 s; the script
+  route reads the same bytes in 505 s and 213 s. Outputs still bit-identical to the
+  script's. First run kept under `results/*_wholefile_reader/`.

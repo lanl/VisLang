@@ -1,0 +1,93 @@
+{
+ "run_id": "70015a9ea542",
+ "started": "2026-11-07T02:04:48",
+ "spec": "bench/PacificVis/cs2-wildfire/Test4/specs/box.py",
+ "spec_sha": "e6880f0d9bec",
+ "commit": "b825316",
+ "status": "OK",
+ "total_s": 18.4063,
+ "env": {
+  "VISLANG_CACHE": "/Users/agoosh11/Projects/VisLang/.vislang/cache-test4"
+ },
+ "pipelines": [
+  {
+   "index": 0,
+   "status": "ok",
+   "kind": "save",
+   "uri": "ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/",
+   "forms": [
+    "fields",
+    "region"
+   ],
+   "dry_run": false,
+   "ts_range": [
+    9000,
+    45000
+   ],
+   "site": "remote",
+   "folder": true,
+   "host": "gpu-server",
+   "source_bytes": 40626107485,
+   "selected_timesteps": 37,
+   "pre_validated": true,
+   "route": "remote_folder_reduce",
+   "n_timesteps": 37,
+   "jobid": null,
+   "reused_pairs": 148,
+   "total_pairs": 148,
+   "fetched_pairs": 0,
+   "cached_timesteps": 37,
+   "fetched_timesteps": 0,
+   "materialized": true,
+   "held": null,
+   "s": 18.3956
+  }
+ ],
+ "phases": [
+  {
+   "name": "remote_folder_reduce/probe_source",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0
+  },
+  {
+   "name": "remote_folder_reduce/list_timesteps",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 1.5704
+  },
+  {
+   "name": "remote_folder_reduce/catalog_delta",
+   "depth": 1,
+   "pipeline": 0,
+   "n": 37,
+   "s": 0.543
+  },
+  {
+   "name": "remote_folder_reduce/static_check",
+   "depth": 1,
+   "pipeline": 0,
+   "s": 0.0002
+  },
+  {
+   "name": "remote_folder_reduce/sink_save_timeseries",
+   "depth": 1,
+   "pipeline": 0,
+   "n": 37,
+   "s": 13.1024
+  },
+  {
+   "name": "remote_folder_reduce",
+   "depth": 0,
+   "pipeline": 0,
+   "s": 15.2485
+  }
+ ],
+ "counters": {
+  "ssh_query": 2,
+  "ssh_exec": 1
+ },
+ "confirm": false,
+ "dry_run": false,
+ "n_pipelines": 1
+}

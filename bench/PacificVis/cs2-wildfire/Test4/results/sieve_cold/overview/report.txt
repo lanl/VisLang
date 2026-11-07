@@ -9,10 +9,10 @@ Spec: bench/PacificVis/cs2-wildfire/Test4/specs/overview.py
     static check: request valid against the cached schema (9 vars, dims={'grid': (600, 500, 61)})
     Cost estimate (remote):
       timesteps: 88
-      read on the server: ~54.0 GB
-      over the wire: ~102 MB
-      result size: ~102 MB
-      est. transfer time: ~36 s–2.4 min (measured)
+      read on the server: ~66.0 GB
+      over the wire: ~140 MB
+      result size: ~140 MB
+      est. transfer time: ~35 s–2.3 min (measured)
     remote folder gpu-server://mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/ (catalog delta)
     ship plan.json + manifest (delta ['rhof_1', 'theta', 'u', 'v', 'w']) to the remote
     grid positions: 87 piece(s) share positions already in the bundle — sent once
@@ -24,5 +24,5 @@ Spec: bench/PacificVis/cs2-wildfire/Test4/specs/overview.py
 
 --- Output ---
 
-✓ Downloaded 47.1 MB to /Users/agoosh11/Projects/VisLang/.vislang/cache-test4/folderpull_178b971d
+✓ Downloaded 47.1 MB to /Users/agoosh11/Projects/VisLang/.vislang/cache-test4/folderpull_94ea586f
 [save] wrote 88 timestep(s) as vtk -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/overview/; provenance -> .sieve-provenance.yaml; ParaView index -> overview.pvd

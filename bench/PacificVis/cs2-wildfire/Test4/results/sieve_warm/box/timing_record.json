@@ -1,11 +1,11 @@
 {
- "run_id": "70015a9ea542",
- "started": "2026-11-07T02:04:48",
+ "run_id": "2422d5c4d6be",
+ "started": "2026-11-07T02:37:34",
  "spec": "bench/PacificVis/cs2-wildfire/Test4/specs/box.py",
  "spec_sha": "e6880f0d9bec",
- "commit": "b825316",
+ "commit": "ba71991",
  "status": "OK",
- "total_s": 18.4063,
+ "total_s": 18.0384,
  "env": {
   "VISLANG_CACHE": "/Users/agoosh11/Projects/VisLang/.vislang/cache-test4"
  },
@@ -40,7 +40,7 @@
    "fetched_timesteps": 0,
    "materialized": true,
    "held": null,
-   "s": 18.3956
+   "s": 18.0296
   }
  ],
  "phases": [
@@ -54,14 +54,14 @@
    "name": "remote_folder_reduce/list_timesteps",
    "depth": 1,
    "pipeline": 0,
-   "s": 1.5704
+   "s": 1.6028
   },
   {
    "name": "remote_folder_reduce/catalog_delta",
    "depth": 1,
    "pipeline": 0,
    "n": 37,
-   "s": 0.543
+   "s": 0.6576
   },
   {
    "name": "remote_folder_reduce/static_check",
@@ -74,13 +74,13 @@
    "depth": 1,
    "pipeline": 0,
    "n": 37,
-   "s": 13.1024
+   "s": 12.597
   },
   {
    "name": "remote_folder_reduce",
    "depth": 0,
    "pipeline": 0,
-   "s": 15.2485
+   "s": 14.8934
   }
  ],
  "counters": {

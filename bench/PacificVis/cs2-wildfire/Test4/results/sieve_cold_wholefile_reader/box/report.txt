@@ -1,0 +1,29 @@
+Status: OK
+Spec: bench/PacificVis/cs2-wildfire/Test4/specs/box.py
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/
+    spec (as written): source(mountain_headcurve80) → timesteps(9000,45000) → fields[theta,u,v,w] → region{x:(-100,200),y:(-120,120),z:(0,350),world} → save
+    catalog: reused 0/148 (timestep,variable) extent(s); fetching ['theta', 'u', 'v', 'w'] (148 pair(s)) for 37 timestep(s)
+    static check: request valid against the cached schema (9 vars, dims={'grid': (600, 500, 61)})
+    Cost estimate (remote):
+      timesteps: 37
+      read on the server: ~22.7 GB
+      over the wire: ~442 MB
+      result size: ~442 MB
+      est. transfer time: ~1.7 min–7.0 min (measured)
+      note: 37 world box(es) sized on the grid positions cached at stride 8x8x8, interpolated (+1 cell each side) — an estimate; the cut itself is placed exactly next to the data.
+      note: grid positions priced once for 37 piece(s) that share them (their cached samples match).
+    remote folder gpu-server://mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/ (catalog delta)
+    ship plan.json + manifest (delta ['theta', 'u', 'v', 'w']) to the remote
+    grid positions: 36 piece(s) share positions already in the bundle — sent once
+    pulled delta: 148 (timestep,var) array(s) + 37 grid position piece(s), 438.94 MB over the wire
+    -> save timeseries -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/box
+    remote compute on gpu-server: reused 0/148 extent(s) from the catalog; fetched ['theta', 'u', 'v', 'w'] — 148 (timestep,variable) pair(s) crossed the wire
+    local:   -> save timeseries -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/box
+  output: /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/box
+
+--- Output ---
+
+✓ Downloaded 355.9 MB to /Users/agoosh11/Projects/VisLang/.vislang/cache-test4/folderpull_4ce33ccd
+[save] wrote 37 timestep(s) as vtk -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/box/; provenance -> .sieve-provenance.yaml; ParaView index -> box.pvd

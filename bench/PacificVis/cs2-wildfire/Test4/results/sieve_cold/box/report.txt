@@ -8,10 +8,10 @@ Spec: bench/PacificVis/cs2-wildfire/Test4/specs/box.py
     static check: request valid against the cached schema (9 vars, dims={'grid': (600, 500, 61)})
     Cost estimate (remote):
       timesteps: 37
-      read on the server: ~22.7 GB
+      read on the server: ~25.2 GB
       over the wire: ~442 MB
       result size: ~442 MB
-      est. transfer time: ~1.7 min–7.0 min (measured)
+      est. transfer time: ~1.8 min–7.4 min (measured)
       note: 37 world box(es) sized on the grid positions cached at stride 8x8x8, interpolated (+1 cell each side) — an estimate; the cut itself is placed exactly next to the data.
       note: grid positions priced once for 37 piece(s) that share them (their cached samples match).
     remote folder gpu-server://mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/ (catalog delta)
@@ -25,5 +25,5 @@ Spec: bench/PacificVis/cs2-wildfire/Test4/specs/box.py
 
 --- Output ---
 
-✓ Downloaded 355.9 MB to /Users/agoosh11/Projects/VisLang/.vislang/cache-test4/folderpull_4ce33ccd
+✓ Downloaded 355.9 MB to /Users/agoosh11/Projects/VisLang/.vislang/cache-test4/folderpull_f711e972
 [save] wrote 37 timestep(s) as vtk -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/box/; provenance -> .sieve-provenance.yaml; ParaView index -> box.pvd

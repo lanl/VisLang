@@ -1,11 +1,11 @@
 {
- "run_id": "e440eceec896",
- "started": "2026-11-07T01:43:40",
+ "run_id": "252ea18ed91a",
+ "started": "2026-11-07T02:22:47",
  "spec": "bench/PacificVis/cs2-wildfire/Test4/specs/overview.py",
  "spec_sha": "99e7232375e5",
- "commit": "b825316",
+ "commit": "ba71991",
  "status": "OK",
- "total_s": 827.2465,
+ "total_s": 589.9379,
  "env": {
   "VISLANG_CACHE": "/Users/agoosh11/Projects/VisLang/.vislang/cache-test4"
  },
@@ -27,15 +27,15 @@
    "source_bytes": 96624255640,
    "selected_timesteps": 88,
    "pre_validated": true,
-   "probe_bw_bps": 1497212.2,
+   "probe_bw_bps": 2089777.4,
    "probe_bw_source": "probe",
    "est_site": "remote",
-   "est_read_mb": 101.513671875,
-   "est_server_read_mb": 55288.6962890625,
-   "est_output_mb": 101.513671875,
+   "est_read_mb": 139.581298828125,
+   "est_server_read_mb": 67575.0732421875,
+   "est_output_mb": 139.581298828125,
    "est_payload_mb": null,
-   "est_time_lo_s": 35.54766637086715,
-   "est_time_hi_s": 142.1906654834686,
+   "est_time_lo_s": 35.01846594830873,
+   "est_time_hi_s": 140.07386379323492,
    "est_confidence": "measured",
    "est_over_budget": false,
    "est_n_timesteps": 88,
@@ -50,7 +50,7 @@
    "fetched_timesteps": 88,
    "materialized": true,
    "held": null,
-   "s": 827.2207
+   "s": 589.9219
   }
  ],
  "phases": [
@@ -64,39 +64,39 @@
    "name": "remote_folder_reduce/list_timesteps",
    "depth": 1,
    "pipeline": 0,
-   "s": 1.5881
+   "s": 1.6864
   },
   {
    "name": "remote_folder_reduce/login_node_inspect",
    "depth": 1,
    "pipeline": 0,
-   "s": 11.1756
+   "s": 1.7931
   },
   {
    "name": "remote_folder_reduce/catalog_delta",
    "depth": 1,
    "pipeline": 0,
    "n": 88,
-   "s": 0.0118
+   "s": 0.0115
   },
   {
    "name": "remote_folder_reduce/static_check",
    "depth": 1,
    "pipeline": 0,
-   "s": 0.0003
+   "s": 0.0002
   },
   {
    "name": "remote_folder_reduce/cost_estimate",
    "depth": 1,
    "pipeline": 0,
-   "s": 2.8027
+   "s": 2.0101
   },
   {
    "name": "remote_folder_reduce/ship_plan",
    "depth": 1,
    "pipeline": 0,
    "bytes": 5755,
-   "s": 1.5837
+   "s": 1.5932
   },
   {
    "name": "remote_folder_reduce/remote_exec",
@@ -105,23 +105,23 @@
    "srun": false,
    "jobid": null,
    "n_timesteps": 88,
-   "s": 797.0044,
-   "server_s": 795.1817,
-   "startup_s": 1.52,
-   "server_read_bytes": 95526715392,
-   "launch_s": 0.3027,
+   "s": 568.485,
+   "server_s": 566.6224,
+   "startup_s": 1.55,
+   "server_read_bytes": 70889897984,
+   "launch_s": 0.3126,
    "server_phases": [
     {
      "name": "import",
-     "s": 0.1481
+     "s": 0.2012
     },
     {
      "name": "cut",
-     "s": 792.553
+     "s": 563.8859
     },
     {
      "name": "write_bundle",
-     "s": 2.4557,
+     "s": 2.5111,
      "bytes": 47138910
     }
    ]
@@ -130,28 +130,28 @@
    "name": "remote_folder_reduce/pull/transfer_dir",
    "depth": 2,
    "pipeline": 0,
-   "remote": "/tmp/vislang_reduce_178b971d",
+   "remote": "/tmp/vislang_reduce_94ea586f",
    "bytes": 47138910,
-   "s": 3.9548
+   "s": 5.1439
   },
   {
    "name": "remote_folder_reduce/pull",
    "depth": 1,
    "pipeline": 0,
-   "s": 3.9562
+   "s": 5.1445
   },
   {
    "name": "remote_folder_reduce/sink_save_timeseries",
    "depth": 1,
    "pipeline": 0,
    "n": 88,
-   "s": 2.1622
+   "s": 2.2059
   },
   {
    "name": "remote_folder_reduce",
    "depth": 0,
    "pipeline": 0,
-   "s": 824.0226
+   "s": 586.681
   }
  ],
  "counters": {
