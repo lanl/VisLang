@@ -1,11 +1,10 @@
 % Teaser for the paper (Case Study 2): the ParaView image, the box spec and a provenance
-% excerpt, as one standalone figure 7 in wide (the VGTC conference text width).
+% excerpt, as one standalone figure exactly 7 in wide (cropped to its content) (the VGTC conference text width).
 % Overleaf: upload this file with teaser_paraview.png and compile with pdfLaTeX; then
 % \includegraphics[width=\linewidth]{teaser} in the paper's \teaser{...}.
 % Locally: latexmk -pdf teaser.tex; pdftoppm -r 300 -png -singlefile teaser.pdf teaser
 % The image is built by ../scripts/teaser_background.py from animation.0044.png.
-\documentclass[9pt]{article}
-\usepackage[paperwidth=7in, paperheight=2.6in, margin=0pt]{geometry}
+\documentclass[border=0pt]{standalone}
 \usepackage{times}
 \renewcommand*\ttdefault{txtt}
 \usepackage{graphicx}
@@ -21,7 +20,7 @@
         aboveskip=0pt, belowskip=0pt, framesep=3pt}
 
 \begin{document}
-\vspace*{\fill}
+\begin{minipage}{7in}
 \begin{minipage}[c]{0.56\textwidth}
   \includegraphics[width=\linewidth]{teaser_paraview}
 \end{minipage}\hfill
@@ -48,5 +47,5 @@ Steps
                 own position from the source
 \end{lstlisting}
 \end{minipage}
-\vspace*{\fill}
+\end{minipage}
 \end{document}
