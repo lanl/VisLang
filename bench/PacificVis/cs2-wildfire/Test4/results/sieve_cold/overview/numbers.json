@@ -1,0 +1,36 @@
+{
+ "run_id": "e440eceec896",
+ "status": "OK",
+ "started": "2026-11-07T01:43:40",
+ "commit": "b825316",
+ "est_server_read_bytes": 57974400000,
+ "est_wire_bytes": 106444800,
+ "est_result_bytes": 106444800,
+ "est_over_budget": false,
+ "server_read_bytes": 95526715392,
+ "wire_bytes": 47138910,
+ "probe_bytes": 4194304,
+ "server_s": 795.1817,
+ "server_phases": [
+  [
+   {
+    "name": "import",
+    "s": 0.1481
+   },
+   {
+    "name": "cut",
+    "s": 792.553
+   },
+   {
+    "name": "write_bundle",
+    "s": 2.4557,
+    "bytes": 47138910
+   }
+  ]
+ ],
+ "remote_jobs": null,
+ "route": "remote_folder_reduce",
+ "cached_bytes": null,
+ "result_bytes": null,
+ "source_bytes": 96624255640
+}

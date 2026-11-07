@@ -1,0 +1,15 @@
+Status: OK
+Spec: bench/PacificVis/cs2-wildfire/Test4/specs/overview.py
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/
+    spec (as written): source(mountain_headcurve80) → fields[rhof_1,theta,u,v,w] → subsample(8) → save
+    catalog: reused 440/440 (timestep,variable) extent(s) — full hit, nothing crosses the wire
+    static check: request valid against the cached schema (9 vars, dims={'grid': (600, 500, 61)})
+    -> save timeseries -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/overview
+    remote compute on gpu-server: reused 440/440 extent(s) from the catalog; nothing crossed the wire (full catalog hit)
+    local:   -> save timeseries -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/overview
+  output: /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/overview
+
+--- Output ---
+[save] wrote 88 timestep(s) as vtk -> /Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/overview/; provenance -> .sieve-provenance.yaml; ParaView index -> overview.pvd

@@ -1,0 +1,1 @@
+{"script": "cut_series.py", "args": ["/mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80", "cuts/overview", "overview"], "server_s": 505.298, "read_bytes": 70894362624, "finished": "2026-11-07T01:39:32"}
