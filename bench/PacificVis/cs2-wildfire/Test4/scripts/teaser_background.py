@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Teaser image: composite ParaView's transparent-background screenshot onto #1d1d1d.
 
-    python teaser_background.py IN.png OUT.png
+    python teaser_background.py ../figures/animation.0044.png ../figures/teaser_paraview.png
 
 The screenshot (timestep 44, saved from ParaView with a transparent background)
 is composited as premultiplied alpha (ParaView blends colour over black and keeps
