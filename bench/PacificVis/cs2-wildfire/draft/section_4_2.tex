@@ -238,7 +238,7 @@ that matter, at full resolution.
     \includegraphics[width=\linewidth]{teaser_paraview}
   \end{minipage}\hfill
   \begin{minipage}[c]{0.42\textwidth}
-\begin{lstlisting}[language=Python, numbers=none, frame=tb, aboveskip=0pt]
+\begin{lstlisting}[language=Python, numbers=none, frame=tb, aboveskip=0pt, keepspaces=true, basicstyle=\ttfamily\footnotesize]
 src  = source("ssh://host/wildfire/")
 view = timesteps(src, 9000, 45000)
 view = fields(view, ["theta", "u", "v", "w"])
@@ -246,8 +246,8 @@ view = region(view, x=(-100, 200), y=(-120, 120),
               z=(0, 350), coords="world")
 save(view, "box.vts")
 \end{lstlisting}
-\vspace{2pt}
-\begin{lstlisting}[numbers=none, frame=tb, aboveskip=0pt]
+\vspace{10pt}
+\begin{lstlisting}[numbers=none, frame=tb, aboveskip=0pt, keepspaces=true]
 # from the provenance record in each output
 Steps
   1. timesteps  keep timesteps #9000 to #45000
@@ -256,8 +256,8 @@ Steps
                 (world coordinates), placed on
                 the file's geometry
   4. save       write one VTK StructuredGrid file
-                per timestep: each point at its own
-                position from the source
+                per timestep: each point at its
+                own position from the source
 \end{lstlisting}
   \end{minipage}
   \caption{A fire crossing a ridge, from a 96.6\,GB simulation on a remote server, opened
