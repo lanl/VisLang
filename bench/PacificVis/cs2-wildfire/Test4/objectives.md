@@ -26,9 +26,10 @@ provenance excerpt in the teaser.
 ## 2. The scientific question, and why each part of the answer needs a Sieve selection
 
 **Question** (posed after Dupuy et al. 2011): near-ground air ahead of a head fire can
-reverse and flow back toward it, an indraft. Dupuy et al. find this within ~10 m of the
-fire line on flat ground, in the lowest grid cell, and out to 30–40 m when the fire
-spreads downslope. In this run the fire crosses a ridge crest and spreads down the lee
+reverse and flow back toward it, an indraft. Dupuy et al. find this in the lowest grid
+cell, typically within 10 m of the fire line; only downslope does it reach farther (their
+Table 6: < 30 m in shrubland, < 40 m in grassland under a weak wind, < 10 m in grassland
+at 6 m/s). In this run the fire crosses a ridge crest and spreads down the lee
 slope, where it slows. *When the spread slows, does the near-ground wind ahead of the
 front reverse and blow against it?*
 
