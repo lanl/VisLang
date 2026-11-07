@@ -93,6 +93,8 @@ a3.set_ylabel("u ahead of front\n(m/s)")
 a3.set_xlabel("timestep (thousands)")
 a3.legend(loc="upper right", frameon=False, fontsize=6.2, handlelength=1.8)
 a3.set_xlim(t[0] - 0.5, t[-1] + 0.5)
+for _ax, _l in zip((a1, a2, a3), "abc"):
+    _ax.text(-0.36, 1.02, f"({_l})", transform=_ax.transAxes, fontsize=8, fontweight="bold", va="top", ha="left", color=INK)
 fig.savefig(out + ".png", dpi=300, bbox_inches="tight")
 fig.savefig(out + ".pdf", bbox_inches="tight")
 print(out)

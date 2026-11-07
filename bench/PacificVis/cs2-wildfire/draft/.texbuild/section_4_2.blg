@@ -4,44 +4,44 @@ The top-level auxiliary file: section_4_2.aux
 The style file: abbrv-doi.bst
 Reallocated singl_function (elt_size=4) to 100 items from 50.
 Database file #1: refs_cs2.bib
-You've used 1 entry,
+You've used 3 entries,
             2598 wiz_defined-function locations,
-            600 strings with 4466 characters,
-and the built_in function-call counts, 929 in all, are:
-= -- 191
-> -- 23
-< -- 30
-+ -- 39
-- -- 9
-* -- 41
-:= -- 147
-add.period$ -- 3
-call.type$ -- 1
-change.case$ -- 7
+            615 strings with 4975 characters,
+and the built_in function-call counts, 3057 in all, are:
+= -- 650
+> -- 63
+< -- 105
++ -- 130
+- -- 25
+* -- 114
+:= -- 451
+add.period$ -- 9
+call.type$ -- 3
+change.case$ -- 20
 chr.to.int$ -- 0
-cite$ -- 1
-duplicate$ -- 11
-empty$ -- 29
-format.name$ -- 8
-if$ -- 232
+cite$ -- 3
+duplicate$ -- 45
+empty$ -- 99
+format.name$ -- 22
+if$ -- 793
 int.to.chr$ -- 0
-int.to.str$ -- 1
-missing$ -- 1
-newline$ -- 12
-num.names$ -- 2
-pop$ -- 5
+int.to.str$ -- 3
+missing$ -- 3
+newline$ -- 32
+num.names$ -- 6
+pop$ -- 19
 preamble$ -- 1
-purify$ -- 6
+purify$ -- 17
 quote$ -- 0
-skip$ -- 7
+skip$ -- 34
 stack$ -- 0
-substring$ -- 61
-swap$ -- 1
-text.length$ -- 17
+substring$ -- 205
+swap$ -- 13
+text.length$ -- 59
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 4
+type$ -- 12
 warning$ -- 0
-while$ -- 6
-width$ -- 2
-write$ -- 31
+while$ -- 19
+width$ -- 4
+write$ -- 98

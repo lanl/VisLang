@@ -3,26 +3,44 @@
 \providecommand\HyField@AuxAddToFields[1]{}
 \providecommand\HyField@AuxAddToCoFields[2]{}
 \citation{linn2002firetec}
+\citation{dupuy2011indraft}
+\citation{shneiderman1996eyes}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces The fire front as each route sees it. (a)~Position. Gray: full resolution at every timestep (a reference no route moves). Blue: Sieve{}'s overview. Orange rings: every fifth file, as a two-pass download's first pass holds them. (b)~Speed: the slope of the position over $\pm $2{,}000 steps (gray, blue), and the average between consecutive every-fifth files, drawn across the 5{,}000 steps it averages (orange). Shaded: the window then fetched at full resolution.}}{1}{figure.3}\protected@file@percent }
+\newlabel{fig:cs2speed}{{1}{1}{The fire front as each route sees it. (a)~Position. Gray: full resolution at every timestep (a reference no route moves). Blue: \sname {}'s overview. Orange rings: every fifth file, as a two-pass download's first pass holds them. (b)~Speed: the slope of the position over $\pm $2{,}000 steps (gray, blue), and the average between consecutive every-fifth files, drawn across the 5{,}000 steps it averages (orange). Shaded: the window then fetched at full resolution}{figure.3}{}}
+\newlabel{fig:cs2speed@cref}{{[figure][1][]1}{[1][1][]1}{}{}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces What each route moves over the network to deliver the same two results: the overview, and the window and box at full resolution. Sieve{}'s and the scripts' outputs are identical, bit for bit. Server time is the time spent on the server reading and cutting; reads on the server are examined in \cref  {sec:cs3}.}}{1}{table.5}\protected@file@percent }
+\newlabel{tab:cs2}{{1}{1}{What each route moves over the network to deliver the same two results: the overview, and the window and box at full resolution. \sname {}'s and the scripts' outputs are identical, bit for bit. Server time is the time spent on the server reading and cutting; reads on the server are examined in \cref {sec:cs3}}{table.5}{}}
+\newlabel{tab:cs2@cref}{{[table][1][]1}{[1][1][]1}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Usage Scenarios}{1}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Wildfire: Choosing the Time Window from an Overview}{1}{subsection.2}\protected@file@percent }
+\newlabel{sec:cs2}{{4.2}{1}{Wildfire: Choosing the Time Window from an Overview}{subsection.2}{}}
+\newlabel{sec:cs2@cref}{{[subsection][2][4]4.2}{[1][1][]1}{}{}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.1}Data and Analysis Requirements}{1}{subsubsection.6}\protected@file@percent }
+\@writefile{brf}{\backcite{linn2002firetec}{{1}{4.2.1}{subsubsection.6}}}
+\@writefile{toc}{\contentsline {paragraph}{Scientific Task}{1}{section*.7}\protected@file@percent }
+\@writefile{brf}{\backcite{dupuy2011indraft}{{1}{4.2.1}{section*.7}}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces The answer, from the full-resolution window. All wind values are averaged over the burning strip ($|y| \le 50$\,m). (a)~Front speed; shaded: the slowdown. (b)~Wind along the spread, $u$, from the front to 60\,m ahead of it, by height and time; blue: against the spread; black contour: $u = 0$. (c)~$u$ in the lowest grid level within 10\,m of the front (dashed), and at 1.3--5.2\,m within 60\,m (orange) and 60--120\,m ahead (blue).}}{1}{figure.4}\protected@file@percent }
+\newlabel{fig:cs2evidence}{{2}{1}{The answer, from the full-resolution window. All wind values are averaged over the burning strip ($|y| \le 50$\,m). (a)~Front speed; shaded: the slowdown. (b)~Wind along the spread, $u$, from the front to 60\,m ahead of it, by height and time; blue: against the spread; black contour: $u = 0$. (c)~$u$ in the lowest grid level within 10\,m of the front (dashed), and at 1.3--5.2\,m within 60\,m (orange) and 60--120\,m ahead (blue)}{figure.4}{}}
+\newlabel{fig:cs2evidence@cref}{{[figure][2][]2}{[1][1][]1}{}{}{}}
+\@writefile{brf}{\backcite{shneiderman1996eyes}{{1}{4.2.1}{section*.7}}}
+\newlabel{lst:cs2}{{1}{1}{Step~1: the overview. Every timestep, every eighth grid point along each axis, five fields}{lstlisting.8}{}}
+\newlabel{lst:cs2@cref}{{[listing][1][]1}{[1][1][]1}{}{}{}}
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}Step~1: the overview. Every timestep, every eighth grid point along each axis, five fields.}{1}{lstlisting.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.2}Step 1: An Overview of Every Timestep}{1}{subsubsection.13}\protected@file@percent }
+\citation{dupuy2011indraft}
 \bibstyle{abbrv-doi}
 \bibdata{refs_cs2}
-\bibcite{linn2002firetec}{1}
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces \textcolor {red}{\textbf  {[TODO: teaser caption]}} Teaser image. Inside the white box: the full-resolution pass; outside it: the coarse pass.}}{1}{figure.1}\protected@file@percent }
-\newlabel{fig:teaser}{{1}{1}{\todo {teaser caption} Teaser image. Inside the white box: the full-resolution pass; outside it: the coarse pass}{figure.1}{}}
-\newlabel{fig:teaser@cref}{{[figure][1][]1}{[1][1][]1}{}{}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4}Usage Scenarios}{1}{section.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Tracking Wildfire Evolution with Time Windowing}{1}{subsection.3}\protected@file@percent }
-\newlabel{sec:cs2}{{4.2}{1}{Tracking Wildfire Evolution with Time Windowing}{subsection.3}{}}
-\newlabel{sec:cs2@cref}{{[subsection][2][4]4.2}{[1][1][]1}{}{}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.1}Data and Analysis Requirements}{1}{subsubsection.4}\protected@file@percent }
-\@writefile{brf}{\backcite{linn2002firetec}{{1}{4.2.1}{subsubsection.4}}}
-\@writefile{toc}{\contentsline {paragraph}{Scientific Task}{1}{section*.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.2}Coarse Pass: Locating the Slowdown}{1}{subsubsection.6}\protected@file@percent }
-\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}\textcolor {red}{\textbf  {[TODO: Missing caption]}}}{1}{lstlisting.7}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Front speed over the run. Blue: Sieve{}'s coarse pass, every timestep (0.05\,GB). Rings: every 5th file (19.8\,GB); each ring is the speed between two consecutive files, plotted at their midpoint, from the coarse-pass data. Shaded: the full-resolution window.}}{1}{figure.17}\protected@file@percent }
-\newlabel{fig:cs2-speed}{{2}{1}{Front speed over the run. Blue: \Sname {}'s coarse pass, every timestep (0.05\,GB). Rings: every 5th file (19.8\,GB); each ring is the speed between two consecutive files, plotted at their midpoint, from the coarse-pass data. Shaded: the full-resolution window}{figure.17}{}}
-\newlabel{fig:cs2-speed@cref}{{[figure][2][]2}{[1][1][]1}{}{}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.3}Full-Resolution Pass: Examining Near-Ground Wind in the Selected Window}{1}{subsubsection.16}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Bytes moved by each route to the same result. The first pass surveys the series; the second fetches the window at full resolution. Sieve{}'s requests were composed in ParaView, with no script.}}{2}{table.15}\protected@file@percent }
-\newlabel{tab:cs2}{{1}{2}{Bytes moved by each route to the same result. The first pass surveys the series; the second fetches the window at full resolution. \Sname {}'s requests were composed in ParaView, with no script}{table.15}{}}
-\newlabel{tab:cs2@cref}{{[table][1][]1}{[1][1][]2}{}{}{}}
-\gdef \@abspage@last{2}
+\bibcite{dupuy2011indraft}{1}
+\bibcite{linn2002firetec}{2}
+\bibcite{shneiderman1996eyes}{3}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.3}Steps 2 and 3: The Window and the Box at Full Resolution}{2}{subsubsection.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.4}Results}{2}{subsubsection.15}\protected@file@percent }
+\@writefile{brf}{\backcite{dupuy2011indraft}{{2}{4.2.4}{subsubsection.15}}}
+\newlabel{sec:plugin}{{3.1.7}{2}{Results}{subsubsection.35}{}}
+\newlabel{sec:plugin@cref}{{[subsubsection][7][3,1]3.1.7}{[1][2][]2}{}{}{}}
+\newlabel{sec:cs3}{{4.3}{2}{Results}{subsection.36}{}}
+\newlabel{sec:cs3@cref}{{[subsection][3][4]4.3}{[1][2][]2}{}{}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces A fire crossing a ridge, from a 96.6\,GB simulation on a remote server, opened in ParaView. Outside the white box: Sieve{}'s overview, every timestep at every eighth grid point (47\,MB). Inside it: the time window and the region the scientist chose on that overview, fetched at full resolution (0.36\,GB) by the request shown (top right). Sieve{} explains each output in a provenance record (bottom right, excerpt). Both outputs carry the positions of their grid points, so ParaView places the detail inside the overview with no alignment step. \textbf  {[TODO: confirm the rendered timestep and the encodings: terrain colored by fuel left, the fire as a temperature surface, lines inside the box as streamlines of the full-resolution wind.]}}}{3}{figure.16}\protected@file@percent }
+\newlabel{fig:teaser}{{3}{3}{A fire crossing a ridge, from a 96.6\,GB simulation on a remote server, opened in ParaView. Outside the white box: \sname {}'s overview, every timestep at every eighth grid point (47\,MB). Inside it: the time window and the region the scientist chose on that overview, fetched at full resolution (0.36\,GB) by the request shown (top right). \sname {} explains each output in a provenance record (bottom right, excerpt). Both outputs carry the positions of their grid points, so ParaView places the detail inside the overview with no alignment step. \textbf {[TODO: confirm the rendered timestep and the encodings: terrain colored by fuel left, the fire as a temperature surface, lines inside the box as streamlines of the full-resolution wind.]}}{figure.16}{}}
+\newlabel{fig:teaser@cref}{{[figure][3][]3}{[1][2][]3}{}{}{}}
+\gdef \@abspage@last{3}

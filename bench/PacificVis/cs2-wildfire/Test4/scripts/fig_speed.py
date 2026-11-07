@@ -97,6 +97,8 @@ a2.set_xlabel("timestep (thousands)")
 a2.set_xlim(6, 92)
 a2.text(WINDOW[1] / 1000 - 0.6, a2.get_ylim()[0] + 0.6, "full-resolution window",
         ha="right", va="bottom", color=MUTED, fontsize=6.5)
+for _ax, _l in zip((a1, a2), "abc"):
+    _ax.text(-0.36, 1.02, f"({_l})", transform=_ax.transAxes, fontsize=8, fontweight="bold", va="top", ha="left", color=INK)
 fig.savefig(out + ".png", dpi=300, bbox_inches="tight")
 fig.savefig(out + ".pdf", bbox_inches="tight")
 print(out)
