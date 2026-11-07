@@ -860,16 +860,34 @@ class VTKAdapter(FormatAdapter):
     have no way to express today, and silently dropping the cells would hand
     back a point cloud the user did not ask for.
 
+    Column pushdown for XML files whose arrays are stored "appended" (the
+    layout VTK and ParaView write by default): VTK's own XML reader is told
+    which point arrays to read and seeks past the rest, so a request for four
+    of nine fields reads four (plus the grid positions, which a structured
+    grid's reader always reads). Inline-encoded XML, legacy .vtk and .vtkhdf
+    are read whole through pyvista. The flag is per file (`capabilities_for`),
+    so the cost estimator prices each file as it is actually read.
+
+    Inspect of an XML StructuredGrid / RectilinearGrid is metadata only: VTK's
+    XML parser reads the header (types, extent, array names and types), not the
+    arrays. Other kinds are inspected from a full read, as before.
+
     No strided pushdown yet: the XML readers can do it via UpdateExtent, but we
-    read whole and slice, so the flag stays False and the cost estimator keeps
-    telling the truth about bytes read."""
+    read whole arrays and slice, so supports_strided_read stays False."""
 
     name = "VTK"
     supports_strided_read = False
-    supports_column_pushdown = False
+    supports_column_pushdown = False      # per file: see capabilities_for
 
     _EXTENSIONS = ('.vti', '.vtp', '.vtr', '.vts', '.vtu', '.vtk', '.vtkhdf')
     _HDF5_MAGIC = b'\x89HDF\r\n\x1a\n'
+    _XML_READERS = {'ImageData': 'vtkXMLImageDataReader',
+                    'RectilinearGrid': 'vtkXMLRectilinearGridReader',
+                    'StructuredGrid': 'vtkXMLStructuredGridReader',
+                    'PolyData': 'vtkXMLPolyDataReader'}
+    _XML_TYPES = {'Int8': 'i1', 'UInt8': 'u1', 'Int16': 'i2', 'UInt16': 'u2',
+                  'Int32': 'i4', 'UInt32': 'u4', 'Int64': 'i8', 'UInt64': 'u8',
+                  'Float32': 'f4', 'Float64': 'f8'}
 
     @classmethod
     def can_handle(cls, filepath):
@@ -891,6 +909,12 @@ class VTKAdapter(FormatAdapter):
             return True
         return ext in cls._EXTENSIONS
 
+    @classmethod
+    def capabilities_for(cls, dataset_info):
+        """Per-file flags: column pushdown only where the read selects arrays."""
+        attrs = getattr(dataset_info, 'attributes', None) or {}
+        return {"column_pushdown": bool(attrs.get('vtk_appended'))}
+
     @staticmethod
     def _is_vtkhdf(filepath):
         try:
@@ -900,13 +924,131 @@ class VTKAdapter(FormatAdapter):
         except Exception:
             return False
 
-    @staticmethod
-    def _read(filepath):
+    @classmethod
+    def _xml_header(cls, filepath):
+        """The XML file's header as VTK's XML parser reads it, or None (not XML,
+        or unparseable): {type, pieces, extent, arrays: [(name, dtype, ncomp,
+        format)], points: dtype or None}. Array data is not decoded."""
+        if os.path.splitext(filepath)[1].lower() not in ('.vti', '.vtp', '.vtr', '.vts'):
+            return None
+        try:
+            from vtkmodules.vtkIOXMLParser import vtkXMLDataParser
+            parser = vtkXMLDataParser()
+            parser.SetFileName(filepath)
+            if not parser.Parse():
+                return None
+            root = parser.GetRootElement()
+            kind = root.GetAttribute('type')
+            body = root.FindNestedElementWithName(kind or '')
+            if kind not in cls._XML_READERS or body is None:
+                return None
+            pieces = [body.GetNestedElement(i) for i in range(body.GetNumberOfNestedElements())
+                      if body.GetNestedElement(i).GetName() == 'Piece']
+            out = {"type": kind, "pieces": len(pieces), "extent": None,
+                   "arrays": [], "points": None}
+            whole = body.GetAttribute('WholeExtent')
+            if whole:
+                out["extent"] = tuple(int(v) for v in whole.split())
+            if len(pieces) == 1:
+                piece = pieces[0]
+                if piece.GetAttribute('Extent') and out["extent"] is not None and \
+                        tuple(int(v) for v in piece.GetAttribute('Extent').split()) != out["extent"]:
+                    out["pieces"] = -1                  # a piece smaller than the whole
+                pd = piece.FindNestedElementWithName('PointData')
+                for i in range(pd.GetNumberOfNestedElements() if pd is not None else 0):
+                    a = pd.GetNestedElement(i)
+                    if a.GetName() != 'DataArray':
+                        continue
+                    dt = cls._XML_TYPES.get(a.GetAttribute('type') or '')
+                    out["arrays"].append((a.GetAttribute('Name'), dt,
+                                          int(a.GetAttribute('NumberOfComponents') or 1),
+                                          a.GetAttribute('format')))
+                pts = piece.FindNestedElementWithName('Points')
+                if pts is not None and pts.GetNumberOfNestedElements():
+                    out["points"] = cls._XML_TYPES.get(
+                        pts.GetNestedElement(0).GetAttribute('type') or '')
+            return out
+        except Exception:
+            return None
+
+    @classmethod
+    def _appended(cls, header):
+        """True when every point array is stored appended (seekable), so a read
+        that selects arrays skips the others on disk."""
+        return bool(header and header["arrays"]) and \
+            all(fmt == 'appended' for *_, fmt in header["arrays"])
+
+    @classmethod
+    def _read(cls, filepath, arrays=None):
+        """The file as a pyvista mesh. `arrays` None reads every array (pyvista);
+        a list reads only those point arrays (and no cell arrays) through VTK's
+        XML reader, which skips the rest. The last file read is kept, so the
+        arrays and the grid positions of one request come from one read."""
         import pyvista as pv
-        return pv.read(filepath)
+        st = os.stat(filepath)
+        key = (os.path.realpath(filepath), st.st_size, st.st_mtime_ns)
+        have = _VTK_LAST.get('arrays', ())
+        if _VTK_LAST.get('key') == key and (
+                have is None or (arrays is not None and set(arrays) <= have)):
+            return _VTK_LAST['mesh']
+        header = cls._xml_header(filepath) if arrays is not None else None
+        if header is None:
+            mesh, got = pv.read(filepath), None
+        else:
+            from vtkmodules import vtkIOXML
+            reader = getattr(vtkIOXML, cls._XML_READERS[header["type"]])()
+            reader.SetFileName(filepath)
+            reader.UpdateInformation()
+            for i in range(reader.GetNumberOfPointArrays()):
+                name = reader.GetPointArrayName(i)
+                reader.SetPointArrayStatus(name, int(name in arrays))
+            for i in range(reader.GetNumberOfCellArrays()):
+                reader.SetCellArrayStatus(reader.GetCellArrayName(i), 0)
+            reader.Update()
+            mesh, got = pv.wrap(reader.GetOutput()), set(arrays)
+        _VTK_LAST.clear()
+        _VTK_LAST.update(key=key, arrays=got, mesh=mesh)
+        return mesh
 
     def inspect(self, filepath):
-        mesh = self._read(filepath)
+        header = self._xml_header(filepath)
+        if header and header["type"] in ('StructuredGrid', 'RectilinearGrid') \
+                and header["pieces"] == 1 and header["extent"] is not None \
+                and all(dt for _, dt, _, _ in header["arrays"]):
+            info = self._inspect_header(filepath, header)
+        else:
+            info = self._inspect_mesh(filepath, self._read(filepath))
+        if self._appended(header):
+            info.attributes['vtk_appended'] = True
+        return info
+
+    def _inspect_header(self, filepath, header):
+        """The DatasetInfo _inspect_mesh would build, from the header alone."""
+        from vtkmodules.vtkCommonDataModel import vtkRectilinearGrid, vtkStructuredGrid
+        e = header["extent"]
+        shape = tuple(e[2 * a + 1] - e[2 * a] + 1 for a in range(3))
+        grid = (vtkStructuredGrid if header["type"] == 'StructuredGrid'
+                else vtkRectilinearGrid)()
+        grid.SetDimensions(*shape)                      # VTK counts the cells
+        attributes = {"vtk_dataset_type": header["type"],
+                      "n_points": int(np.prod(shape)),
+                      "n_cells": int(grid.GetNumberOfCells()),
+                      "vtk_dimensions": list(shape)}
+        variables, itemsizes = [], {}
+        for name, dt, _, _ in header["arrays"]:
+            variables.append(str(name))
+            itemsizes[str(name)] = int(np.dtype(dt).itemsize)
+            attributes[f"{name}_shape"] = list(shape)
+        if not variables:
+            raise UnsupportedFormatError(
+                f"{os.path.basename(filepath)} has no point data arrays to read")
+        points = header["points"] if header["type"] == 'StructuredGrid' else None
+        info = DatasetInfo(filepath, self.name, variables, dimensions={'grid': shape},
+                           attributes=attributes, itemsizes=itemsizes)
+        info.geometry = structured_pending(np.dtype(points).itemsize if points else None)
+        return info
+
+    def _inspect_mesh(self, filepath, mesh):
         kind = type(mesh).__name__
         if kind in ('UnstructuredGrid',):
             raise UnsupportedFormatError(
@@ -939,7 +1081,9 @@ class VTKAdapter(FormatAdapter):
                 # position (a terrain-following z differs per column), so no
                 # origin + spacing describes it. Say the points exist; they are
                 # bulk data, read with the arrays (read_geometry).
-                geometry = structured_pending()
+                geometry = structured_pending(
+                    int(np.asarray(mesh.points).dtype.itemsize)
+                    if kind == 'StructuredGrid' else None)
         else:
             dimensions['particles'] = int(mesh.n_points)
 
@@ -968,27 +1112,44 @@ class VTKAdapter(FormatAdapter):
         info.geometry = geometry
         return info
 
-    def read_array(self, filepath, location, selection):
-        mesh = self._read(filepath)
-        name = str(location)
+    @staticmethod
+    def _column(mesh, name, filepath):
+        """One column as a COPY: the mesh may be the kept last read, and the
+        pipeline masks arrays in place (threshold), which must not reach it."""
         if name in mesh.point_data:
-            arr = np.asarray(mesh.point_data[name])
+            arr = np.array(mesh.point_data[name])
             shape = getattr(mesh, 'dimensions', None)
             if type(mesh).__name__ != 'PolyData' and shape is not None:
                 # VTK numbers points x-fastest; the pipeline's axes are
                 # (x, y, z) = (0, 1, 2). Fortran order is that correspondence.
                 arr = arr.reshape(tuple(int(d) for d in shape), order='F')
-        elif name in ('x', 'y', 'z'):
-            arr = np.asarray(mesh.points)[:, 'xyz'.index(name)]
-        else:
-            raise ValueError(f"{name!r} is not a point-data array in {filepath}")
-        return apply_selection(arr, selection)
+            return arr
+        if name in ('x', 'y', 'z'):
+            return np.array(np.asarray(mesh.points)[:, 'xyz'.index(name)])
+        raise ValueError(f"{name!r} is not a point-data array in {filepath}")
+
+    @staticmethod
+    def _point_arrays(names):
+        """The names a read must ask the reader for: point coordinates are not arrays."""
+        return [n for n in dict.fromkeys(str(v) for v in names) if n not in ('x', 'y', 'z')]
+
+    def read_array(self, filepath, location, selection):
+        name = str(location)
+        mesh = self._read(filepath, self._point_arrays([name]))
+        return apply_selection(self._column(mesh, name, filepath), selection)
+
+    def read_all(self, filepath, locations, selection):
+        """Every requested column from ONE read of the file (only those arrays)."""
+        mesh = self._read(filepath, self._point_arrays(locations.values()))
+        return {var: apply_selection(self._column(mesh, str(loc), filepath), selection)
+                for var, loc in locations.items()}
 
     def read_geometry(self, filepath):
         """Every grid point's position, uncut, as a structured geometry (or None
         for a mesh that is not a listed-point grid). load.materialize cuts it
-        with the same index ranges as the data, so the two stay aligned."""
-        mesh = self._read(filepath)
+        with the same index ranges as the data, so the two stay aligned. The
+        positions come with any read of the file, so the arrays' read serves."""
+        mesh = self._read(filepath, [])
         shape = getattr(mesh, 'dimensions', None)
         if type(mesh).__name__ in ('PolyData', 'ImageData') or shape is None:
             return None
@@ -996,7 +1157,11 @@ class VTKAdapter(FormatAdapter):
         # VTK numbers points x-fastest; (nz, ny, nx) C-order, then axes swapped
         # so index [i, j, k] is the point at x=i, y=j, z=k like every array.
         pts = np.asarray(mesh.points).reshape(nz, ny, nx, 3).transpose(2, 1, 0, 3)
-        return structured_geometry(np.ascontiguousarray(pts))
+        return structured_geometry(np.array(pts, order='C'))      # a copy, as _column
+
+
+# The last VTK file read (VTKAdapter._read): one entry, replaced by the next file.
+_VTK_LAST = {}
 
 
 # ---------------------------------------------------------------------------
@@ -1224,9 +1389,13 @@ def adapter_capabilities(dataset_info):
         _ensure_generated_loaded()
         inst = _GENERATED_BY_NAME.get(dataset_info.filetype)
         cls = type(inst) if inst is not None else FormatAdapter
-    return {"strided_read": getattr(cls, 'supports_strided_read', False),
+    caps = {"strided_read": getattr(cls, 'supports_strided_read', False),
             "column_pushdown": getattr(cls, 'supports_column_pushdown', False),
             "fast_axis": getattr(cls, 'fast_axis', None)}
+    per_file = getattr(cls, 'capabilities_for', None)   # flags that depend on the file
+    if per_file is not None:
+        caps.update(per_file(dataset_info))
+    return caps
 
 
 def get_adapter_for_info(dataset_info):

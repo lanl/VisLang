@@ -408,6 +408,92 @@ def test_reader():
     check("spec_roi_values", np.array_equal(got, src[1:3]))
 
 
+def test_selective_read():
+    """An appended XML file is inspected from its header alone and read one
+    array at a time: the header-only DatasetInfo equals the one a full read
+    builds, a selected read returns the full read's values, the positions come
+    from the same read, a caller's in-place edit never reaches the kept read,
+    and the estimate prices the selected arrays plus the positions."""
+    reason = have_pyvista()
+    if reason:
+        skip("vtk_selective_read", reason)
+        return
+    import pyvista as pv
+    import vtk as _vtk
+    from vislang.formats import adapters as A
+    from vislang.formats.inspect import inspect_file
+    from vislang.interpreter.narrowing import Narrowing
+    import vislang.interpreter.estimate as E
+
+    nx, ny, nz = 6, 5, 4
+    xs, ys, zs = np.meshgrid(np.arange(nx, dtype=float), 2.0 * np.arange(ny),
+                             np.arange(nz, dtype=float), indexing="ij")
+    g = pv.StructuredGrid(xs, ys, zs + 0.3 * xs)         # terrain-following z
+    rng = np.random.default_rng(0)
+    for n in ("a", "b", "c"):
+        g.point_data[n] = rng.random(g.n_points).astype(np.float32)
+    g.point_data["d64"] = rng.random(g.n_points)
+    paths = {}
+    for kind in ("appended", "inline"):
+        paths[kind] = os.path.join(TMP, f"sel_{kind}.vts")
+        w = _vtk.vtkXMLStructuredGridWriter()
+        w.SetFileName(paths[kind])
+        w.SetInputData(g)
+        if kind == "appended":
+            w.SetDataModeToAppended()
+            w.EncodeAppendedDataOff()
+        else:
+            w.SetDataModeToBinary()
+        w.Write()
+    ap = paths["appended"]
+
+    full = A.VTKAdapter()._inspect_mesh(ap, pv.read(ap))
+    A._VTK_LAST.clear()
+    real_read = pv.read
+    pv.read = lambda *a, **k: (_ for _ in ()).throw(AssertionError("bulk read in inspect"))
+    try:
+        meta = inspect_file(ap)
+    finally:
+        pv.read = real_read
+    check("sel_inspect_reads_no_bulk", A._VTK_LAST == {}, A._VTK_LAST)
+    same = (meta.variables == full.variables and meta.dimensions == full.dimensions
+            and meta.itemsizes == full.itemsizes and meta.geometry == full.geometry
+            and {k: v for k, v in meta.attributes.items() if k != "vtk_appended"}
+            == full.attributes)
+    check("sel_header_inspect_equals_full", same,
+          (meta.attributes, full.attributes, meta.geometry, full.geometry))
+    check("sel_positions_size_stated", meta.geometry.get("itemsize") == 8, meta.geometry)
+    check("sel_pushdown_appended",
+          A.adapter_capabilities(meta)["column_pushdown"] is True)
+    check("sel_no_pushdown_inline",
+          A.adapter_capabilities(inspect_file(paths["inline"]))["column_pushdown"] is False)
+
+    A._VTK_LAST.clear()
+    ad = A.VTKAdapter()
+    got = ad.read_all(ap, {"a": "a", "c": "c"}, Narrowing())
+    kept = A._VTK_LAST["mesh"]
+    check("sel_reads_only_requested", set(kept.point_data.keys()) == {"a", "c"},
+          list(kept.point_data.keys()))
+    ok = all(np.array_equal(got[n], np.asarray(g.point_data[n]).reshape((nx, ny, nz),
+                                                                       order="F"))
+             for n in ("a", "c"))
+    check("sel_values_equal_full_read", ok)
+    geo = ad.read_geometry(ap)
+    check("sel_positions_from_same_read", A._VTK_LAST["mesh"] is kept)
+    want = np.asarray(g.points).reshape(nz, ny, nx, 3).transpose(2, 1, 0, 3)
+    check("sel_positions_equal", np.array_equal(geo["points"], want))
+    got["a"][:] = np.nan
+    again = ad.read_array(ap, "a", Narrowing())
+    check("sel_edit_does_not_reach_kept_read", not np.isnan(again).any())
+
+    n = nx * ny * nz
+    est = E.estimate_plan_cost(info=meta, narrowing=Narrowing(project=("a",)),
+                               site="remote", wire_vars=["a"])
+    check("sel_estimate_prices_array_plus_positions",
+          abs(est.server_read_mb - (n * 4 + n * 3 * 8) / E._MB) < 1e-9,
+          (est.server_read_mb, (n * 4 + n * 3 * 8) / E._MB))
+
+
 if __name__ == "__main__":
     print("VTK output")
     test_geometry()
@@ -416,4 +502,5 @@ if __name__ == "__main__":
     test_roi_alignment()
     test_degrade_and_series()
     test_reader()
+    test_selective_read()
     print(f"\n{len(PASS)} passed, {len(SKIP)} skipped  (artifacts in {TMP})")

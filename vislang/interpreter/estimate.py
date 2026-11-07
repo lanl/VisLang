@@ -325,6 +325,25 @@ def _reads_whole(caps):
 
 
 def _server_read(info, narrowing, vars_, *, modality, grid, selected, full, kept, caps):
+    """_server_read_arrays, plus the grid positions a curvilinear grid's read
+    brings with it: materialize reads them whole (uncut) to place the cut, so
+    every request reads all of them, at the element size the file's metadata
+    states. Not priced when the size is unknown (the note says so)."""
+    mb, notes = _server_read_arrays(info, narrowing, vars_, modality=modality, grid=grid,
+                                    selected=selected, full=full, kept=kept, caps=caps)
+    g = getattr(info, 'geometry', None) or {}
+    if mb is None or g.get('kind') != 'structured' or g.get('points') is not None \
+            or modality != 'volume' or not full:
+        return mb, notes
+    if g.get('itemsize'):
+        return mb + full * 3 * int(g['itemsize']) / _MB, notes
+    notes.append("the grid positions this read brings are not priced (their size "
+                 "is not stated in the file's metadata).")
+    return mb, notes
+
+
+def _server_read_arrays(info, narrowing, vars_, *, modality, grid, selected, full, kept,
+                        caps):
     """(MB the reader next to the data reads for `vars_`, notes) — the logical
     bytes the reader touches, not what the result keeps:
 

@@ -197,8 +197,9 @@ def test_structured_local():
     src = write_vts(os.path.join(d, "fire.vts"))
     P, F = terrain_points(), terrain_fields()
     info = inspect_file(src)
-    check("vts: inspect marks listed points, reads none",
-          info.geometry == {"kind": "structured", "points": None}, info.geometry)
+    check("vts: inspect marks listed points, reads none, states their size",
+          info.geometry == {"kind": "structured", "points": None,
+                            "itemsize": P.dtype.itemsize}, info.geometry)
 
     cut = np.s_[2:10:2, 1:9, 0:6:3]
     out = os.path.join(d, "cut.vts")

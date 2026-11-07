@@ -1438,14 +1438,16 @@ def _sized_on_sample(info, prefix, label, catalog, sid):
 
 def _points_mb(info, narrowing, dtype=None):
     """MB of the point positions a curvilinear cut carries: three numbers per
-    selected point, in the cached positions' dtype (float32 when none is
-    cached). Zero for a grid placed by origin + spacing."""
+    selected point, in the cached positions' dtype, else the element size the
+    file's metadata states, else float32. Zero for a grid placed by origin +
+    spacing."""
     from vislang.interpreter.estimate import _selected_grid_cells, _MB
     g = getattr(info, "geometry", None)
     grid = (info.dimensions or {}).get("grid")
     if not g or g.get("kind") != "structured" or not grid:
         return 0.0
-    itemsize = np.dtype(dtype).itemsize if dtype is not None else 4
+    itemsize = (np.dtype(dtype).itemsize if dtype is not None
+                else int(g.get("itemsize") or 4))
     return _selected_grid_cells(narrowing, tuple(grid)) * 3 * itemsize / _MB
 
 

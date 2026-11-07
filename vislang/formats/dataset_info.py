@@ -77,11 +77,17 @@ def structured_geometry(points):
     return {"kind": "structured", "points": pts}
 
 
-def structured_pending():
+def structured_pending(itemsize=None):
     """Inspect's marker for a source whose points are listed one by one. The
     points are bulk data (3 numbers per grid point), so inspect only says they
-    exist; materialize reads them, cut by the same box as the data."""
-    return {"kind": "structured", "points": None}
+    exist; materialize reads them, cut by the same box as the data.
+
+    `itemsize` is the bytes per coordinate when the file's metadata states it
+    (so a request can be priced with the positions it reads); omitted when not."""
+    out = {"kind": "structured", "points": None}
+    if itemsize:
+        out["itemsize"] = int(itemsize)
+    return out
 
 
 def sampled_geometry(points, steps):
@@ -248,7 +254,10 @@ def geometry_descriptor(geometry):
             out["space"] = "cells"
         return out
     if geometry.get("kind") == "structured":
-        return {"kind": "structured"}
+        out = {"kind": "structured"}
+        if geometry.get("itemsize"):
+            out["itemsize"] = int(geometry["itemsize"])
+        return out
     return None
 
 
@@ -261,7 +270,7 @@ def geometry_from_descriptor(desc):
         return uniform_geometry(desc.get("origin"), desc.get("spacing"),
                                 space=desc.get("space"))
     if desc.get("kind") == "structured":
-        return structured_pending()
+        return structured_pending(desc.get("itemsize"))
     return None
 
 

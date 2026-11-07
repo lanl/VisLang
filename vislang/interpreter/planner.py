@@ -426,13 +426,20 @@ def plan_pipeline(terminal, dry_run=False, confirm=False):
                 return held
         if remote_src:
             from vislang.formats.inspect import remote_is_dir
-            # The remote folder probe is skipped on a dry run to keep the dry run
-            # zero-network (as _plan_remote does): there timesteps() is the folder
-            # signal — it applies only to a folder — else we preview the single-file
-            # plan. The actual run probes and dispatches for real.
-            is_folder = (bool(ts_nodes or any(n.moves for n in moving)
-                              or (tagged is not None and tagged.tag_series))
-                         if (dry_run or sink is None) else remote_is_dir(src.uri))
+            # With no sink nothing is planned, so the folder probe is skipped to
+            # keep that preview zero-network: timesteps() (or a per-timestep box)
+            # is the folder signal there. An estimate (a dry run WITH a sink)
+            # reads the schema over the session anyway, so it probes too — a
+            # folder named without timesteps() is still a series, and pricing it
+            # as one file would hand the folder path to a file inspect.
+            signalled = bool(ts_nodes or any(n.moves for n in moving)
+                             or (tagged is not None and tagged.tag_series))
+            if sink is None:
+                is_folder = signalled
+            elif dry_run:
+                is_folder = signalled or remote_is_dir(src.uri)
+            else:
+                is_folder = remote_is_dir(src.uri)     # the run probes and dispatches
         else:
             is_folder = os.path.isdir(src.uri)
         timing.note(site="remote" if remote_src else "local", folder=is_folder)
