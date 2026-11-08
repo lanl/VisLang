@@ -153,8 +153,8 @@ returned all 88 timesteps in 47\,MB, 0.05\,\% of the series. Downloading every f
 instead moves 19.8\,GB, about 420 times as much, for 18 timesteps.
 
 The overview follows the front through the whole run (\cref{fig:cs2speed}a). From it
-alone, the front advances at 21\,m per 1{,}000 steps on the windward slope, crosses the
-crest at step 18{,}020, and moves at 2.8\,m per 1{,}000 steps on the lee slope; the drop
+alone, the front advances at 21\,m per 1{,}000 steps on the windward slope, reaches the
+crest between steps 18{,}000 and 19{,}000, and moves at 2.8\,m per 1{,}000 steps on the lee slope; the drop
 happens between steps 17{,}000 and 22{,}000. Every fifth file shows the same broad
 slowdown, but most of the drop falls inside one of its 5{,}000-step gaps
 (\cref{fig:cs2speed}b). Sampling the files rather than the grid forces the scientist to
@@ -164,9 +164,10 @@ commit to a time spacing before seeing the data; the overview does not.
 at full resolution for every timestep, in a separate evaluation pass on the server. At
 every eighth point, the overview finds the fire at all 83 timesteps that have one; its
 front lies a median of 4.4\,m from the full-resolution front (within one 16\,m grid spacing
-at 92\,\% of timesteps), and it places the crest crossing 257 steps late. Every fourth point
+at 92\,\% of timesteps), and it places the crest crossing one timestep (1{,}000 steps)
+late. Every fourth point
 gains 3\,m of accuracy for eight times the bytes. Every sixteenth point misses the fire at
-14 of the 83 timesteps and places the crossing 2{,}143 steps late. Every eighth point is
+14 of the 83 timesteps and places the crossing two timesteps late. Every eighth point is
 the coarsest overview that still answers \emph{when}.
 
 The overview cannot answer the second question. Below 12\,m above the ground it keeps two
