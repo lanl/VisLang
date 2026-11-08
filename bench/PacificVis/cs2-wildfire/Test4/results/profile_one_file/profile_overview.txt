@@ -1,0 +1,91 @@
+{
+ "file": "/mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/fire#18000.vts",
+ "kind": "overview",
+ "script_read_cut_s": [
+  0.11936493823304772,
+  0.11960929678753018,
+  0.11949703702703118
+ ],
+ "script_read_cut_compress_s": [
+  0.15819965582340956,
+  0.15762624703347683,
+  0.15873882500454783
+ ],
+ "sieve_reduce_s": [
+  0.45583865605294704,
+  0.4549586088396609,
+  0.45554907713085413
+ ]
+}
+
+===== SCRIPT read+cut+compress: top functions by own time =====
+         873 function calls in 0.156 seconds
+
+   Ordered by: internal time
+   List reduced from 102 to 25 due to restriction <25>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.115    0.115    0.115    0.115 {method 'Update' of 'vtkmodules.vtkCommonExecutionModel.vtkAlgorithm' objects}
+       12    0.035    0.003    0.035    0.003 {method 'compress' of 'zlib.Compress' objects}
+        6    0.001    0.000    0.037    0.006 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/miniconda3/envs/vislang/lib/python3.12/site-packages/numpy/lib/_format_impl.py:702(write_array)
+        1    0.001    0.001    0.001    0.001 {method 'UpdateInformation' of 'vtkmodules.vtkCommonExecutionModel.vtkAlgorithm' objects}
+       12    0.001    0.000    0.001    0.000 {built-in method zlib.crc32}
+        6    0.001    0.000    0.001    0.000 {method 'flush' of 'zlib.Compress' objects}
+        6    0.000    0.000    0.000    0.000 {method 'tobytes' of 'numpy.ndarray' objects}
+       58    0.000    0.000    0.000    0.000 {method 'write' of '_io.BufferedRandom' objects}
+        2    0.000    0.000    0.000    0.000 {built-in method _io.open}
+        2    0.000    0.000    0.039    0.020 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/miniconda3/envs/vislang/lib/python3.12/site-packages/numpy/lib/_npyio_impl.py:756(_savez)
+        2    0.000    0.000    0.000    0.000 {method 'close' of '_io.BufferedRandom' objects}
+        1    0.000    0.000    0.117    0.117 /mnt/na1/eecs/research/harp/data/ashrestha/vislang/cs2_test4/profile_one_file.py:36(script_cut)
+        1    0.000    0.000    0.117    0.117 /mnt/na1/eecs/research/harp/data/ashrestha/vislang/cs2_test4/cut_series.py:24(read)
+        1    0.000    0.000    0.156    0.156 /mnt/na1/eecs/research/harp/data/ashrestha/vislang/cs2_test4/profile_one_file.py:43(script_cut_and_compress)
+        6    0.000    0.000    0.000    0.000 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/miniconda3/envs/vislang/lib/python3.12/site-packages/vtkmodules/util/numpy_support.py:205(vtk_to_numpy)
+        6    0.000    0.000    0.001    0.000 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/miniconda3/envs/vislang/lib/python3.12/zipfile/__init__.py:1240(close)
+       12    0.000    0.000    0.000    0.000 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/miniconda3/envs/vislang/lib/python3.12/zipfile/__init__.py:462(FileHeader)
+       22    0.000    0.000    0.000    0.000 {method 'seek' of '_io.BufferedRandom' objects}
+        6    0.000    0.000    0.000    0.000 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/miniconda3/envs/vislang/lib/python3.12/site-packages/numpy/lib/_format_impl.py:445(_write_array_header)
+        6    0.000    0.000    0.000    0.000 {built-in method zlib.compressobj}
+       12    0.000    0.000    0.035    0.003 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/miniconda3/envs/vislang/lib/python3.12/zipfile/__init__.py:1221(write)
+        1    0.000    0.000    0.000    0.000 {method 'GetOutput' of 'vtkmodules.vtkIOXML.vtkXMLStructuredGridReader' objects}
+        6    0.000    0.000    0.000    0.000 {built-in method numpy.asarray}
+        6    0.000    0.000    0.000    0.000 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/miniconda3/envs/vislang/lib/python3.12/zipfile/__init__.py:1699(_open_to_write)
+        2    0.000    0.000    0.000    0.000 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/miniconda3/envs/vislang/lib/python3.12/zipfile/__init__.py:1314(__init__)
+
+
+
+
+===== SIEVE reduce (one timestep): top functions by own time =====
+         5660 function calls (5464 primitive calls) in 0.451 seconds
+
+   Ordered by: internal time
+   List reduced from 400 to 25 due to restriction <25>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        6    0.281    0.047    0.281    0.047 {built-in method numpy.array}
+        1    0.116    0.116    0.116    0.116 {method 'Update' of 'vtkmodules.vtkCommonExecutionModel.vtkAlgorithm' objects}
+       12    0.036    0.003    0.036    0.003 {method 'compress' of 'zlib.Compress' objects}
+        2    0.003    0.001    0.003    0.001 {method 'clear' of 'dict' objects}
+        1    0.002    0.002    0.451    0.451 /mnt/na1/eecs/research/harp/data/ashrestha/vislang/cs2_test4/profile_one_file.py:59(sieve_cut)
+      104    0.001    0.000    0.001    0.000 {built-in method posix.stat}
+        1    0.001    0.001    0.002    0.002 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/projects/VisLang/vislang/interpreter/load.py:248(_settle)
+        2    0.001    0.001    0.001    0.001 {method 'Parse' of 'vtkmodules.vtkIOXMLParser.vtkXMLDataParser' objects}
+        2    0.001    0.000    0.001    0.000 {built-in method numpy.ascontiguousarray}
+       12    0.001    0.000    0.001    0.000 {built-in method zlib.crc32}
+        1    0.001    0.001    0.001    0.001 {method 'UpdateInformation' of 'vtkmodules.vtkCommonExecutionModel.vtkAlgorithm' objects}
+        4    0.001    0.000    0.001    0.000 {built-in method _io.open}
+        6    0.000    0.000    0.000    0.000 {method 'flush' of 'zlib.Compress' objects}
+        7    0.000    0.000    0.000    0.000 {method 'tobytes' of 'numpy.ndarray' objects}
+        6    0.000    0.000    0.038    0.006 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/miniconda3/envs/vislang/lib/python3.12/site-packages/numpy/lib/_format_impl.py:702(write_array)
+        1    0.000    0.000    0.000    0.000 {method 'update' of '_hashlib.HASH' objects}
+        1    0.000    0.000    0.000    0.000 {built-in method posix.listdir}
+       56    0.000    0.000    0.000    0.000 {method 'write' of '_io.BufferedRandom' objects}
+        8    0.000    0.000    0.001    0.000 {method '__exit__' of '_io._IOBase' objects}
+      223    0.000    0.000    0.000    0.000 <frozen posixpath>:71(join)
+       44    0.000    0.000    0.000    0.000 {built-in method posix.lstat}
+        1    0.000    0.000    0.447    0.447 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/projects/VisLang/vislang/remote/executor.py:336(_run_folder_delta)
+        1    0.000    0.000    0.159    0.159 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/projects/VisLang/vislang/formats/adapters.py:1141(read_all)
+        5    0.000    0.000    0.041    0.008 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/projects/VisLang/vislang/formats/adapters.py:1115(_column)
+        2    0.000    0.000    0.118    0.059 /home.na1/ad.wsu.edu/aayush.shrestha/pvt/projects/VisLang/vislang/formats/adapters.py:981(_read)
+
+
+
