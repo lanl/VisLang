@@ -6,7 +6,7 @@
 HEIGHTS.csv (level, height_m) gives each grid level's height above the lowest level,
 over the box (scripts/box_heights.py). All wind values are full resolution, over the
 burning strip's rows (|y| <= 50 m), weighted by grid points.
-(a) front speed (slope of the front over +-2000 steps).
+(a) front speed between consecutive saved timesteps (1000 steps), unsmoothed.
 (b) the wind along the spread ahead of the front: the lowest grid level within 10 m of
     the front, and 1.3-5.2 m above the ground (levels 1-4) within 60 m of it.
 Shaded: the slowdown. Band: the 1000 steps in which the full-resolution front crosses
@@ -69,10 +69,16 @@ for ax in (a1, a3):
     ax.grid(axis="y", color=GRID, lw=0.5)
     ax.spines[["top", "right"]].set_visible(False)
 
-sp = [np.polyfit(L[np.abs(L - c) <= HALF] / 1000, X[np.abs(L - c) <= HALF], 1)[0] for c in labs]
-a1.plot(t, sp, color=INK, lw=1.2, marker="o", ms=1.8)
-a1.text(ca / 1000 - 0.3, max(sp) * 0.97, "crest", color=MUTED, fontsize=6.5, va="top", ha="right")
-a1.text(SLOW[1] / 1000 + 0.4, max(sp) * 0.55, "slowdown", color=MUTED, fontsize=6.5)
+# Speed between consecutive saved timesteps, drawn across the 1000 steps it measures
+# (no smoothing: a fitted slope would start the drop before the crest).
+iv = [(a, b) for a, b in zip(labs, labs[1:])]
+sp = [(fr[b] - fr[a]) / (b - a) * 1000 for a, b in iv]
+a1.stairs(sp, [iv[0][0] / 1000] + [b / 1000 for _, b in iv], color=INK, lw=1.2, baseline=None)
+top = a1.get_xaxis_transform()
+a1.text((ca + cb_) / 2000, 1.01, "crest", transform=top, color=MUTED, fontsize=6.5,
+        ha="center", va="bottom")
+a1.text((SLOW[0] + SLOW[1]) / 2000 + 1.2, 1.01, "slowdown", transform=top, color=MUTED,
+        fontsize=6.5, ha="left", va="bottom")
 ylab(a1, "front speed", "(m per 1000 steps)")
 a1.set_ylim(bottom=0)
 
