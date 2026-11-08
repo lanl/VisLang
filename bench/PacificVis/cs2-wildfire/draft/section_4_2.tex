@@ -75,20 +75,24 @@
 \begin{table}[t]
   \centering
   \small
-  \setlength{\tabcolsep}{2.6pt}
+  \setlength{\tabcolsep}{2.1pt}
   \begin{tabular}{@{}lrrrrrrr@{}}
     \toprule
-     & Time- & \multicolumn{3}{c}{GB over the network} & Bytes & Server & Lines \\
-    \cmidrule(lr){3-5}
-    Route & steps$^\ast$ & overview & box & total & vs \Sname{} & time (s) & of code \\
+     & \multicolumn{3}{c}{GB over the network} & Estimated & Bytes & Server & Lines \\
+    \cmidrule(lr){2-4}
+    Route & overview & box & total & GB$^\ddagger$ & vs \Sname{} & time (s) & of code \\
     \midrule
-    \Sname{}               & 88 & 0.05  & 0.36  & 0.40  & 1.0$\times$ & 804 & 9 \\
-    Scripts on the server  & 88 & 0.05  & 0.35  & 0.40  & 1.0$\times$ & 719 & 111 \\
-    Two-pass download      & 18 & 19.76 & 32.94 & 52.70 & 131$\times$ & --- & 99 \\
-    Download everything    & 88 & 96.62 & 0     & 96.62 & 240$\times$ & --- & 91 \\
+    \Sname{}                     & 0.05  & 0.36  & 0.40  & 0.61 & 1.0$\times$ & 804 & 9 \\
+    Scripts on the server        & 0.05  & 0.35  & 0.40  & ---  & 1.0$\times$ & 719 & 111 \\
+    Two-pass download$^\dagger$  & 19.76 & 32.94 & 52.70 & ---  & 131$\times$ & --- & 99 \\
+    Download everything          & 96.62 & 0     & 96.62 & ---  & 240$\times$ & --- & 91 \\
     \bottomrule
   \end{tabular}\\[2pt]
-  {\footnotesize $^\ast$Timesteps in the overview.}
+  \parbox{\columnwidth}{\footnotesize $^\dagger$Its overview holds 18 timesteps (every
+  fifth file); every other route's holds all 88.
+  $^\ddagger$\sname{}'s estimate before moving anything (overview 0.15, box 0.46): the
+  arrays uncompressed, and the box sized on the grid positions the overview brought back;
+  \sname{} compresses what it sends.}
   \caption{What each route moves over the network to deliver the same two results: the
   overview, and the window and box at full resolution. \sname{}'s and the scripts' outputs
   are identical, bit for bit. Server time is the time spent on the server reading and
