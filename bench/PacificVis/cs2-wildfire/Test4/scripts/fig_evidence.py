@@ -7,7 +7,8 @@ HEIGHTS.csv (level, height_m) gives each grid level's height above the lowest le
 over the box (scripts/box_heights.py). All wind values are full resolution, over the
 burning strip's rows (|y| <= 50 m), weighted by grid points.
 (a) front speed (slope of the front over +-2000 steps).
-(b) u from the front to 60 m ahead of it, by height and time; blue = against the
+(b) u averaged from the front to 60 m ahead of it, by height and time (colorbar outside
+    the axes, so all three panels share one time axis); blue = against the
     spread; black contour u = 0.
 (c) three timelines: the lowest grid level within 10 m of the front; levels 1-4 within
     60 m of it; levels 1-4 from 60 to 120 m ahead.
@@ -28,6 +29,15 @@ ev, hpath, out = sys.argv[1:4]
 WINDOW, SLOW, CREST, HALF = (9000, 45000), (17000, 22000), -2.0, 2000
 INK, MUTED, GRID, BAND = "#1f1f1e", "#6b6a64", "#e6e5e0", "#efeee9"
 C0, C1, C2 = "#1f1f1e", "#eb6834", "#2a78d6"
+def ylab(ax, main, sub=None, pad=9):
+    """Axis label with its qualifier in smaller type, on its own line nearer the axis."""
+    ax.set_ylabel(main, labelpad=pad if sub else 4)
+    if sub:
+        ax.annotate(sub, xy=(1, 0.5), xycoords=ax.yaxis.label, xytext=(1.5, 0),
+                    textcoords="offset points", rotation=90, ha="left", va="center",
+                    fontsize=5.6, color=INK)
+
+
 H = {int(r["level"]): float(r["height_m"]) for r in csv.DictReader(open(hpath))}
 
 fr = {int(r["label"]): float(r["front_x"]) for r in csv.DictReader(open(os.path.join(ev, "fronts.csv")))
@@ -67,7 +77,7 @@ for ax in (a1, a2, a3):
     ax.axvline(cx / 1000, color=MUTED, lw=0.7, ls=":")
 a1.text(cx / 1000 + 0.4, max(sp) * 0.95, "crest", color=MUTED, fontsize=6.5, va="top")
 a1.text(SLOW[1] / 1000 + 0.4, max(sp) * 0.55, "slowdown", color=MUTED, fontsize=6.5)
-a1.set_ylabel("front speed\n(m per 1000 steps)")
+ylab(a1, "front speed", "(m per 1000 steps)")
 a1.set_ylim(bottom=0)
 
 levels = [k for k in sorted(H) if H[k] <= 50]
@@ -78,9 +88,9 @@ edges_h = np.concatenate([[0], (hz[1:] + hz[:-1]) / 2, [hz[-1] + (hz[-1] - hz[-2
 norm = TwoSlopeNorm(vmin=-3, vcenter=0, vmax=10)
 pm = a2.pcolormesh(edges_t, edges_h, Z, cmap="RdBu_r", norm=norm, shading="flat")
 a2.contour(t, hz, Z, levels=[0], colors=INK, linewidths=0.6)
-a2.set_ylabel("height (m),\n0-60 m ahead of front")
-cb = fig.colorbar(pm, ax=a2, pad=0.02, fraction=0.05)
-cb.set_label("u (m/s); blue = against spread", fontsize=6.5)
+ylab(a2, "height (m)")
+cb = fig.colorbar(pm, cax=a2.inset_axes([1.02, 0, 0.035, 1]))
+cb.set_label("u, 0-60 m ahead of front (m/s)\nblue = against the spread", fontsize=5.6)
 cb.ax.tick_params(labelsize=6.5)
 
 series = [("lowest grid level, 0-10 m ahead", ("0-10",), (0,), C0, "--"),
@@ -89,7 +99,7 @@ series = [("lowest grid level, 0-10 m ahead", ("0-10",), (0,), C0, "--"),
 for name, bins, lv, c, ls in series:
     a3.plot(t, [u(n, bins, lv) for n in labs], color=c, lw=1.1, ls=ls, label=name)
 a3.axhline(0, color=MUTED, lw=0.6)
-a3.set_ylabel("u ahead of front\n(m/s)")
+ylab(a3, "u ahead of front", "(m/s)")
 a3.set_xlabel("timestep (thousands)")
 a3.legend(loc="upper right", frameon=False, fontsize=6.2, handlelength=1.8)
 a3.set_xlim(t[0] - 0.5, t[-1] + 0.5)

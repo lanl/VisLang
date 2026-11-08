@@ -36,6 +36,15 @@ sieve_gb = int(rows["Sieve"]["overview"]) / 1e9
 pass1_gb = int(rows["Two-pass download"]["overview"]) / 1e9
 
 
+def ylab(ax, main, sub=None, pad=9):
+    """Axis label with its qualifier in smaller type, on its own line nearer the axis."""
+    ax.set_ylabel(main, labelpad=pad if sub else 4)
+    if sub:
+        ax.annotate(sub, xy=(1, 0.5), xycoords=ax.yaxis.label, xytext=(1.5, 0),
+                    textcoords="offset points", rotation=90, ha="left", va="center",
+                    fontsize=5.6, color=INK)
+
+
 def fit_speed(fr):
     labs = np.array(sorted(fr))
     xs = np.array([fr[n] for n in labs])
@@ -92,7 +101,7 @@ for a, b in zip(every5, every5[1:]):
             solid_capstyle="butt")
     a2.plot([a / 1000, b / 1000], [v, v], lw=0, marker="|", ms=4, color=ORANGE, zorder=4)
 a2.axhline(0, color=MUTED, lw=0.6)
-a2.set_ylabel("front speed\n(m per 1000 steps)")
+ylab(a2, "front speed", "(m per 1000 steps)")
 a2.set_xlabel("timestep (thousands)")
 a2.set_xlim(6, 92)
 a2.text(WINDOW[1] / 1000 - 0.6, a2.get_ylim()[0] + 0.6, "full-resolution window",
