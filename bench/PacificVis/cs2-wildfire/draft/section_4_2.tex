@@ -216,7 +216,7 @@ coordinates. On this terrain-following grid the box holds $151 \times 121 \times
 points per timestep, with all nine grid levels below 12\,m. Before fetching, \sname{} estimated
 the request's size, using the grid positions the overview had brought back
 (\cref{tab:cs2est}); it then returned the 37 timesteps at full resolution in 0.36\,GB. A two-pass download copies the window's files whole: 32.9\,GB.
-Both outputs carry the positions of their grid points, so the full-resolution box sits
+The overview and the box are both saved with the position of every grid point, so the box sits
 inside the overview in ParaView without any alignment step (\cref{fig:teaser}).
 
 \subsubsection{Results}
