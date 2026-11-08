@@ -152,8 +152,14 @@ per timestep) and the five fields that follow the fire: the wind (\code{u}, \cod
 returned all 88 timesteps in 47\,MB, 0.05\,\% of the series. Downloading every fifth file
 instead moves 19.8\,GB, about 420 times as much, for 18 timesteps.
 
-The overview follows the front through the whole run (\cref{fig:cs2speed}a). From it
-alone, the front advances at 21\,m per 1{,}000 steps on the windward slope, reaches the
+The overview follows the front through the whole run (\cref{fig:cs2speed}a). Played in
+ParaView, it shows the fire slowing once it crosses the ridge. To time this, we ran a
+separate script on the overview \sname{} returned: in each timestep it takes the front as
+the farthest point downwind where the lowest grid level is at least 400\,K, within 50\,m
+of the centreline, and divides the distance the front moves by the steps between
+timesteps. The same front can be tracked inside ParaView with its Threshold and Plot Data
+Over Time filters; \sname{} supplies the data, not the analysis. On the overview alone, the
+front advances at 21\,m per 1{,}000 steps on the windward slope, reaches the
 crest between steps 18{,}000 and 19{,}000, and moves at 2.8\,m per 1{,}000 steps on the lee slope; the drop
 happens between steps 17{,}000 and 22{,}000. Every fifth file shows the same broad
 slowdown, but most of the drop falls inside one of its 5{,}000-step gaps
