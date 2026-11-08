@@ -163,8 +163,12 @@ front advances at 21\,m per 1{,}000 steps on the windward slope, reaches the
 crest between steps 18{,}000 and 19{,}000, and moves at 2.8\,m per 1{,}000 steps on the lee slope; the drop
 happens between steps 17{,}000 and 22{,}000. Every fifth file shows the same broad
 slowdown, but most of the drop falls inside one of its 5{,}000-step gaps
-(\cref{fig:cs2speed}b). Sampling the files rather than the grid forces the scientist to
-commit to a time spacing before seeing the data; the overview does not.
+(\cref{fig:cs2speed}b). Sampling the files risks missing exactly the moment the scientist is
+looking for. The overview carries no such risk: it keeps every timestep and thins only the
+grid. Without \sname{}, getting it means logging in to the server, writing and running a
+script that cuts every file, copying the results back, and loading them into a
+visualization tool; with \sname{} it is one four-line request (\cref{lst:cs2}), issued
+from ParaView.
 
 \emph{Is the overview enough to find the slowdown?} We compared it with the front computed
 at full resolution for every timestep, in a separate evaluation pass on the server. At
