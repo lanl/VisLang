@@ -75,29 +75,43 @@
 \begin{table}[t]
   \centering
   \small
-  \setlength{\tabcolsep}{2.1pt}
-  \begin{tabular}{@{}lrrrrrrr@{}}
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{@{}lrrrrrr@{}}
     \toprule
-     & \multicolumn{3}{c}{GB over the network} & Estimated & Bytes & Server & Lines \\
+     & \multicolumn{3}{c}{GB over the network} & Bytes & Server & Lines \\
     \cmidrule(lr){2-4}
-    Route & overview & box & total & GB$^\ddagger$ & vs \Sname{} & time (s) & of code \\
+    Route & overview & box & total & vs \Sname{} & time (s) & of code \\
     \midrule
-    \Sname{}                     & 0.05  & 0.36  & 0.40  & 0.61 & 1.0$\times$ & 804 & 9 \\
-    Scripts on the server        & 0.05  & 0.35  & 0.40  & ---  & 1.0$\times$ & 719 & 111 \\
-    Two-pass download$^\dagger$  & 19.76 & 32.94 & 52.70 & ---  & 131$\times$ & --- & 99 \\
-    Download everything          & 96.62 & 0     & 96.62 & ---  & 240$\times$ & --- & 91 \\
+    \Sname{}                     & 0.05  & 0.36  & 0.40  & 1.0$\times$ & 804 & 9 \\
+    Scripts on the server        & 0.05  & 0.35  & 0.40  & 1.0$\times$ & 719 & 111 \\
+    Two-pass download$^\dagger$  & 19.76 & 32.94 & 52.70 & 131$\times$ & --- & 99 \\
+    Download everything          & 96.62 & 0     & 96.62 & 240$\times$ & --- & 91 \\
     \bottomrule
   \end{tabular}\\[2pt]
   \parbox{\columnwidth}{\footnotesize $^\dagger$Its overview holds 18 timesteps (every
-  fifth file); every other route's holds all 88.
-  $^\ddagger$\sname{}'s estimate before moving anything (overview 0.15, box 0.46): the
-  arrays uncompressed, and the box sized on the grid positions the overview brought back;
-  \sname{} compresses what it sends.}
+  fifth file); every other route's holds all 88.}\par\vspace{3pt}
   \caption{What each route moves over the network to deliver the same two results: the
   overview, and the window and box at full resolution. \sname{}'s and the scripts' outputs
   are identical, bit for bit. Server time is the time spent on the server reading and
   cutting; reads on the server are examined in \cref{sec:cs3}.}
   \label{tab:cs2}
+\end{table}
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    \Sname{} request & Estimated (MB) & Sent (MB) \\
+    \midrule
+    Overview (all 88 timesteps)  & 146 & 47 \\
+    Box (37 timesteps)           & 464 & 356 \\
+    \bottomrule
+  \end{tabular}
+  \caption{\sname{}'s estimate of each request, given before anything moves, against what
+  it sent. The estimate counts the arrays uncompressed; \sname{} compresses what it sends.
+  The box's estimate is sized on the grid positions the overview brought back.}
+  \label{tab:cs2est}
 \end{table}
 
 
@@ -199,9 +213,9 @@ From the overview, the scientist chose the window from step 9{,}000 to 45{,}000
 phase. On the overview in ParaView, they drew a box over the crest and the lee slope
 (\cref{fig:teaser}); the plugin turned it into a \code{region} in the data's own
 coordinates. On this terrain-following grid the box holds $151 \times 121 \times 39$
-points per timestep, with all nine grid levels below 12\,m. \sname{} priced the request on
-the grid positions the overview had brought back, then returned the 37 timesteps at full
-resolution in 0.36\,GB. A two-pass download copies the window's files whole: 32.9\,GB.
+points per timestep, with all nine grid levels below 12\,m. Before fetching, \sname{} estimated
+the request's size, using the grid positions the overview had brought back
+(\cref{tab:cs2est}); it then returned the 37 timesteps at full resolution in 0.36\,GB. A two-pass download copies the window's files whole: 32.9\,GB.
 Both outputs carry the positions of their grid points, so the full-resolution box sits
 inside the overview in ParaView without any alignment step (\cref{fig:teaser}).
 
