@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 CREST, HALF = -2.0, 2000
 WINDOW = (9000, 45000)
 BLUE, ORANGE, GREY = "#2a78d6", "#eb6834", "#a9a8a2"
+CRESTBAND = "#d9d7cf"
 INK, MUTED, GRID, BAND = "#1f1f1e", "#6b6a64", "#e6e5e0", "#efeee9"
 
 ev, sv, cost, out = sys.argv[1:5]
@@ -56,10 +57,11 @@ def fit_speed(fr):
 
 
 def crossing(fr):
+    """The two saved timesteps the front crosses the crest between."""
     labs = sorted(fr)
     for a, b in zip(labs, labs[1:]):
         if fr[a] < CREST <= fr[b]:
-            return a + (CREST - fr[a]) / (fr[b] - fr[a]) * (b - a)
+            return a, b
 
 
 plt.rcParams.update({"font.size": 7.5, "axes.edgecolor": MUTED, "axes.labelcolor": INK,
@@ -70,7 +72,7 @@ fig, (a1, a2) = plt.subplots(2, 1, figsize=(3.45, 3.3), sharex=True,
 cx = crossing(full)
 for ax in (a1, a2):
     ax.axvspan(WINDOW[0] / 1000, WINDOW[1] / 1000, color=BAND, zorder=0, lw=0)
-    ax.axvline(cx / 1000, color=MUTED, lw=0.7, ls=":", zorder=1)
+    ax.axvspan(cx[0] / 1000, cx[1] / 1000, color=CRESTBAND, lw=0, zorder=0.5)
     ax.grid(axis="y", color=GRID, lw=0.5)
     ax.spines[["top", "right"]].set_visible(False)
 
@@ -86,7 +88,7 @@ a1.plot([n / 1000 for n in every5], [full[n] for n in every5], lw=0, marker="o",
         mfc="white", mec=ORANGE, mew=1.3, zorder=4,
         label=f"every 5th file: {len(labels_all[::5])} timesteps, {pass1_gb:.1f} GB")
 a1.set_ylabel("front position x (m)")
-a1.text(cx / 1000 + 0.8, a1.get_ylim()[0] + 10, "front\ncrosses\ncrest", color=MUTED,
+a1.text(cx[1] / 1000 + 0.8, a1.get_ylim()[0] + 10, "front\ncrosses\ncrest", color=MUTED,
         fontsize=6.5, va="bottom")
 a1.legend(loc="lower left", bbox_to_anchor=(0, 1.0), frameon=False, fontsize=6.5,
           handletextpad=0.4, borderaxespad=0.1)
