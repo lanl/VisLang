@@ -1,0 +1,22 @@
+Status: OK
+Spec: bench/PacificVis/cs3-channel-flow/Test1/results/step6_cold/spec_as_run.py
+
+(estimate — dry run: forms static-checked against the source schema and the run costed; nothing materialized. Run `execute` to materialize.)
+
+--- Pipelines ---
+[save] ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw  (dry run — nothing materialized)
+    spec (as written): source(u_10240x7680x1536_float64.raw) → region{z:(1,1535)} → subsample(16) → save
+    remote source ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw
+    plan: reduce on the remote (narrowing prefix next to the data), pull the result, run the sink locally
+    inspect ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/TurbulentChannelFLow/u_10240x7680x1536_float64.raw → raw: vars=['u'], dims={'grid': (10240, 7680, 1536)}
+    region {'z': (1, 1535)} (pushdown)
+    subsample uniform=16 (pushdown)
+    fuse -> grid_ranges=[(None, None, 16), (None, None, 16), (1, 1535, 16)]
+    -> save (would run locally)
+    Cost estimate (remote):
+      read on the server: ~3.5 GB
+      over the wire: ~225 MB
+      result size: ~225 MB
+      est. transfer time: ~89 s–5.9 min (measured)
+      note: a stride along the file's contiguous axis saves no reading: 46,080 rows of 10,225 cells are read to keep every 16th.
+      note: nothing for this request is in the extent cache.

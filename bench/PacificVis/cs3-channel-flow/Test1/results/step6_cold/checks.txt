@@ -1,0 +1,7 @@
+step 1 output:       outputs/s1_stride16.vti
+cold re-run output:  outputs/s6_cold_stride16.vti
+dims equal: True (640, 480, 96)
+origin/spacing equal: True (0.0, 0.0, 1.0) (16.0, 16.0, 16.0)
+u bitwise equal: True
+sha256 u (step 1):   f61dd55b40ad6d3544de00d3c786929cb6c30509bd65d0bff93dc0d9699e32c2
+sha256 u (re-run):   f61dd55b40ad6d3544de00d3c786929cb6c30509bd65d0bff93dc0d9699e32c2
