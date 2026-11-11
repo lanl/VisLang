@@ -8,6 +8,32 @@ describe what you want to see, the AI writes declarative pipeline code, and
 you iterate together — exploring data, tuning parameters, and refining the
 picture through conversation.
 
+SIVA has two parts:
+
+1. **A pipeline DSL** — a concise Python syntax for VTK visualization.
+   You describe sources, filters, and display properties declaratively;
+   SIVA wires up the VTK objects for you.
+
+2. **An MCP server** — exposes the DSL and data query tools to any AI assistant
+   via [Model Context Protocol](https://modelcontextprotocol.io/). The assistant
+   can load data, explore field statistics, execute pipeline code, adjust the
+   camera, and see screenshots — all through tool calls.
+
+## Paper
+
+SIVA is described in our IEEE VIS 2026 short paper:
+
+> Michael Ballantyne, Aayush Kaji Shrestha, Pascal Grosset, Thomas Gilray, and
+> Roxana Bujack. **SIVA: A Conversational and Declarative Scientific
+> Visualization Tool.** IEEE VIS 2026 Short Papers.
+
+- [Preprint (PDF)](https://mballantyne.net/publications/vis2026-preprint.pdf)
+- [IEEE VIS 2026 paper page](https://ieeevis.org/year/2026/program/content/2588596f-3398-4787-9669-f29d02e7e90a/)
+
+The `siva-vis2026` tag is the version of SIVA described in the paper.
+
+## An example
+
 Here's what a pipeline file looks like — this volume-renders a CT scan of a
 bonsai tree with a terrain colormap and gradient-enhanced opacity:
 
@@ -25,17 +51,6 @@ background(0.02, 0.02, 0.05)
 ```
 
 ![Bonsai CT scan rendered with SIVA](docs/example.png)
-
-SIVA has two parts:
-
-1. **A pipeline DSL** — a concise Python syntax for VTK visualization.
-   You describe sources, filters, and display properties declaratively;
-   SIVA wires up the VTK objects for you.
-
-2. **An MCP server** — exposes the DSL and data query tools to any AI assistant
-   via [Model Context Protocol](https://modelcontextprotocol.io/). The assistant
-   can load data, explore field statistics, execute pipeline code, adjust the
-   camera, and see screenshots — all through tool calls.
 
 ## Setup
 
