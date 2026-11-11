@@ -31,6 +31,8 @@ SIVA is described in our IEEE VIS 2026 short paper:
 - [IEEE VIS 2026 paper page](https://ieeevis.org/year/2026/program/content/2588596f-3398-4787-9669-f29d02e7e90a/)
 
 The `siva-vis2026` tag is the version of SIVA described in the paper.
+Development has continued since on the
+[`SIVA` branch](https://github.com/lanl/VisLang/tree/SIVA).
 
 ## An example
 
