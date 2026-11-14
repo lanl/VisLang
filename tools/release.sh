@@ -78,34 +78,35 @@ trap 'rm -rf "$work"' EXIT
 stage="$work/tree"
 mkdir "$stage"
 
-# tests/ comes along only to check the release tree, then is dropped.
-git archive HEAD -- "${paths[@]}" tests | tar -x -C "$stage"
+git archive HEAD -- "${paths[@]}" | tar -x -C "$stage"
 
 if [[ $tests -eq 1 ]]; then
     py="${VISLANG_PYTHON:-/opt/miniconda3/envs/vislang/bin/python}"
+    # Test a separate copy (the release tree plus tests/), so nothing a test
+    # writes (.vislang/ caches, downloads, logs) can reach what ships.
+    check="$work/check"
+    mkdir "$check"
+    git archive HEAD -- "${paths[@]}" tests | tar -x -C "$check"
     # Test it as users get it: a git checkout (provenance records the commit).
-    git -C "$stage" init -q
-    git -C "$stage" add -A
-    git -C "$stage" -c user.name=release -c user.email=release@localhost commit -qm stage
+    git -C "$check" init -q
+    git -C "$check" add -A
+    git -C "$check" -c user.name=release -c user.email=release@localhost commit -qm stage
     # Test datasets are gitignored in dev; link them in for the run only.
     for f in "$here"/tests/*.raw; do
-        [[ -e "$f" ]] && ln -s "$f" "$stage/tests/"
+        [[ -e "$f" ]] && ln -s "$f" "$check/tests/"
     done
     # The tests are standalone scripts that fail by assertion. A test of
     # dev-only code is marked with a "# release: dev-only" line and skipped.
     failed=()
-    for t in "$stage"/tests/test_*.py; do
+    for t in "$check"/tests/test_*.py; do
         grep -q '^# release: dev-only' "$t" && continue
-        (cd "$stage" && "$py" "$t" > /dev/null 2>&1) || failed+=("$(basename "$t")")
+        (cd "$check" && "$py" "$t" > /dev/null 2>&1) || failed+=("$(basename "$t")")
     done
-    rm -rf "$stage/.git"
     if [[ ${#failed[@]} -gt 0 ]]; then
         echo "failed in the release tree: ${failed[*]}; nothing published" >&2
         exit 1
     fi
 fi
-rm -rf "$stage/tests"
-find "$stage" -name __pycache__ -type d -prune -exec rm -rf {} +
 
 # Dev docs never ship: empty every .md, then lay the user-facing overlay on top.
 find "$stage" -name '*.md' -type f -exec sh -c ': > "$1"' _ {} \;
