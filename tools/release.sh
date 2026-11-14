@@ -4,31 +4,40 @@
 # One-way: dev -> Sieve; never merge back. What ships is listed in
 # release/manifest. Only committed content ships (git archive of HEAD), so
 # untracked scratch can't leak, and each release commit names the dev SHA it was
-# built from. Sieve's history holds only release commits.
+# built from. Sieve's history should hold only release commits.
 #
 # Documentation is written for users separately: every .md that ships comes from
 # release/overlay/<same path>, or ships EMPTY as a placeholder marking where a
 # user-facing doc is needed. A README.md and CLAUDE.md placeholder always ship.
 # Non-.md files in release/overlay/ (e.g. .gitignore) replace the dev ones.
+# So edit Sieve's docs in release/overlay/ here, never on the Sieve branch: every
+# release (fresh or not) rebuilds Sieve's tree from dev. Edits committed straight
+# to Sieve since the last release are detected, and the release refuses to drop
+# them unless --discard-sieve-edits is given.
 #
 #   tools/release.sh [--dry-run] [--fresh] [--push] [--tag vX.Y] [--skip-tests]
+#                    [--discard-sieve-edits]
 #
-# --dry-run   stage, test, and list what would ship; touch nothing.
+# --dry-run   stage, test, and list what would ship; publish nothing (it still
+#             fetches Sieve to check for edits made there).
 # --fresh     start Sieve over as a single history-free commit (the first
 #             release, or one that replaces a branch this script didn't make).
 #             Replacing it needs a force-push; it's leased to the tip seen here.
 # --push      push the release commit (and tag) to $SIEVE_REMOTE/$SIEVE_BRANCH.
 #             Without it, the commit is built and its SHA printed for review.
+# --discard-sieve-edits
+#             release even though it overwrites edits made directly on Sieve.
 #
 # SIEVE_REMOTE defaults to origin, SIEVE_BRANCH to Sieve.
 set -euo pipefail
 
 here="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 remote="${SIEVE_REMOTE:-origin}" branch="${SIEVE_BRANCH:-Sieve}"
-tag="" push=0 tests=1 dry=0 fresh=0
+tag="" push=0 tests=1 dry=0 fresh=0 discard=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --dry-run)    dry=1; shift ;;
+        --discard-sieve-edits) discard=1; shift ;;
         --fresh)      fresh=1; shift ;;
         --push)       push=1; shift ;;
         --tag)        tag="$2"; shift 2 ;;
@@ -109,6 +118,47 @@ if grep -rInE "$leaks" "$stage"; then
     exit 1
 fi
 
+old="" base=""
+if git ls-remote --exit-code --heads "$remote" "$branch" > /dev/null; then
+    git fetch -q "$remote" "refs/heads/$branch"
+    old="$(git rev-parse FETCH_HEAD)"
+    # The newest commit this script made; anything after it was committed
+    # straight to Sieve.
+    base="$(git log -1 --format=%H -F --grep="(from VisLang@" "$old")"
+fi
+
+# Refuse to silently drop edits made directly on Sieve (docs written there, say):
+# the release tree comes only from dev + release/overlay/. A branch this script
+# never made counts as edited throughout.
+if [[ -n "$old" ]]; then
+    if [[ -n "$base" ]]; then
+        edited="$(git diff --name-only "$base" "$old")"
+    else
+        edited="$(git ls-tree -r --name-only "$old")"
+    fi
+    lost=()
+    while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        was="$(git rev-parse -q --verify "$old:$f" || true)"
+        now=""
+        if [[ -L "$stage/$f" ]]; then
+            now="$(printf '%s' "$(readlink "$stage/$f")" | git hash-object --stdin)"
+        elif [[ -f "$stage/$f" ]]; then
+            now="$(git hash-object --no-filters "$stage/$f")"
+        fi
+        [[ "$was" == "$now" ]] || lost+=("$f")
+    done <<< "$edited"
+    if [[ ${#lost[@]} -gt 0 ]]; then
+        echo "edits made directly on $remote/$branch that this release would overwrite:" >&2
+        printf '  %s\n' "${lost[@]}" >&2
+        echo "copy them into release/overlay/<same path> and commit, or pass --discard-sieve-edits" >&2
+        if [[ $dry -eq 0 && $discard -eq 0 ]]; then
+            echo "nothing published" >&2
+            exit 1
+        fi
+    fi
+fi
+
 if [[ $dry -eq 1 ]]; then
     (cd "$stage" && find . \( -type f -o -type l \) | sed 's|^\./||' | sort |
         while IFS= read -r f; do
@@ -126,16 +176,13 @@ git --git-dir="$gitdir" --work-tree="$stage" -C "$stage" add -A -f .
 tree="$(git write-tree)"
 unset GIT_INDEX_FILE
 
-old=""
-if git ls-remote --exit-code --heads "$remote" "$branch" > /dev/null; then
-    git fetch -q "$remote" "refs/heads/$branch"
-    old="$(git rev-parse FETCH_HEAD)"
-fi
 parent=()
 if [[ $fresh -eq 0 ]]; then
     [[ -n "$old" ]] \
         || { echo "$remote/$branch doesn't exist; the first release needs --fresh" >&2; exit 1; }
-    git log -1 --format=%B "$old" | grep -q "(from VisLang@" \
+    # Commits made on Sieve after a release are fine to build on: the check
+    # above already made sure their changes are carried (or knowingly dropped).
+    [[ -n "$base" ]] \
         || { echo "$remote/$branch wasn't made by this script; replace it once with --fresh" >&2; exit 1; }
     if [[ "$(git rev-parse "$old^{tree}")" == "$tree" ]]; then
         echo "$remote/$branch already matches dev@$sha; nothing to release"

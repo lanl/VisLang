@@ -1,0 +1,122 @@
+format: sieve-provenance/2
+result_summary: |
+  37 timesteps, 151×121×39 grid each × 4 columns, 422 MB (from a 41 GB input)
+    float32  theta, u, v, w
+logical:
+  spec: |
+    # Step 3: the window and the box, at full resolution, four fields.
+    src = source("ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/")
+    view = timesteps(src, 9000, 45000)
+    view = fields(view, ["theta", "u", "v", "w"])
+    view = region(view, x=(-100, 200), y=(-120, 120), z=(0, 350), coords="world")
+    save(view, "/Users/agoosh11/Projects/VisLang/bench/PacificVis/cs2-wildfire/Test4/outputs/sieve/box.vts")
+
+  spec_explanation: |
+    Steps
+      1. timesteps  keep timesteps #9000 to #45000
+      2. fields     keep theta, u, v, w; drop O2, rhowatervapor, rhof_1, convht_1, frhosiesrad_1
+      3. region     keep the samples inside the box (world coordinates, bounds inclusive)
+                      x between -100 and 200
+                      y between -120 and 120
+                      z between 0 and 350
+                      placed on the file's geometry; the cells it selected are under resolved.region_cells
+      4. save       write one VTK StructuredGrid file per timestep:
+                    every column as point data
+                    each point at its own position from the source
+  input:
+    uri: "ssh://gpu-server//mnt/na1/eecs/research/harp/data/ashrestha/vislang/wildfire-sl/mountain_headcurve80/"
+    format: vtk
+    fields: [u, v, w, theta, O2, rhowatervapor, rhof_1, convht_1, frhosiesrad_1]
+    timestep_fingerprints:
+      9000: {filesize: 1098002905, modification_time: "2023-03-22T16:37:50-07:00"}
+      10000: {filesize: 1098002905, modification_time: "2023-03-22T16:23:55-07:00"}
+      11000: {filesize: 1098002905, modification_time: "2023-03-22T16:24:04-07:00"}
+      12000: {filesize: 1098002905, modification_time: "2023-03-22T16:24:14-07:00"}
+      13000: {filesize: 1098002905, modification_time: "2023-03-22T16:24:24-07:00"}
+      14000: {filesize: 1098002905, modification_time: "2023-03-22T16:24:34-07:00"}
+      15000: {filesize: 1098002905, modification_time: "2023-03-22T16:24:43-07:00"}
+      16000: {filesize: 1098002905, modification_time: "2023-03-22T16:24:53-07:00"}
+      17000: {filesize: 1098002905, modification_time: "2023-03-22T16:25:02-07:00"}
+      18000: {filesize: 1098002905, modification_time: "2023-03-22T16:25:12-07:00"}
+      19000: {filesize: 1098002905, modification_time: "2023-03-22T16:25:22-07:00"}
+      20000: {filesize: 1098002905, modification_time: "2023-03-22T16:25:41-07:00"}
+      21000: {filesize: 1098002905, modification_time: "2023-03-22T16:25:51-07:00"}
+      22000: {filesize: 1098002905, modification_time: "2023-03-22T16:26:01-07:00"}
+      23000: {filesize: 1098002905, modification_time: "2023-03-22T16:26:10-07:00"}
+      24000: {filesize: 1098002905, modification_time: "2023-03-22T16:26:20-07:00"}
+      25000: {filesize: 1098002905, modification_time: "2023-03-22T16:26:29-07:00"}
+      26000: {filesize: 1098002905, modification_time: "2023-03-22T16:26:39-07:00"}
+      27000: {filesize: 1098002905, modification_time: "2023-03-22T16:26:49-07:00"}
+      28000: {filesize: 1098002905, modification_time: "2023-03-22T16:26:59-07:00"}
+      29000: {filesize: 1098002905, modification_time: "2023-03-22T16:27:08-07:00"}
+      30000: {filesize: 1098002905, modification_time: "2023-03-22T16:27:28-07:00"}
+      31000: {filesize: 1098002905, modification_time: "2023-03-22T16:27:37-07:00"}
+      32000: {filesize: 1098002905, modification_time: "2023-03-22T16:27:47-07:00"}
+      33000: {filesize: 1098002905, modification_time: "2023-03-22T16:27:57-07:00"}
+      34000: {filesize: 1098002905, modification_time: "2023-03-22T16:28:06-07:00"}
+      35000: {filesize: 1098002905, modification_time: "2023-03-22T16:28:16-07:00"}
+      36000: {filesize: 1098002905, modification_time: "2023-03-22T16:28:25-07:00"}
+      37000: {filesize: 1098002905, modification_time: "2023-03-22T16:28:35-07:00"}
+      38000: {filesize: 1098002905, modification_time: "2023-03-22T16:28:44-07:00"}
+      39000: {filesize: 1098002905, modification_time: "2023-03-22T16:28:54-07:00"}
+      40000: {filesize: 1098002905, modification_time: "2023-03-22T16:29:13-07:00"}
+      41000: {filesize: 1098002905, modification_time: "2023-03-22T16:29:29-07:00"}
+      42000: {filesize: 1098002905, modification_time: "2023-03-22T16:29:38-07:00"}
+      43000: {filesize: 1098002905, modification_time: "2023-03-22T16:29:48-07:00"}
+      44000: {filesize: 1098002905, modification_time: "2023-03-22T16:29:58-07:00"}
+      45000: {filesize: 1098002905, modification_time: "2023-03-22T16:30:07-07:00"}
+  output:
+    format: vtk
+    fields: {theta: float32, u: float32, v: float32, w: float32}
+    values: "all exact"
+    timestep_fingerprints:
+      9000: {shape: [151, 121, 39], data_sha256: "01edf5fb1aeb4ca9"}
+      10000: {shape: [151, 121, 39], data_sha256: "cea55b6705a7e55d"}
+      11000: {shape: [151, 121, 39], data_sha256: "005ff4246dde02ac"}
+      12000: {shape: [151, 121, 39], data_sha256: "9fe2cd0002885161"}
+      13000: {shape: [151, 121, 39], data_sha256: "1da226a572ba14ae"}
+      14000: {shape: [151, 121, 39], data_sha256: "425719e7a6930c1f"}
+      15000: {shape: [151, 121, 39], data_sha256: "6ba10dfa438fc6f4"}
+      16000: {shape: [151, 121, 39], data_sha256: "94b9220955dc408a"}
+      17000: {shape: [151, 121, 39], data_sha256: "8b0bb308ffa48f6e"}
+      18000: {shape: [151, 121, 39], data_sha256: "694883835db96e29"}
+      19000: {shape: [151, 121, 39], data_sha256: "adf5a524ce61b088"}
+      20000: {shape: [151, 121, 39], data_sha256: "c8760b3d9c09d84f"}
+      21000: {shape: [151, 121, 39], data_sha256: "da06e7b7a8332cc0"}
+      22000: {shape: [151, 121, 39], data_sha256: "99fcfab9ecda838d"}
+      23000: {shape: [151, 121, 39], data_sha256: "497fea1557f0d58e"}
+      24000: {shape: [151, 121, 39], data_sha256: "6ad5f6fcf3c8eb58"}
+      25000: {shape: [151, 121, 39], data_sha256: "0ce3fc36bb773e32"}
+      26000: {shape: [151, 121, 39], data_sha256: "545847891aedc808"}
+      27000: {shape: [151, 121, 39], data_sha256: "1204c794736cce47"}
+      28000: {shape: [151, 121, 39], data_sha256: "c34fa9fa7d5e942d"}
+      29000: {shape: [151, 121, 39], data_sha256: "aaf3e30684569f11"}
+      30000: {shape: [151, 121, 39], data_sha256: "1140e9537624627c"}
+      31000: {shape: [151, 121, 39], data_sha256: "87aaa7fd659cd4e0"}
+      32000: {shape: [151, 121, 39], data_sha256: "4a6166990126d688"}
+      33000: {shape: [151, 121, 39], data_sha256: "ed128d6301743319"}
+      34000: {shape: [151, 121, 39], data_sha256: "7408f8515f60a096"}
+      35000: {shape: [151, 121, 39], data_sha256: "d20a54a5a7bf7cd5"}
+      36000: {shape: [151, 121, 39], data_sha256: "d945b16d5bcce3fe"}
+      37000: {shape: [151, 121, 39], data_sha256: "e9666c51c5adf89f"}
+      38000: {shape: [151, 121, 39], data_sha256: "125d0df493224c55"}
+      39000: {shape: [151, 121, 39], data_sha256: "664ac00cbeb15a1f"}
+      40000: {shape: [151, 121, 39], data_sha256: "41db92e44112a794"}
+      41000: {shape: [151, 121, 39], data_sha256: "fe7f115c046df097"}
+      42000: {shape: [151, 121, 39], data_sha256: "5c259c4489041685"}
+      43000: {shape: [151, 121, 39], data_sha256: "fc33410134cd37f5"}
+      44000: {shape: [151, 121, 39], data_sha256: "c54440ddfcfaa039"}
+      45000: {shape: [151, 121, 39], data_sha256: "68199725050553d7"}
+  sieve: {version: "0.1.0", commit: "ba71991", uncommitted_changes: true}
+  libraries: {vtk: "9.7.0", numpy: "2.5.2", pyvista: "0.49.0"}
+
+realization:
+  at: "2026-11-07T02:37:52-08:00"
+  took_s: 18
+  by: "agoosh11@Kajis-MacBook-Pro.local"
+  columns_from:
+    cache:
+      columns: [theta, u, v, w]
+      extents_reused: "148 of 148"
+  env: {python: "3.12.14", platform: macOS-26.0.1}
+  run: "2422d5c4d6be"

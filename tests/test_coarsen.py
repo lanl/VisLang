@@ -170,9 +170,10 @@ def test():
 
     rec = provenance.record_for(out("c_min.npz"))
     text = rec["logical"]["spec_explanation"]
+    vals = rec["logical"]["output"]["values"]
     check("provenance: says one value per block, and that values are block minima",
           "one value per block of 4×4×4 cells: the block's minimum" in text
-          and "block minima" in text, text)
+          and vals == "block minima of the source cells", (text, vals))
 
     plan = to_plan_json(save(coarsen(source(p), x=4, y=2, how="max"), out("w.npz")))
     back = from_plan_json(plan)

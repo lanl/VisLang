@@ -13,7 +13,9 @@ One YAML document per output, `format: sieve-provenance/2`, laid out as:
     realization: at, took_s, by, columns_from, compress, env, run
 
 `input` and `output` share their keys, in the same order: format, fields, then
-`fingerprint` (one file) or `timestep_fingerprints` (a series). A fingerprint
+`fingerprint` (one file) or `timestep_fingerprints` (a series). `output` adds
+`values` after its fields — what the written numbers are (exact, within a
+bound, cast, or block reductions of the source cells) — and `geometry` last. A fingerprint
 names its facts in full — filesize, modification_time, head64k_sha256 for a
 file read; shape (or rows) and data_sha256 for a result.
 
@@ -724,7 +726,8 @@ def _centre_space(step, grid):
 def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
             comp, modes, grid, positions=None, geometry=None, cast=(),
             series=False, degraded=None, tag=None, labels=None):
-    """The Steps list and the Values verdict, from recorded fields only."""
+    """The Steps list, from recorded fields only. What the written values are
+    is not a step; it is a property of the output (`output_values`)."""
     lossy = _lossy(comp)
     avail = list(input_columns or [])
     out_cols = set(output_columns or [])
@@ -863,15 +866,21 @@ def explain(chain, *, input_columns, output_columns, in_filetype, fmt, ext,
         prefix = f"  {i}. {kind:<11}"
         lines.append(prefix + head)
         lines.extend(" " * len(prefix) + m for m in more)
+    return "\n".join(lines) + "\n"
+
+
+def output_values(chain, output_columns, comp, cast=()):
+    """`output.values`: what the written numbers are, from recorded fields
+    only — `all exact`, which columns a codec or a cast changed, and, after a
+    `coarsen`, that they are block reductions of the source cells."""
+    values = _values_line(output_columns, _lossy(comp), cast).rstrip(".")
     reduced = [s.get("how") for s in chain[1:] if s.get("kind") == "coarsen"]
-    values = _values_line(output_columns, lossy, cast)
     if reduced:
         what = " then ".join({"mean": "means", "min": "minima", "max": "maxima"}.get(h, h)
                              for h in reduced)
-        values = (f"block {what} of the source cells (computed, not source values); "
-                  + (values if values != "all exact." else "no other change."))
-    lines += ["", "Values: " + values]
-    return "\n".join(lines) + "\n"
+        values = (f"block {what} of the source cells"
+                  + ("" if values == "all exact" else "; " + values))
+    return values
 
 
 def _values_line(columns, lossy, cast):
@@ -937,7 +946,7 @@ def summarize(per_step, comp, cast, input_bytes, series=False):
             kinds = {lossy[n] for n in lossy_here}
             bound = (f"within {_num(next(iter(kinds))[1])}"
                      if len(kinds) == 1 and next(iter(kinds))[0] == "absolute"
-                     else "see explanation")
+                     else "see output.values")
             notes.append(f"{_names(lossy_here)} lossy, {bound}")
         cast_here = [n for n in names if n in cast and n not in lossy]
         if cast_here:
@@ -1099,7 +1108,8 @@ def _assemble(per_step, out_path, fmt, degraded_from, series):
     # fingerprint (one, or one per timestep). Shape travels in the fingerprint
     # because it is part of what identifies a result.
     out = {"format": out_fmt,
-           "fields": {k: str(getattr(a, "dtype", "")) for k, a in data.items()}}
+           "fields": {k: str(getattr(a, "dtype", "")) for k, a in data.items()},
+           "values": output_values(chain, list(data), comp, cast)}
     if series:
         out["timestep_fingerprints"] = {
             int(lab): {**_output_entry(l, grid), "data_sha256": _data_hash(l)}

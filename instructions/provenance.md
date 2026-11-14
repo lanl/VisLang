@@ -21,10 +21,10 @@ result_summary: |          # rows × columns, columns by dtype, sizes in and out
 logical:
   spec: |                  # the spec.py text, verbatim (comments included)
 
-  spec_explanation: |      # the steps in plain words, and a Values verdict
+  spec_explanation: |      # the steps in plain words
   input:                   # uri, format, fields, fingerprint | timestep_fingerprints, derived_from
   resolved:                # choices the spec left open, made while running
-  output:                  # format, fields, fingerprint | timestep_fingerprints, geometry
+  output:                  # format, fields, values, fingerprint | timestep_fingerprints, geometry
   sieve:                   # version, commit, uncommitted_changes
   libraries:               # the libraries that read, computed and wrote
 
@@ -34,7 +34,8 @@ realization:               # at, took_s, by, columns_from, compress, env, run
 `input` and `output` share their keys, in the same order: `format`, `fields`,
 then `fingerprint` for one file or `timestep_fingerprints` (keyed by `#N`) for a
 series. Input `fields` lists the source's variables; output `fields` maps each
-written variable to its dtype. `prov-ex/` holds the design examples behind this
+written variable to its dtype, and output `values` (right after it) says what
+the written numbers are. `prov-ex/` holds the design examples behind this
 layout.
 
 **`logical`** holds everything a reproduction needs and a check compares. The
@@ -77,9 +78,12 @@ template per form, so a checker can rebuild them and compare.
 - `compress` gives the codec, bound and mode, including what `mode="auto"`
   chose.
 - `save` says how columns map when it converts formats.
-- The final `Values:` line says which columns are still exact. `compress`
-  changes values, and so does a `threshold` on an integer grid, which is cast
-  to float32 to hold NaN.
+- `output.values` (not a step: a property of the output) says what the
+  written numbers are: `all exact`, which columns `compress` changed and
+  within what bound, which a `threshold` on an integer grid cast to float32 to
+  hold NaN, and, after a `coarsen`, that they are block means, minima or
+  maxima of the source cells. Records written before 2026-11-06 carry this as
+  a final `Values:` line of `spec_explanation` instead.
 
 Notes about intent belong in the spec's own `#` comments, which `logical.spec`
 keeps verbatim.

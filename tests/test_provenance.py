@@ -227,7 +227,8 @@ def test_record_grid():
     check("explain_fields", "1. fields     keep rho; drop T" in ex, ex)
     check("explain_grid_region", "x index 8 to 23" in ex, ex)
     check("explain_save_preserved", "3. save       write one HDF5 file\n" in ex, ex)
-    check("explain_values", ex.rstrip().endswith("Values: all exact."), ex)
+    check("explain_has_no_values_line", "Values" not in ex, ex)
+    check("output_values_exact", out_["values"] == "all exact", out_)
 
     check("summary_first_line",
           rec["result_summary"].startswith("16×32×32 grid × 1 columns"),
@@ -328,8 +329,6 @@ Steps
   6. save       write VTK PolyData, converted from GenericIO:
                 x, y, z as point coordinates,
                 and every column as point data
-
-Values: x, y, z exact; vx, vy, vz within 1.0 of the source.
 """
 
 
@@ -344,6 +343,10 @@ def test_explain_golden():
         modes={"vx": "absolute", "vy": "absolute", "vz": "absolute"},
         grid=False, positions=XYZ)
     check("explain_halo_golden", got == HALO_EXPLANATION, "\n" + got)
+    vals = provenance.output_values(
+        HALO_CHAIN, ["x", "y", "z", "vx", "vy", "vz"], HALO_COMP)
+    check("output_values_halo",
+          vals == "x, y, z exact; vx, vy, vz within 1.0 of the source", vals)
 
     grid_chain = [{"kind": "source", "uri": "g.hdf5"},
                   {"kind": "subsample", "uniform": None,
@@ -360,7 +363,8 @@ def test_explain_golden():
     check("explain_grid_threshold",
           "keep cells where rho > 1.5; set the rest to NaN" in got, got)
     check("explain_grid_geometry", "origin (0.0, 0.0, 0.0), spacing (2.0, 4.0, 1.0)" in got, got)
-    check("explain_cast_values", "n cast to float32 to hold NaN" in got, got)
+    vals = provenance.output_values(grid_chain, ["rho", "n"], {}, ["n"])
+    check("output_values_cast", "n cast to float32 to hold NaN" in vals, vals)
 
 
 # ---------------------------------------------------------------------------
@@ -735,8 +739,8 @@ def test_grid_threshold_cast():
     src = make_grid(os.path.join(d, "g.hdf5"), (8, 8, 8), dtype=np.int32)
     out = os.path.join(d, "o.hdf5")
     run_spec(lambda: save(threshold(source(src), "rho > 100"), out))
-    ex = provenance.record_for(out)["logical"]["spec_explanation"]
-    check("cast_named_in_values", "cast to float32 to hold NaN" in ex, ex)
+    vals = provenance.record_for(out)["logical"]["output"]["values"]
+    check("cast_named_in_values", "cast to float32 to hold NaN" in vals, vals)
 
 
 # ---------------------------------------------------------------------------
@@ -844,8 +848,6 @@ logical:
       3. region     keep a box of size (120, 120, 20) centred on each timestep's own centre
                       centres from fire_track.csv; index space, clipped to the grid; the box per timestep is under resolved.region_boxes
       4. save       write one npz file per timestep, converted from VTK
-
-    Values: all exact.
   input:
     uri: "ssh://gpu-server//home.na1/ad.wsu.edu/aayush.shrestha/pvt/pvt/vislang_series/fire/"
     format: vtk
@@ -867,6 +869,7 @@ logical:
   output:
     format: npz
     fields: {theta: float32}
+    values: "all exact"
     timestep_fingerprints:
       8000: {shape: [120, 120, 20], data_sha256: "cc6a10a79df637e0"}
       9000: {shape: [120, 120, 20], data_sha256: "f46f5c34df9e916b"}
@@ -890,7 +893,7 @@ realization:
 
 INPUT_KEYS = ["uri", "format", "fields", "fingerprint", "timestep_fingerprints",
               "derived_from"]
-OUTPUT_KEYS = ["format", "fields", "fingerprint", "timestep_fingerprints",
+OUTPUT_KEYS = ["format", "fields", "values", "fingerprint", "timestep_fingerprints",
                "geometry"]
 
 
@@ -931,7 +934,7 @@ def test_layout_series_run():
     check("series_input_keys", list(lg["input"]) ==
           ["uri", "format", "fields", "timestep_fingerprints"], list(lg["input"]))
     check("series_output_keys", list(lg["output"]) ==
-          ["format", "fields", "timestep_fingerprints"], list(lg["output"]))
+          ["format", "fields", "values", "timestep_fingerprints"], list(lg["output"]))
     fp_in = lg["input"]["timestep_fingerprints"]
     check("series_input_step_fields", sorted(fp_in) == [0, 1, 2] and
           list(fp_in[1]) == ["filesize", "modification_time", "head64k_sha256"],
@@ -966,7 +969,7 @@ def test_layout_single_file():
     check("single_input_fingerprint_fields", list(lg["input"]["fingerprint"]) ==
           ["filesize", "modification_time", "head64k_sha256"])
     check("single_output_keys", list(lg["output"]) ==
-          ["format", "fields", "fingerprint", "geometry"], list(lg["output"]))
+          ["format", "fields", "values", "fingerprint", "geometry"], list(lg["output"]))
     # This HDF5 source states no geometry: the record says where the cut sits
     # among its cells, and that these are cells, not physical units.
     check("single_output_placed_in_source_cells",
