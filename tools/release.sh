@@ -91,9 +91,11 @@ if [[ $tests -eq 1 ]]; then
     for f in "$here"/tests/*.raw; do
         [[ -e "$f" ]] && ln -s "$f" "$stage/tests/"
     done
-    # The tests are standalone scripts that fail by assertion.
+    # The tests are standalone scripts that fail by assertion. A test of
+    # dev-only code is marked with a "# release: dev-only" line and skipped.
     failed=()
     for t in "$stage"/tests/test_*.py; do
+        grep -q '^# release: dev-only' "$t" && continue
         (cd "$stage" && "$py" "$t" > /dev/null 2>&1) || failed+=("$(basename "$t")")
     done
     rm -rf "$stage/.git"

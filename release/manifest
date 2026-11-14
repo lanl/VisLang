@@ -24,6 +24,9 @@ instructions/writing-bindings.md
 
 examples
 
+# The ParaView plugin (Sieve Source filter) and its ParaView-free core.
+plugins/paraview
+
 # The salloc guard: Claude Code asks before any command that allocates HPC time.
 .claude/settings.json
 

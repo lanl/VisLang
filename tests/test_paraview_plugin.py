@@ -77,12 +77,16 @@ def main():
         sys.exit(1)
 
     # The paper's figure script draws a recorded session (overview + boxes).
+    # bench/ is dev-only, so the release tree checks the plugin without it.
+    figure = os.path.join(REPO, "bench", "pv_session_figure.py")
+    if not os.path.exists(figure):
+        print("  skip the session figure (no bench/ in this tree)")
+        return
     sessions = sorted(os.path.join(tmp, "sessions", d)
                       for d in os.listdir(os.path.join(tmp, "sessions"))
                       if os.path.exists(os.path.join(tmp, "sessions", d, "session.jsonl")))
     png = os.path.join(tmp, "figure.png")
-    f = subprocess.run([PVPYTHON, os.path.join(REPO, "bench", "pv_session_figure.py"),
-                        sessions[0], png, "--size", "640x480"],
+    f = subprocess.run([PVPYTHON, figure, sessions[0], png, "--size", "640x480"],
                        capture_output=True, text=True, env=env, timeout=300)
     ok = f.returncode == 0 and os.path.exists(png) and os.path.getsize(png) > 10_000
     print(("  ok  " if ok else "FAIL ") + "the session figure renders the overview "

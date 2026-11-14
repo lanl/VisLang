@@ -1,3 +1,4 @@
+# release: dev-only (tests bench/, which doesn't ship; tools/release.sh skips it)
 """Replaying a recorded session (bench/replay_session.py).
 
 Plain-python asserts (no pytest on the cluster). Run from the repo root:
