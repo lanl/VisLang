@@ -14,23 +14,32 @@ stay beside it.
 ## Install
 
 1. In ParaView (6.1), open **Tools → Manage Plugins → Load New…** and pick
-   `plugins/paraview/SieveParaView.py`.
+   `plugins/paraview/SieveParaView.py` in your Sieve clone.
 2. Expand the plugin's entry and tick **Auto Load** to load it on every start.
 3. The objects appear under **Sources → Sieve** and **Filters → Sieve**.
 
 In pvpython: `LoadPlugin("/path/to/SieveParaView.py", ns=globals())`.
 
-The plugin runs the `sieve` launcher of the repository it sits in (override
-with `SIEVE_CMD`), under Sieve's own Python (`VISLANG_PYTHON`, else the conda
-env).
-
-**Remote data or `VISLANG_*` settings:** ParaView started from the Dock or with
-`open -a` does not see your shell's environment. Start it from a terminal
-instead:
+ParaView's own Python doesn't have Sieve's libraries, so the plugin runs the
+`sieve` launcher of the clone it sits in (override with `SIEVE_CMD`) under the
+Python you installed Sieve into. Point it there with `VISLANG_PYTHON`:
 
 ```bash
-/Applications/ParaView-6.1.0-RC2.app/Contents/MacOS/paraview &
+export VISLANG_PYTHON=/path/to/env/bin/python
 ```
+
+Without it, the launcher tries a conda environment named `vislang`, then
+`python3`.
+
+**Start ParaView from a terminal** when you set `VISLANG_PYTHON` or other
+`VISLANG_*` variables, or work with remote data. On macOS, ParaView started
+from the Dock or with `open -a` doesn't see your shell's environment:
+
+```bash
+/Applications/ParaView-6.1.0.app/Contents/MacOS/paraview &
+```
+
+(Adjust the path to your ParaView version.)
 
 ## Use
 

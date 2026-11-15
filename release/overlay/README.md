@@ -56,6 +56,16 @@ $ sieve execute spec.py
 
 `sieve` exits with a non-zero status whenever a report signals a failure or a hold, so it works in shell scripts and CI jobs. Run `sieve --help` for the full list of commands.
 
+## Usage from ParaView
+
+Sieve also comes as a ParaView plugin for exploring a dataset by eye: fetch a coarse overview, draw a box around a feature, and fetch only that box at full resolution.
+
+1. In ParaView 6.1, open **Tools → Manage Plugins → Load New…** and pick `plugins/paraview/SieveParaView.py` from your Sieve clone.
+2. Add **Sources → Sieve → Sieve Source**, set **Source** to a local path or an `ssh://host/path`, and press **Apply**. Sieve describes the data and what an overview would cost, without fetching anything. Press **Fetch Overview** to load it.
+3. To zoom in, add **Filters → Sieve → Sieve Detail** to the overview, drag the box over a feature, and press **Apply**. To run a spec of your own, use **Sources → Sieve → Sieve Spec**.
+
+The plugin runs on the same engine as the MCP server and the `sieve` command, with the same budgets, remote sessions and provenance. The [ParaView plugin README](plugins/paraview/README.md) covers setup, time series and the panel controls.
+
 ## Writing a spec
 
 A spec borrows Python syntax, conventionally named `spec.py`. It needs no imports. Start from a `source`, narrow it with a chain of forms, and finish with a sink that says what to do with the result.
@@ -138,3 +148,4 @@ The raw-volume reader started as a custom reader that an agent wrote and Sieve v
 
 - [examples/](examples/): short, annotated specs covering rendering, saving, time series, remote reduction and dry runs.
 - [instructions/](instructions/): guides to the DSL, writing specs, custom readers, HDF5 bindings, rendering and provenance. MCP clients can read these guides directly from the server.
+- [plugins/paraview/](plugins/paraview/README.md): the ParaView plugin, in full.
