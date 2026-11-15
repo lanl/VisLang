@@ -1,0 +1,485 @@
+"""Local extent catalog — the "track what we have" half of remote compute.
+
+Phase 1 of REMOTE_COMPUTE_PLAN.md. Every array piece we materialize from a
+remote source (a narrowed field, a reduced slab) is written to a local cache
+and indexed here, so the next request can be answered as `need - have = fetch`
+and we never move the same bytes over the wire twice. The catalog is a plain
+cache index: it records what is on local disk and computes what's missing; it
+does not care how the missing pieces arrive (remote reducer, whole-file
+fallback) — that logic lives in the planner.
+
+Layout under a cache root (default ``vislang_cache``):
+    catalog.json          manifest: schemas + extent index (atomic rewrite)
+    catalog.lock          held while the manifest is read-modified-written
+    extents/<hex>.npy     one numpy array per cached extent
+
+Several processes share one catalog (the MCP server, `sieve`, a ParaView
+session). Every write re-reads the manifest under the lock, applies its one
+change and writes it back, so two runs storing at the same time both keep
+their entries; reads re-load it, so a run sees what another stored.
+
+Keys are (source_id, variable, canonical narrow_key). A narrow_key is either the
+``{'forms': [...]}`` description the remote reducer emits (``_narrow_key``) or a
+pre-fused ``{'grid_ranges': [...]}``. Beyond exact-key hits, `lookup` reuses a
+cached *superset* slab when both the request and a cached extent are pure grid
+crops/strides and the cached ranges contain and phase-align with the request —
+slicing a bigger local array beats refetching. A forms key is fused to per-axis
+ranges via the source's cached schema, reusing planner._grid_ranges (the same
+routine the read path uses, so a cached slice matches a fresh reduce). Reuse is
+deliberately conservative: a false miss only costs a slower fetch, a false hit is
+wrong data.
+"""
+
+import fcntl
+import hashlib
+import json
+import os
+from contextlib import contextmanager
+
+import numpy as np
+
+from vislang.formats.dataset_info import (GEOMETRY_KEY, decode_geometry,
+                                          encode_geometry, narrowed_geometry)
+
+_MANIFEST = "catalog.json"
+_EXTENT_DIR = "extents"
+
+# Shape version for a CACHED SCHEMA. Bump this whenever inspect starts capturing
+# a field that downstream code relies on, so schemas frozen by an older build are
+# treated as misses and re-inspected instead of being reused forever.
+#
+# A schema is keyed by source_id — uri+size+mtime — which tracks the FILE, not
+# the code that read it. So when v1 grew `attributes` (GenericIO's phys_scale and
+# dtypes), every already-cached schema kept answering without them: a
+# format-preserving save refused with "no phys_scale in the source header" for a
+# file whose header has one, and the estimator fell back to 4 B/element. The file
+# hadn't changed, so nothing ever invalidated the entry.
+#
+#   1  variables, dimensions, positions, filetype
+#   2  + attributes (GenericIO phys_scale/dtypes; needed to write the format back)
+#   3  same shape; v2 entries written after a remote reduce lost `attributes`
+#      (the reducer's report omitted them and overwrote the login-node schema)
+#   4  + geometry (where a grid sits; decides how a region's numbers are read)
+#   5  + itemsizes (bytes per element). Without them every run after a file's
+#      first priced its bytes at 4 B/element: a float64 file at half its size,
+#      read on the server and over the wire alike. They are header facts, as
+#      stable as the dimensions under the same identity.
+SCHEMA_VERSION = 5
+_SCHEMA_VERSION_KEY = "schema_version"
+
+
+def make_source_id(uri, size, mtime, header_hash=""):
+    """Stable short identity for a remote source without hashing its bytes."""
+    blob = f"{uri}|{size}|{mtime}|{header_hash}".encode()
+    return hashlib.sha256(blob).hexdigest()[:16]
+
+
+def _canon(narrow_key):
+    """Canonical JSON for a narrow_key dict (sorted keys -> stable extent key)."""
+    return json.dumps(narrow_key, sort_keys=True, separators=(",", ":"))
+
+
+def _fuse_forms(forms, grid_dims):
+    """Per-axis [start, stop, step] for a pure grid crop/stride `forms` list over
+    a grid of shape `grid_dims`, or None when it is not grid-sliceable: a
+    `threshold` makes the result value-dependent, particle data has no grid, and
+    an unknown axis can't be placed. Delegates the fuse to planner._grid_ranges —
+    the SAME routine the read path uses — so a cached slice is bit-identical to a
+    fresh remote reduce (no drift between "what we key" and "what we read")."""
+    if not grid_dims or forms is None:
+        return None
+    if any(f[0] not in ("region", "subsample") for f in forms):
+        return None                              # threshold / non-geometric form
+    from vislang.interpreter.planner import _grid_ranges              # lazy: avoid an import cycle
+    from vislang.dsl.nodes import RegionNode, SubsampleNode
+    regions, subs = [], []
+    for f in forms:
+        if f[0] == "region":
+            regions.append(RegionNode(upstream=None,
+                                      ranges=tuple((a, lo, hi) for a, lo, hi in f[1])))
+        else:                                    # subsample
+            subs.append(SubsampleNode(upstream=None, uniform=f[1],
+                                      per_axis=tuple((a, fac) for a, fac in f[2])))
+    if not (regions or subs):
+        return None
+    try:
+        ranges = _grid_ranges(regions, subs, grid_dims)
+    except (ValueError, KeyError, TypeError):
+        return None                              # unknown axis etc. — not reusable
+    return None if ranges is None else [[r.start, r.stop, r.step] for r in ranges]
+
+
+def _grid_ranges_of(narrow_key, grid_dims):
+    """The per-axis [start,stop,step] this narrow_key selects on a grid, or None
+    (→ exact-match-only reuse). Accepts either a pre-fused ``{'grid_ranges': [...]}``
+    key or the ``{'forms': [...]}`` key the remote reducer emits (fused here with
+    `grid_dims`). Any other shape — a `post_ops`/`particles` key, or a `forms`
+    list containing a threshold — is not a sliceable grid extent and yields None."""
+    if not isinstance(narrow_key, dict):
+        return None
+    keys = set(narrow_key)
+    if keys == {"grid_ranges"} and isinstance(narrow_key["grid_ranges"], (list, tuple)):
+        return list(narrow_key["grid_ranges"])
+    if keys == {"forms"}:
+        return _fuse_forms(narrow_key["forms"], grid_dims)
+    return None
+
+
+def _axis_slice(req, had):
+    """Slice (into the cached axis) serving req from had, or None.
+
+    req/had are [start, stop, step] with None meaning full extent (start=0,
+    stop=end-of-axis). Conservative: any case we can't prove is a miss.
+    """
+    if len(req) != 3 or len(had) != 3:
+        return None
+    a, b, k = req
+    A, B, K = had
+    a0 = 0 if a is None else a
+    A0 = 0 if A is None else A
+    k = 1 if k is None else k
+    K = 1 if K is None else K
+    ok_int = all(isinstance(v, int) and v >= 0 for v in (a0, A0))
+    if not (ok_int and isinstance(k, int) and isinstance(K, int) and k >= 1 and K >= 1):
+        return None
+    if A0 > a0:
+        return None                       # cached starts after the request
+    if B is not None and (b is None or not isinstance(b, int) or b > B):
+        return None                       # cached stop bounded; request isn't proven inside
+    if K == 1:
+        # cached is unstrided: any stride can be carved out, but only when the
+        # request's phase lands on the cached origin (spec'd conservatism).
+        if (a0 - A0) % k != 0:
+            return None
+        stop = None if b is None else max(b - A0, 0)
+        return slice(a0 - A0, stop, k)
+    if K == k:
+        if A0 != a0:
+            return None                   # same stride must share its phase exactly
+        stop = None if b is None else -(-(b - a0) // k)   # ceil: element count
+        return slice(0, stop, 1)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Deriving a request from a cached extent: its written start, then local forms
+# ---------------------------------------------------------------------------
+# Forms that can run on a cached array as they would after a fresh read: they
+# read only the values already in it. A region or subsample after them cannot
+# (on points a sample of survivors is not the survivors of a sample).
+_LOCAL_FORMS = ("threshold", "coarsen")
+_FLOAT32_EXACT = float(2 ** 24)      # every integer up to this is exact in float32
+
+
+def implies(req, had):
+    """True when every value passing predicate `req` also passes `had` — the
+    values `req` keeps are a subset of those `had` kept. Each is (op, value),
+    op one of < <= > >= == !=. Anything unproven is False."""
+    (ro, rv), (ho, hv) = req, had
+    try:
+        rv, hv = float(rv), float(hv)
+    except (TypeError, ValueError):
+        return False
+    if ro == "==":                                   # a single value: does it pass?
+        return {"<": rv < hv, "<=": rv <= hv, ">": rv > hv, ">=": rv >= hv,
+                "==": rv == hv, "!=": rv != hv}.get(ho, False)
+    if ho == "!=":                                   # does req exclude hv?
+        return {"!=": rv == hv, "<": rv <= hv, "<=": rv < hv,
+                ">": rv >= hv, ">=": rv > hv}.get(ro, False)
+    if ho in ("<", "<="):
+        if ro == "<":
+            return rv <= hv
+        if ro == "<=":
+            return rv < hv if ho == "<" else rv <= hv
+        return False
+    if ho in (">", ">="):
+        if ro == ">":
+            return rv >= hv
+        if ro == ">=":
+            return rv > hv if ho == ">" else rv >= hv
+        return False
+    return False
+
+
+def derivation(req_forms, had_forms):
+    """(forms to apply locally, tightened) turning the extent cached for
+    `had_forms` into the one `req_forms` asks for — or None.
+
+    Order is the meaning: the cached forms must be the request's own start, in
+    written order, form for form. One relaxation: thresholds that END the cached
+    chain may be looser than the request's thresholds in the same place (each
+    implied by one of them), since the request's stricter cut, re-applied, keeps
+    exactly what it would have kept fresh. What follows that start must be
+    forms that run on the values alone (threshold, coarsen). So [subsample,
+    threshold] never serves [threshold, subsample], however equal their numbers."""
+    req, had = list(req_forms or ()), list(had_forms or ())
+    j = len(had)
+    while j and had[j - 1][0] == "threshold":
+        j -= 1
+    head, tail = had[:j], had[j:]
+    if req[:j] != head:
+        return None
+    rest = req[j:]
+    run = []
+    for f in rest:
+        if f[0] != "threshold":
+            break
+        run.append(f)
+    if not all(any(r[1] == t[1] and implies((r[2], r[3]), (t[2], t[3])) for r in run)
+               for t in tail):
+        return None
+    if not rest or any(f[0] not in _LOCAL_FORMS for f in rest):
+        return None
+    if tail and rest == tail:
+        return None                                  # the same chain: an exact match
+    return rest, bool(tail)
+
+
+class ExtentCatalog:
+    """JSON-manifest index over locally cached array extents."""
+
+    def __init__(self, root="vislang_cache"):
+        self.root = root
+        self.extent_dir = os.path.join(root, _EXTENT_DIR)
+        self.manifest_path = os.path.join(root, _MANIFEST)
+        os.makedirs(self.extent_dir, exist_ok=True)
+        self._manifest = self._load_manifest()
+
+    # -- manifest persistence -------------------------------------------------
+
+    def _load_manifest(self):
+        """Read the manifest; a missing or corrupt one just starts empty."""
+        try:
+            with open(self.manifest_path) as f:
+                m = json.load(f)
+            if isinstance(m, dict) and isinstance(m.get("schemas"), dict) \
+                    and isinstance(m.get("extents"), dict):
+                return m
+        except (OSError, ValueError):
+            pass
+        return {"version": 1, "schemas": {}, "extents": {}}
+
+    def _save_manifest(self):
+        """Atomic rewrite: never leave a half-written catalog.json behind. Call
+        inside `_update()`, which holds the lock across read-modify-write."""
+        tmp = f"{self.manifest_path}.{os.getpid()}.tmp"
+        with open(tmp, "w") as f:
+            json.dump(self._manifest, f, indent=1)
+        os.replace(tmp, self.manifest_path)
+
+    @contextmanager
+    def _update(self):
+        """Read-modify-write the manifest under an exclusive lock: re-load what
+        any other process stored, let the body change it, write it back."""
+        with open(os.path.join(self.root, "catalog.lock"), "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                self._manifest = self._load_manifest()
+                yield self._manifest
+                self._save_manifest()
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+    def _refresh(self):
+        """Re-load the manifest so a read sees what other processes stored."""
+        self._manifest = self._load_manifest()
+
+    # -- schema ---------------------------------------------------------------
+
+    def store_schema(self, source_id, schema):
+        """schema = {"variables": [...], "dimensions": {...}, "positions": [...]|None,
+        "filetype": str, "attributes": {...}} — stamped with SCHEMA_VERSION so a
+        later build can tell what this entry was allowed to contain."""
+        entry = dict(schema or {})
+        entry[_SCHEMA_VERSION_KEY] = SCHEMA_VERSION
+        with self._update() as m:
+            m["schemas"][source_id] = entry
+
+    def schema(self, source_id):
+        """The cached schema, or None when there is none — or when the one on disk
+        predates SCHEMA_VERSION. An outdated entry is reported as a MISS rather
+        than returned partially filled: the caller then re-inspects (metadata
+        only, no bulk read) and stores a complete one. Returning it would be
+        worse than having nothing, because a missing field reads downstream as a
+        fact about the file ("this header has no box size") instead of a fact
+        about the cache."""
+        entry = self._manifest["schemas"].get(source_id)
+        if not isinstance(entry, dict):
+            return None
+        if entry.get(_SCHEMA_VERSION_KEY, 1) < SCHEMA_VERSION:
+            return None
+        return entry
+
+    def stale_schema(self, source_id):
+        """The cached entry whatever its version, for the one caller that has no
+        way to re-inspect (a fully-cached folder, assembled with no connection
+        open). Everything it is missing is genuinely missing, so the caller must
+        say so rather than pass the gap off as a property of the data."""
+        entry = self._manifest["schemas"].get(source_id)
+        return entry if isinstance(entry, dict) else None
+
+    # -- extents --------------------------------------------------------------
+
+    def store(self, source_id, var, narrow_key, arr):
+        """Cache arr as the extent produced by narrow_key; overwrite same key."""
+        key = _canon(narrow_key)
+        hexid = hashlib.sha256(f"{source_id}\0{var}\0{key}".encode()).hexdigest()[:16]
+        # The array first, written beside its final name and moved into place, so
+        # a reader never meets a half-written file the manifest already names.
+        final = os.path.join(self.extent_dir, hexid + ".npy")
+        tmp = f"{final}.{os.getpid()}.tmp.npy"
+        np.save(tmp, np.asarray(arr))
+        os.replace(tmp, final)
+        with self._update() as m:
+            entries = m["extents"].setdefault(source_id, {}).setdefault(var, [])
+            entries[:] = [e for e in entries if e["key"] != key]
+            entries.append({"key": key, "narrow": narrow_key, "file": hexid + ".npy",
+                            "shape": list(np.asarray(arr).shape),
+                            "dtype": str(arr.dtype)})
+
+    def extents(self, source_id, var):
+        """The manifest entries cached for (source_id, var) — {narrow, shape,
+        dtype, …}, no arrays read; `read_extent` reads one."""
+        self._refresh()
+        return list(self._manifest["extents"].get(source_id, {}).get(var, []))
+
+    def read_extent(self, entry):
+        """The array behind an `extents` entry, or None when its file is lost."""
+        return self._read(entry)
+
+    def _read(self, entry):
+        try:
+            return np.load(os.path.join(self.extent_dir, entry["file"]),
+                           allow_pickle=False)
+        except (OSError, ValueError):
+            return None                   # manifest points at a lost file: miss
+
+    def _candidates(self, source_id, var, narrow_key):
+        """(entry, slices) that could serve this request, best first, from the
+        manifest alone: the exact entry (slices None), else each pure-grid
+        extent containing it with the slices that cut it out."""
+        entries = self._manifest["extents"].get(source_id, {}).get(var, [])
+        key = _canon(narrow_key)
+        for e in entries:
+            if e["key"] == key:
+                yield e, None
+                return
+        grid = ((self.schema(source_id) or {}).get("dimensions") or {}).get("grid")
+        req = _grid_ranges_of(narrow_key, grid)
+        if req is None:
+            return
+        for e in entries:
+            had = _grid_ranges_of(e["narrow"], grid)
+            if had is None or len(had) != len(req):
+                continue
+            slices = [_axis_slice(r, h) for r, h in zip(req, had)]
+            if any(s is None for s in slices):
+                continue
+            yield e, slices
+
+    def lookup(self, source_id, var, narrow_key):
+        """Cached array for this exact request, or a slice of a containing
+        pure-grid extent. None on any doubt — a miss is never wrong data.
+
+        Grid superset reuse fuses each key's forms to per-axis ranges using the
+        source's cached schema (grid shape); a key we can't fuse — a threshold,
+        particle data, or a source with no cached schema — falls back to
+        exact-match only (`derive` handles a cached start of such a chain)."""
+        for e, slices in self._candidates(source_id, var, narrow_key):
+            arr = self._read(e)
+            if slices is None:
+                return arr
+            if arr is None:
+                continue
+            if var == GEOMETRY_KEY:
+                # A cut's geometry is cut the way its arrays are: a uniform
+                # origin moves by start * spacing, listed points are sliced.
+                return encode_geometry(narrowed_geometry(decode_geometry(arr), slices))
+            if arr.ndim == len(slices):
+                return arr[tuple(slices)]
+        return None
+
+    def covers(self, source_id, var, narrow_key):
+        """True when `lookup` would serve this request — decided from the
+        manifest alone, no array read (the estimate's question). A file lost
+        since it was indexed is found only by the read, which then misses."""
+        self._refresh()
+        for e, slices in self._candidates(source_id, var, narrow_key):
+            if slices is None or var == GEOMETRY_KEY or len(e.get("shape") or ()) == len(slices):
+                return True
+        return False
+
+    def _exact_in_float32(self, entries):
+        """False when a float32 extent holds a value beyond 2**24 (so it may be
+        an integer the mask's cast rounded), or cannot be read."""
+        for e in entries:
+            if e.get("dtype") == "float32":
+                arr = self._read(e)
+                if arr is None or (arr.size and np.nanmax(np.abs(arr), initial=0.0) > _FLOAT32_EXACT):
+                    return False
+        return True
+
+    def derive(self, source_id, variables, narrow_key, peek=False):
+        """(arrays, local forms, cached key) to serve `narrow_key` from an extent
+        that holds its written start (see `derivation`), or None. `peek` answers
+        from the manifest (arrays None) — only a tightened cut reads its
+        variable, to check the float32 guard below. Every name in
+        `variables` must be cached under that one key — a threshold's variable
+        included, since the local cut reads it. Prefers the extent that leaves
+        the least to do. Where a looser cached threshold is tightened, a float32
+        value beyond 2**24 refuses: it may be an integer the mask's cast rounded,
+        and a fresh read would compare the exact integer."""
+        if not isinstance(narrow_key, dict) or set(narrow_key) != {"forms"} or not variables:
+            return None
+        self._refresh()
+        ext = self._manifest["extents"].get(source_id, {})
+        by_var = [{e["key"]: e for e in ext.get(v, [])} for v in variables]
+        shared = set.intersection(*(set(d) for d in by_var))
+        found = []
+        for key in shared:
+            had = by_var[0][key].get("narrow")
+            if not isinstance(had, dict) or set(had) != {"forms"}:
+                continue
+            got = derivation(narrow_key["forms"], had["forms"])
+            if got is not None:
+                found.append((len(had["forms"]), key, had, got))
+        for _, key, had, (rest, tightened) in sorted(found, key=lambda f: -f[0]):
+            cut_vars = {f[1] for f in rest if f[0] == "threshold"}
+            if tightened and not self._exact_in_float32(
+                    [d[key] for v, d in zip(variables, by_var) if v in cut_vars]):
+                continue
+            if peek:
+                return None, rest, had            # the estimate's question: no arrays
+            arrays = {}
+            for v, entries in zip(variables, by_var):
+                arr = self._read(entries[key])
+                if arr is None:
+                    break
+                arrays[v] = arr
+            else:
+                return arrays, rest, had
+        return None
+
+    def delta(self, source_id, variables, narrow_key):
+        """Partition a request: ({var: cached array}, [vars we must fetch])."""
+        self._refresh()
+        have, missing = {}, []
+        for var in variables:
+            arr = self.lookup(source_id, var, narrow_key)
+            if arr is None:
+                missing.append(var)
+            else:
+                have[var] = arr
+        return have, missing
+
+    def invalidate(self, source_id):
+        """Drop schema and all extents for a stale source (changed size/mtime)."""
+        with self._update() as m:
+            m["schemas"].pop(source_id, None)
+            dropped = m["extents"].pop(source_id, {})
+        for entries in dropped.values():
+            for e in entries:
+                try:
+                    os.remove(os.path.join(self.extent_dir, e["file"]))
+                except OSError:
+                    pass

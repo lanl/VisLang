@@ -1,0 +1,17 @@
+__pycache__/
+*.py[oc]
+*.egg-info
+build/
+dist/
+.venv/
+.DS_Store
+.ipynb_checkpoints/
+
+# Run records, caches, and fetched data Sieve writes beside the repo.
+.vislang/
+vislang_cache/
+binding_cache/
+/output/
+
+# Your working spec.
+spec.py
